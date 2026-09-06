@@ -50,6 +50,11 @@ return [
             'driver' => 'session',
             'provider' => 'erp_users',
         ],
+
+        'super_admin' => [
+            'driver' => 'session',
+            'provider' => 'super_admins',
+        ],
     ],
 
     /*
@@ -83,6 +88,11 @@ return [
         'erp_users' => [
             'driver' => 'eloquent',
             'model' => App\Models\ErpUser::class,
+        ],
+
+        'super_admins' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Master\SuperAdmin::class,
         ],
 
         // 'users' => [
@@ -121,6 +131,13 @@ return [
         'admins' => [
             'provider' => 'admins',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+
+        'super_admins' => [
+            'provider' => 'super_admins',
+            'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

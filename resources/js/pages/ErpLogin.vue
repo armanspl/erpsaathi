@@ -122,7 +122,7 @@
               <input type="checkbox" class="erp-checkbox" v-model="remember" />
               <span class="erp-remember-text">Remember me</span>
             </label>
-            <a href="/erp/forgot-password" class="erp-forgot">Forgot password?</a>
+            <a :href="forgotPasswordUrl" class="erp-forgot">Forgot password?</a>
           </div>
 
           <transition name="erp-fade">
@@ -181,6 +181,16 @@ export default {
       showShortcuts: false,
     };
   },
+  computed: {
+    schoolSlug() {
+      return new URLSearchParams(window.location.search).get('school') || '';
+    },
+    forgotPasswordUrl() {
+      return this.schoolSlug
+        ? `/erp/forgot-password?school=${encodeURIComponent(this.schoolSlug)}`
+        : '/erp/forgot-password';
+    },
+  },
   watch: {
     isDark(value) {
       this.applyTheme(value);
@@ -224,17 +234,28 @@ export default {
 
       this.loading = true;
       try {
-        const response = await fetch('/erp/authenticate', {
+        const school = new URLSearchParams(window.location.search).get('school') || '';
+        const authUrl = school
+          ? `/erp/authenticate?school=${encodeURIComponent(school)}`
+          : '/erp/authenticate';
+        const headers = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        };
+        if (school) {
+          headers['X-Tenant'] = school;
+        }
+
+        const response = await fetch(authUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-          },
+          credentials: 'same-origin',
+          headers,
           body: JSON.stringify({
             email: this.email,
             password: this.password,
             remember: this.remember,
+            ...(school ? { school } : {}),
           }),
         });
 

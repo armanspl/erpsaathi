@@ -7,9 +7,11 @@ use App\Models\Driver;
 use App\Models\Staff;
 use App\Models\Student;
 use App\Models\Teacher;
+use App\Http\Middleware\InitializeTenantForJob;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -35,6 +37,10 @@ class AppServiceProvider extends ServiceProvider
             'teacher' => Teacher::class,
             'staff' => Staff::class,
             'driver' => Driver::class,
+        ]);
+
+        Bus::pipeThrough([
+            InitializeTenantForJob::class,
         ]);
 
         $this->registerAuditListener();

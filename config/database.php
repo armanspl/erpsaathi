@@ -63,6 +63,30 @@ return [
             ]) : [],
         ],
 
+        /*
+        | Master / central database for Super Admin and school registry.
+        | Tenant ERP data never lives here.
+        */
+        'master' => [
+            'driver' => 'mysql',
+            'url' => env('DB_MASTER_URL'),
+            'host' => env('DB_MASTER_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('DB_MASTER_PORT', env('DB_PORT', '3306')),
+            'database' => env('DB_MASTER_DATABASE', 'erpsaathi_master'),
+            'username' => env('DB_MASTER_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('DB_MASTER_PASSWORD', env('DB_PASSWORD', '')),
+            'unix_socket' => env('DB_MASTER_SOCKET', env('DB_SOCKET', '')),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),
