@@ -11,7 +11,7 @@ Route::get('/', function () {
     // Publicly reachable logo (same asset the ERP login screen uses). The configured
     // SchoolSetting logo is only used when it is a truly public URL — the default
     // accessor points at the auth-gated /erp/api asset route, which 401s for guests.
-    $logoUrl = asset('assets/img/logo/demo.jpeg');
+    $logoUrl = asset('assets/img/logo/erpsaathi.png');
     $authenticated = false;
 
     try {
@@ -19,11 +19,6 @@ Route::get('/', function () {
 
         $school = App\Models\SchoolSetting::current();
         $schoolName = $school->school_name ?: $schoolName;
-
-        $configuredLogo = $school->logo_url;
-        if ($configuredLogo && ! str_contains($configuredLogo, '/erp/api/')) {
-            $logoUrl = $configuredLogo;
-        }
     } catch (\Throwable $e) {
         // Database unavailable — fall back to defaults so the landing page still renders.
     }

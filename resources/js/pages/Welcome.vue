@@ -13,11 +13,7 @@
     <header class="erp-header" :class="{ 'is-hidden': headerHidden }">
       <div class="erp-container erp-header-inner">
         <a href="#top" class="erp-brand" aria-label="Home">
-          <img :src="logoUrl" :alt="schoolName + ' logo'" class="erp-brand-logo" width="40" height="40" />
-          <span class="erp-brand-text">
-            <span class="erp-brand-name">{{ schoolName }}</span>
-            <span class="erp-brand-kicker">School ERP</span>
-          </span>
+          <img :src="logoUrl" alt="erpsaathi logo" class="erp-brand-logo erp-brand-logo-lg" />
         </a>
 
         <nav class="erp-nav" aria-label="Primary">
@@ -226,11 +222,7 @@
       <div class="erp-container erp-footer-grid">
         <div class="erp-footer-brand">
           <div class="erp-brand">
-            <img :src="logoUrl" :alt="schoolName + ' logo'" class="erp-brand-logo" width="36" height="36" />
-            <span class="erp-brand-text">
-              <span class="erp-brand-name">{{ schoolName }}</span>
-              <span class="erp-brand-kicker">School ERP</span>
-            </span>
+            <img :src="logoUrl" alt="erpsaathi logo" class="erp-brand-logo erp-brand-logo-lg" />
           </div>
           <p class="erp-footer-note">
             A complete school management system covering academics, finance and operations.
@@ -260,7 +252,7 @@
         </div>
       </div>
       <div class="erp-container erp-footer-bottom">
-        <span>&copy; {{ year }} {{ schoolName }}. All rights reserved.</span>
+        <span>&copy; 2026 erpsaathi. All rights reserved.</span>
         <span>School ERP System</span>
       </div>
     </footer>
@@ -273,7 +265,7 @@ const DEFAULTS = {
   loginUrl: '/erp/login',
   dashboardUrl: '/erp/dashboard',
   schoolName: 'Global Access School',
-  logoUrl: '/assets/img/logo/demo.jpeg',
+  logoUrl: '/assets/img/logo/erpsaathi.png',
 };
 
 export default {
@@ -286,7 +278,7 @@ export default {
       dashboardUrl: cfg.dashboardUrl || DEFAULTS.dashboardUrl,
       schoolName: cfg.schoolName || DEFAULTS.schoolName,
       logoUrl: cfg.logoUrl || DEFAULTS.logoUrl,
-      isDark: true,
+      isDark: false,
       headerHidden: false,
       lastScrollY: 0,
       scrollTicking: false,
@@ -390,11 +382,11 @@ export default {
   mounted() {
     let saved = null;
     try {
-      saved = localStorage.getItem('erp-welcome-theme');
+      saved = localStorage.getItem('erp-welcome-theme-v2');
     } catch (e) {
       saved = null;
     }
-    this.isDark = saved === null ? true : saved === 'dark';
+    this.isDark = saved === null ? false : saved === 'dark';
     this.applyTheme(this.isDark);
 
     this.lastScrollY = window.scrollY || 0;
@@ -428,7 +420,7 @@ export default {
       document.documentElement.style.backgroundColor = bg;
       if (document.body) document.body.style.backgroundColor = bg;
       try {
-        localStorage.setItem('erp-welcome-theme', dark ? 'dark' : 'light');
+        localStorage.setItem('erp-welcome-theme-v2', dark ? 'dark' : 'light');
       } catch (e) {
         /* storage unavailable — ignore */
       }
@@ -576,7 +568,7 @@ export default {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  height: 68px;
+  height: 80px;
 }
 .erp-brand {
   display: flex;
@@ -586,14 +578,23 @@ export default {
   color: inherit;
 }
 .erp-brand-logo {
-  width: 40px;
-  height: 40px;
+  width: auto;
+  height: 64px;
+  max-width: 240px;
   object-fit: contain;
-  border-radius: 10px;
-  background: #fff;
-  padding: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
   flex-shrink: 0;
+}
+.erp-brand-logo-lg {
+  height: 72px;
+  max-width: 280px;
+}
+.erp-footer-brand .erp-brand-logo-lg {
+  height: 76px;
+  max-width: 300px;
 }
 .erp-brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .erp-brand-name {
