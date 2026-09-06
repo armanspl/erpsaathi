@@ -16,6 +16,9 @@ class School extends Model
         'db_host',
         'status',
         'admin_email',
+        'price',
+        'renewal_charge',
+        'billing_currency',
         'storage_path',
         'is_first_school',
         'notes',
@@ -26,6 +29,8 @@ class School extends Model
     {
         return [
             'is_first_school' => 'boolean',
+            'price' => 'decimal:2',
+            'renewal_charge' => 'decimal:2',
         ];
     }
 

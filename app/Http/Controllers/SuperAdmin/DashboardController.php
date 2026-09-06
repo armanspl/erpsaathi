@@ -16,6 +16,8 @@ class DashboardController extends Controller
 
     public function summary()
     {
+        $active = School::query()->where('status', 'active');
+
         return response()->json([
             'user' => Auth::guard('super_admin')->user(),
             'stats' => [
@@ -24,6 +26,10 @@ class DashboardController extends Controller
                 'schools_inactive' => School::query()->where('status', 'inactive')->count(),
                 'schools_failed' => School::query()->where('status', 'failed')->count(),
                 'super_admins' => SuperAdmin::query()->count(),
+                'billing_setup_total' => (float) School::query()->sum('price'),
+                'billing_renewal_total' => (float) School::query()->sum('renewal_charge'),
+                'billing_setup_active' => (float) (clone $active)->sum('price'),
+                'billing_renewal_active' => (float) School::query()->where('status', 'active')->sum('renewal_charge'),
             ],
             'tenancy' => [
                 'base_domain' => config('tenancy.base_domain'),

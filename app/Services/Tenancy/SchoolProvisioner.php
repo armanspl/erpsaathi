@@ -17,7 +17,7 @@ class SchoolProvisioner
     ) {}
 
     /**
-     * @param  array{name:string,slug?:string,admin_email:string,admin_name?:string,admin_password?:string,custom_domain?:string|null}  $data
+     * @param  array{name:string,slug?:string,admin_email:string,admin_name?:string,admin_password?:string,custom_domain?:string|null,price?:float|string|null,renewal_charge?:float|string|null,billing_currency?:string|null}  $data
      */
     public function provision(array $data): School
     {
@@ -28,6 +28,13 @@ class SchoolProvisioner
         $adminName = $data['admin_name'] ?? 'School Admin';
         $adminPassword = $data['admin_password'] ?? Str::password(12);
         $customDomain = ! empty($data['custom_domain']) ? strtolower(trim($data['custom_domain'])) : null;
+        $price = array_key_exists('price', $data) && $data['price'] !== '' && $data['price'] !== null
+            ? (float) $data['price']
+            : null;
+        $renewal = array_key_exists('renewal_charge', $data) && $data['renewal_charge'] !== '' && $data['renewal_charge'] !== null
+            ? (float) $data['renewal_charge']
+            : null;
+        $currency = strtoupper(trim((string) ($data['billing_currency'] ?? 'INR'))) ?: 'INR';
         $storagePath = rtrim(config('tenancy.storage_root'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$slug;
 
         $existing = School::query()->where('slug', $slug)->first();
@@ -52,29 +59,31 @@ class SchoolProvisioner
 
         $this->assertDomainsAvailable($domains, $existing?->id);
 
+        $billing = compact('price', 'renewal', 'currency');
+
         $school = DB::connection('master')->transaction(function () use (
-            $existing, $name, $slug, $dbName, $adminEmail, $storagePath, $domains, $customDomain, $base
+            $existing, $name, $slug, $dbName, $adminEmail, $storagePath, $customDomain, $base, $billing
         ) {
+            $attrs = [
+                'name' => $name,
+                'db_name' => $dbName,
+                'status' => 'provisioning',
+                'admin_email' => $adminEmail,
+                'storage_path' => $storagePath,
+                'price' => $billing['price'],
+                'renewal_charge' => $billing['renewal'],
+                'billing_currency' => $billing['currency'],
+                'last_error' => null,
+            ];
+
             if ($existing) {
-                $existing->update([
-                    'name' => $name,
-                    'db_name' => $dbName,
-                    'status' => 'provisioning',
-                    'admin_email' => $adminEmail,
-                    'storage_path' => $storagePath,
-                    'last_error' => null,
-                ]);
+                $existing->update($attrs);
                 $school = $existing->fresh();
             } else {
-                $school = School::query()->create([
-                    'name' => $name,
+                $school = School::query()->create(array_merge($attrs, [
                     'slug' => $slug,
-                    'db_name' => $dbName,
-                    'status' => 'provisioning',
-                    'admin_email' => $adminEmail,
-                    'storage_path' => $storagePath,
                     'is_first_school' => false,
-                ]);
+                ]));
             }
 
             $this->syncDomains($school, $slug.'.'.$base, $slug.'.localhost', $customDomain);
@@ -248,5 +257,90 @@ class SchoolProvisioner
         $user->save();
 
         return $password;
+    }
+
+    /**
+     * Permanently remove a school: drop tenant DB, delete master rows (domains cascade),
+     * and remove tenant storage under storage/app/schools/{slug}.
+     */
+    public function destroyCompletely(School $school): void
+    {
+        if ($school->is_first_school) {
+            throw new \InvalidArgumentException('Cannot permanently delete the first school tenant.');
+        }
+
+        $dbName = (string) $school->db_name;
+        $storagePath = $school->storage_path
+            ?: (rtrim(config('tenancy.storage_root'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$school->slug);
+
+        $this->dropDatabase($dbName);
+
+        DB::connection('master')->transaction(function () use ($school) {
+            SchoolDomain::query()->where('school_id', $school->id)->delete();
+            $school->delete();
+        });
+
+        $this->removeTenantStorage($storagePath);
+    }
+
+    protected function dropDatabase(string $dbName): void
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $dbName);
+        $masterDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string) config('database.connections.master.database'));
+
+        if ($safe === '' || strcasecmp($safe, $masterDb) === 0) {
+            throw new \InvalidArgumentException('Refusing to drop an invalid or master database.');
+        }
+
+        // Never drop the configured default app DB name unless it is clearly this school's db.
+        // (First school is already blocked above.)
+
+        DB::connection('master')->statement("DROP DATABASE IF EXISTS `{$safe}`");
+    }
+
+    protected function removeTenantStorage(string $path): void
+    {
+        $path = realpath($path) ?: $path;
+        $root = realpath(config('tenancy.storage_root')) ?: config('tenancy.storage_root');
+
+        // Only delete paths under storage/app/schools
+        if (! is_string($path) || $path === '' || ! is_dir($path)) {
+            return;
+        }
+
+        $normalizedRoot = rtrim(str_replace('\\', '/', (string) $root), '/');
+        $normalizedPath = rtrim(str_replace('\\', '/', $path), '/');
+
+        if ($normalizedRoot === '' || ! str_starts_with($normalizedPath, $normalizedRoot.'/')) {
+            return;
+        }
+
+        $this->deleteDirectory($path);
+    }
+
+    protected function deleteDirectory(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+
+        $items = scandir($dir);
+        if ($items === false) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $full = $dir.DIRECTORY_SEPARATOR.$item;
+            if (is_dir($full)) {
+                $this->deleteDirectory($full);
+            } else {
+                @unlink($full);
+            }
+        }
+
+        @rmdir($dir);
     }
 }
