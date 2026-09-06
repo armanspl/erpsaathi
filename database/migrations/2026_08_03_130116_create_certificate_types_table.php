@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('certificate_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('label');
+            $table->string('prefix', 10)->unique();
+            $table->json('roles');
+            $table->json('custom_fields')->nullable();
+            $table->boolean('is_system')->default(false);
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('certificate_types');
+    }
+};

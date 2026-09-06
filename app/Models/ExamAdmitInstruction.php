@@ -1,0 +1,16 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class ExamAdmitInstruction extends Model
+{
+    protected $fillable = ['exam_id', 'instructions'];
+
+    public function exam(): BelongsTo
+    {
+        return $this->belongsTo(Exam::class);
+    }
+}

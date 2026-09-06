@@ -1,0 +1,113 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* ERP brand/primary color — default Indigo scale. Overridden at runtime (per-user, via
+       CSS custom properties on :root) by resources/js/erp/utils/theme.js when a user picks
+       a custom theme color, so every `primary-*` utility below repaints instantly. */
+    --color-primary-50: #eef2ff;
+    --color-primary-100: #e0e7ff;
+    --color-primary-200: #c7d2fe;
+    --color-primary-300: #a5b4fc;
+    --color-primary-400: #818cf8;
+    --color-primary-500: #6366f1;
+    --color-primary-600: #4f46e5;
+    --color-primary-700: #4338ca;
+    --color-primary-800: #3730a3;
+    --color-primary-900: #312e81;
+    --color-primary-950: #1e1b4b;
+}
+
+@layer components {
+    .header-icon-btn {
+        @apply relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700;
+    }
+    .form-label {
+        @apply mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400;
+    }
+    .form-section-heading {
+        @apply -mx-5 mt-2 border-t border-slate-100 px-5 pt-4 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-800 dark:text-slate-500;
+    }
+    .form-input {
+        @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition;
+        @apply placeholder:text-slate-400;
+        @apply focus:border-primary-400 focus:bg-white focus:text-slate-900 focus:ring-2 focus:ring-primary-100;
+        @apply dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100;
+        @apply dark:focus:border-primary-500 dark:focus:bg-slate-900 dark:focus:text-slate-100 dark:focus:ring-primary-500/25;
+        color: #0f172a;
+        caret-color: #0f172a;
+        -webkit-text-fill-color: #0f172a;
+    }
+    .btn-outline {
+        @apply inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800;
+    }
+    .btn-primary {
+        @apply inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-700;
+    }
+}
+
+.form-input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+    -webkit-text-fill-color: #94a3b8;
+}
+
+.form-input:focus {
+    color: #0f172a;
+    caret-color: #0f172a;
+    -webkit-text-fill-color: #0f172a;
+}
+
+.form-input option {
+    color: #0f172a;
+    background: #ffffff;
+}
+
+.dark .form-input {
+    color: #f1f5f9;
+    caret-color: #f1f5f9;
+    -webkit-text-fill-color: #f1f5f9;
+}
+
+.dark .form-input:focus {
+    color: #f8fafc;
+    caret-color: #f8fafc;
+    -webkit-text-fill-color: #f8fafc;
+    background-color: #0f172a;
+}
+
+.dark .form-input::placeholder {
+    color: #94a3b8;
+    -webkit-text-fill-color: #94a3b8;
+}
+
+.dark .form-input option {
+    color: #f1f5f9;
+    background: #1e293b;
+}
+
+/* Shell sets color: var(--erp-cream) — don't let inputs inherit it */
+.erp-shell .form-input,
+.erp-shell .form-input:focus {
+    color: #0f172a;
+    -webkit-text-fill-color: #0f172a;
+}
+
+.dark .erp-shell .form-input,
+.dark .erp-shell .form-input:focus {
+    color: #f1f5f9;
+    -webkit-text-fill-color: #f1f5f9;
+}
+
+.dark .erp-shell .form-input:focus {
+    background-color: #0f172a;
+}

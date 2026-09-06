@@ -1,0 +1,379 @@
+/* ========================================
+   GLOBAL RESPONSIVE FIXES FOR ALL PAGES
+   Mobile-First Approach
+   ======================================== */
+
+/* Base Mobile Styles (up to 576px) */
+@media (max-width: 576px) {
+  /* Typography */
+  h1 { font-size: 28px !important; line-height: 1.3 !important; }
+  h2 { font-size: 24px !important; line-height: 1.3 !important; }
+  h3 { font-size: 20px !important; line-height: 1.4 !important; }
+  h4 { font-size: 18px !important; }
+  h5 { font-size: 16px !important; }
+  h6 { font-size: 14px !important; }
+  p { font-size: 14px !important; line-height: 1.6 !important; }
+  
+  /* Section Spacing */
+  .pt-120 { padding-top: 60px !important; }
+  .pb-120 { padding-bottom: 60px !important; }
+  .pt-90 { padding-top: 50px !important; }
+  .pb-90 { padding-bottom: 50px !important; }
+  
+  /* Container */
+  .container { padding-left: 15px !important; padding-right: 15px !important; }
+}
+
+/* Tablet Styles (577px - 991px) */
+@media (min-width: 577px) and (max-width: 991px) {
+  h1 { font-size: 36px !important; }
+  h2 { font-size: 30px !important; }
+  h3 { font-size: 24px !important; }
+  
+  .pt-120 { padding-top: 80px !important; }
+  .pb-120 { padding-bottom: 80px !important; }
+}
+
+/* ========================================
+   INDEX PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  /* Video Hero */
+  .it-video-hero-area {
+    height: 500px !important;
+  }
+  .it-video-hero-area h1 {
+    font-size: 32px !important;
+  }
+  .it-video-hero-area p {
+    font-size: 16px !important;
+  }
+  .it-video-hero-area .d-flex {
+    flex-direction: column !important;
+    gap: 15px !important;
+  }
+  .it-video-hero-area .it-btn {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .it-video-hero-area {
+    height: 450px !important;
+  }
+  .it-video-hero-area h1 {
+    font-size: 26px !important;
+  }
+  .it-video-hero-area p {
+    font-size: 14px !important;
+  }
+}
+
+/* ========================================
+   ADMISSION PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .it-admission-alert-bar .row {
+    text-align: center !important;
+  }
+  .it-admission-alert-bar .col-xl-8,
+  .it-admission-alert-bar .col-xl-4 {
+    text-align: center !important;
+    margin-bottom: 10px;
+  }
+  
+  /* Timeline */
+  .it-process-timeline {
+    padding-left: 20px !important;
+  }
+  .timeline-line {
+    left: 10px !important;
+  }
+  .step-number {
+    left: -30px !important;
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 14px !important;
+  }
+  
+  /* Stats */
+  .it-admission-stats .col-xl-3 {
+    margin-bottom: 20px;
+  }
+}
+
+@media (max-width: 576px) {
+  .it-process-step {
+    padding: 20px !important;
+  }
+  .step-icon {
+    width: 50px !important;
+    height: 50px !important;
+    font-size: 20px !important;
+  }
+}
+
+/* ========================================
+   NOTICE PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .it-notice-alert-bar .row {
+    flex-direction: column !important;
+    text-align: center !important;
+  }
+  .it-notice-alert-bar .col-xl-1,
+  .it-notice-alert-bar .col-xl-8,
+  .it-notice-alert-bar .col-xl-3 {
+    width: 100% !important;
+    text-align: center !important;
+    margin-bottom: 10px;
+  }
+  
+  /* Notice Cards */
+  .notice-item {
+    padding: 20px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .notice-item .d-flex {
+    flex-direction: column !important;
+  }
+  .notice-item .badge {
+    margin-top: 10px;
+    align-self: flex-start;
+  }
+}
+
+/* ========================================
+   GALLERY PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .it-gallery-hero h2 {
+    font-size: 32px !important;
+  }
+  
+  .tp-gallery-filter {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+  .tp-gallery-filter button {
+    padding: 10px 20px !important;
+    font-size: 14px !important;
+  }
+  
+  /* Video Gallery */
+  .video-main video {
+    height: 300px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .it-gallery-hero {
+    padding: 50px 0 !important;
+  }
+  .it-gallery-hero h2 {
+    font-size: 24px !important;
+  }
+  .gallery-stats {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .gallery-stats > div {
+    width: 100% !important;
+  }
+  
+  .it-gallery-item {
+    margin-bottom: 20px !important;
+  }
+}
+
+/* ========================================
+   STUDENT PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .topper-card {
+    margin-bottom: 20px;
+  }
+  
+  .toppers-table-section {
+    padding: 20px !important;
+  }
+  
+  .toppers-table-section table {
+    font-size: 14px !important;
+  }
+  
+  .toppers-table-section th,
+  .toppers-table-section td {
+    padding: 10px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .topper-card {
+    padding: 20px !important;
+  }
+  .topper-card > div > div:first-child {
+    width: 80px !important;
+    height: 80px !important;
+  }
+  
+  .toppers-table-section {
+    padding: 15px !important;
+    overflow-x: auto !important;
+  }
+  
+  .toppers-table-section table {
+    min-width: 500px !important;
+  }
+  
+  .achievement-item {
+    margin-bottom: 20px;
+  }
+}
+
+/* ========================================
+   CONTACT PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .it-contact-item {
+    margin-bottom: 20px;
+  }
+}
+
+@media (max-width: 576px) {
+  .it-contact-icon span {
+    width: 60px !important;
+    height: 60px !important;
+    line-height: 60px !important;
+  }
+  .it-contact-icon i {
+    font-size: 24px !important;
+  }
+}
+
+/* ========================================
+   ABOUT PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .it-principal-img-box {
+    margin-bottom: 30px;
+    text-align: center;
+  }
+  .it-principal-content {
+    text-align: center;
+  }
+}
+
+@media (max-width: 576px) {
+  .it-principal-img {
+    max-width: 250px !important;
+  }
+}
+
+/* ========================================
+   ACADEMICS PAGE RESPONSIVE
+   ======================================== */
+
+@media (max-width: 991px) {
+  .dual-curriculum-circle {
+    width: 250px !important;
+    height: 250px !important;
+  }
+  .circle-center {
+    width: 150px !important;
+    height: 150px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .dual-curriculum-circle {
+    width: 200px !important;
+    height: 200px !important;
+  }
+  .circle-center {
+    width: 120px !important;
+    height: 120px !important;
+  }
+  .curriculum-label {
+    font-size: 12px !important;
+  }
+  .subject-card {
+    width: 140px !important;
+    padding: 15px !important;
+  }
+}
+
+/* ========================================
+   COMMON COMPONENTS RESPONSIVE
+   ======================================== */
+
+/* Buttons */
+@media (max-width: 576px) {
+  .it-btn,
+  .it-btn-sm {
+    padding: 12px 25px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* Cards */
+@media (max-width: 576px) {
+  .it-why-card,
+  .student-corner-card,
+  .notice-item {
+    padding: 20px !important;
+  }
+}
+
+/* Tables */
+@media (max-width: 576px) {
+  .table-responsive {
+    border: none !important;
+  }
+}
+
+/* Forms */
+@media (max-width: 576px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+  }
+}
+
+/* Flex utilities for mobile */
+@media (max-width: 576px) {
+  .d-flex.flex-wrap {
+    flex-direction: column !important;
+  }
+  .d-flex.flex-wrap > * {
+    width: 100% !important;
+    margin-bottom: 10px;
+  }
+}
+
+/* Images */
+@media (max-width: 576px) {
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
+
+/* Touch-friendly targets */
+@media (max-width: 991px) {
+  a, button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
