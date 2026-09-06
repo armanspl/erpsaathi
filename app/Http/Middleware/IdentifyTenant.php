@@ -23,6 +23,11 @@ class IdentifyTenant
 
         // Apex marketing site (erpsaathi.com / www) — no school tenant.
         if ($this->isPublicApexHost($request)) {
+            // ERP lives only on school subdomains (e.g. bright.erpsaathi.com).
+            if ($request->is('erp') || $request->is('erp/*')) {
+                abort(404);
+            }
+
             $this->tenants->usePublic();
 
             return $next($request);

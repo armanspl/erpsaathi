@@ -38,10 +38,6 @@
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
             </svg>
           </button>
-          <a :href="primaryHref" class="erp-btn erp-btn-primary erp-header-cta">
-            {{ primaryLabel }}
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
-          </a>
         </div>
       </div>
     </header>
@@ -56,16 +52,16 @@
               Run your entire school from one secure, centralized system
             </h1>
             <p class="erp-hero-sub">
-              {{ schoolName }} ERP unifies academics, admissions, attendance, fees, examinations,
+              erpsaathi unifies academics, admissions, attendance, fees, examinations,
               finance, transport and reporting into a single platform — so every department works
               from the same accurate data.
             </p>
             <div class="erp-hero-actions">
-              <a :href="primaryHref" class="erp-btn erp-btn-primary erp-btn-lg">
-                {{ primaryLabel }}
+              <a href="#modules" class="erp-btn erp-btn-primary erp-btn-lg">
+                Explore modules
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
               </a>
-              <a href="#modules" class="erp-btn erp-btn-ghost erp-btn-lg">Explore modules</a>
+              <a href="#security" class="erp-btn erp-btn-ghost erp-btn-lg">See security</a>
             </div>
             <ul class="erp-hero-points">
               <li v-for="point in heroPoints" :key="point">
@@ -121,7 +117,7 @@
           <div class="erp-section-head">
             <h2 class="erp-section-title">One platform for the whole institution</h2>
             <p class="erp-section-lead">
-              Instead of scattered spreadsheets and disconnected tools, {{ schoolName }} ERP gives
+              Instead of scattered spreadsheets and disconnected tools, erpsaathi gives
               administrators, teachers and accounts staff a shared, role-based workspace with a
               complete audit trail.
             </p>
@@ -202,15 +198,14 @@
       <section class="erp-cta">
         <div class="erp-container erp-cta-inner">
           <div>
-            <h2 class="erp-cta-title">{{ authenticated ? 'Your workspace is ready' : 'Sign in to your ERP workspace' }}</h2>
+            <h2 class="erp-cta-title">Built for modern schools</h2>
             <p class="erp-cta-sub">
-              {{ authenticated
-                ? 'Continue where you left off in the dashboard.'
-                : 'Access is available to authorized school staff. Use your ERP credentials to continue.' }}
+              Explore the modules below to see how academics, fees, exams and operations work together in one platform.
+              Staff access ERP through their school subdomain.
             </p>
           </div>
-          <a :href="primaryHref" class="erp-btn erp-btn-primary erp-btn-lg">
-            {{ primaryLabel }}
+          <a href="#modules" class="erp-btn erp-btn-primary erp-btn-lg">
+            Explore modules
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
           </a>
         </div>
@@ -246,9 +241,11 @@
         </nav>
 
         <div class="erp-footer-col">
-          <h4>Access</h4>
-          <a :href="primaryHref" class="erp-footer-login">{{ primaryLabel }}</a>
-          <p class="erp-footer-fineprint">For authorized staff only.</p>
+          <h4>Platform</h4>
+          <a href="#overview">Overview</a>
+          <a href="#modules">Modules</a>
+          <a href="#security">Security</a>
+          <p class="erp-footer-fineprint">Staff sign in via their school subdomain.</p>
         </div>
       </div>
       <div class="erp-container erp-footer-bottom">
@@ -261,10 +258,7 @@
 
 <script>
 const DEFAULTS = {
-  authenticated: false,
-  loginUrl: '/erp/login',
-  dashboardUrl: '/erp/dashboard',
-  schoolName: 'Global Access School',
+  schoolName: 'erpsaathi',
   logoUrl: '/assets/img/logo/erpsaathi.png',
 };
 
@@ -273,9 +267,6 @@ export default {
   data() {
     const cfg = { ...DEFAULTS, ...(typeof window !== 'undefined' && window.__WELCOME__ ? window.__WELCOME__ : {}) };
     return {
-      authenticated: !!cfg.authenticated,
-      loginUrl: cfg.loginUrl || DEFAULTS.loginUrl,
-      dashboardUrl: cfg.dashboardUrl || DEFAULTS.dashboardUrl,
       schoolName: cfg.schoolName || DEFAULTS.schoolName,
       logoUrl: cfg.logoUrl || DEFAULTS.logoUrl,
       isDark: false,
@@ -365,14 +356,6 @@ export default {
         'Controlled data import and export',
       ],
     };
-  },
-  computed: {
-    primaryHref() {
-      return this.authenticated ? this.dashboardUrl : this.loginUrl;
-    },
-    primaryLabel() {
-      return this.authenticated ? 'Go to Dashboard' : 'Login to ERP';
-    },
   },
   watch: {
     isDark(value) {

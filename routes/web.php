@@ -1,34 +1,12 @@
 <?php
 
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
-// Root: professional School ERP landing/login page. Authenticated staff are offered a
-// "Go to Dashboard" action; everyone else gets a "Login to ERP" button that routes into
-// the existing /erp/login flow. No ERP routes, auth logic or business logic are changed.
+// Root: public marketing site for the apex domain (no tenant / no ERP login CTA).
 Route::get('/', function () {
-    $schoolName = 'Global Access School';
-    // Publicly reachable logo (same asset the ERP login screen uses). The configured
-    // SchoolSetting logo is only used when it is a truly public URL — the default
-    // accessor points at the auth-gated /erp/api asset route, which 401s for guests.
-    $logoUrl = asset('assets/img/logo/erpsaathi.png');
-    $authenticated = false;
-
-    try {
-        $authenticated = Auth::guard('erp')->check();
-
-        $school = App\Models\SchoolSetting::current();
-        $schoolName = $school->school_name ?: $schoolName;
-    } catch (\Throwable $e) {
-        // Database unavailable — fall back to defaults so the landing page still renders.
-    }
-
     $welcome = [
-        'authenticated' => (bool) $authenticated,
-        'loginUrl'      => route('erp.login'),
-        'dashboardUrl'  => route('erp.dashboard'),
-        'schoolName'    => $schoolName,
-        'logoUrl'       => $logoUrl,
+        'schoolName' => 'erpsaathi',
+        'logoUrl'    => asset('assets/img/logo/erpsaathi.png'),
     ];
 
     return view('welcome', ['welcome' => $welcome]);
