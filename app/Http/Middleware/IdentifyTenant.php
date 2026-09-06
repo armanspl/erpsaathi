@@ -21,6 +21,11 @@ class IdentifyTenant
             return $next($request);
         }
 
+        // Apex marketing site (erpsaathi.com / www) — no school tenant.
+        if ($this->isPublicApexHost($request)) {
+            return $next($request);
+        }
+
         $slug = $this->tenants->resolveSlugFromRequest($request);
 
         // Local / IP hosts without subdomain: fall back to first-school slug so
@@ -62,6 +67,21 @@ class IdentifyTenant
         }
 
         return $this->bootSchool($school, $next, $request);
+    }
+
+    /**
+     * Public marketing hosts that must not resolve a school tenant.
+     */
+    protected function isPublicApexHost(Request $request): bool
+    {
+        $host = strtolower($request->getHost());
+        $base = strtolower((string) config('tenancy.base_domain'));
+
+        if ($base === '') {
+            return false;
+        }
+
+        return $host === $base || $host === 'www.'.$base;
     }
 
     protected function bootSchool($school, Closure $next, Request $request): Response
