@@ -2,11 +2,28 @@
 
 use Illuminate\Support\Facades\Route;
 
-// Root: public marketing site for the apex domain (no tenant / no ERP login CTA).
+// Root: public marketing homepage.
+// Apex (erpsaathi.com): no Login CTA.
+// School subdomain (takla.erpsaathi.com): homepage + Login to ERP.
 Route::get('/', function () {
+    $tenant = app(\App\Support\Tenancy\TenantContext::class)->get();
+    $authenticated = false;
+
+    if ($tenant) {
+        try {
+            $authenticated = \Illuminate\Support\Facades\Auth::guard('erp')->check();
+        } catch (\Throwable $e) {
+            $authenticated = false;
+        }
+    }
+
     $welcome = [
-        'schoolName' => 'erpsaathi',
-        'logoUrl'    => asset('assets/img/logo/erpsaathi.png'),
+        'showLoginCta'  => (bool) $tenant,
+        'authenticated' => $authenticated,
+        'loginUrl'      => url('/erp/login'),
+        'dashboardUrl'  => url('/erp/dashboard'),
+        'schoolName'    => $tenant?->name ?: 'erpsaathi',
+        'logoUrl'       => asset('assets/img/logo/erpsaathi.png'),
     ];
 
     return view('welcome', ['welcome' => $welcome]);
