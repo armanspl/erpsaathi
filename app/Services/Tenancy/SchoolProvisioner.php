@@ -265,10 +265,6 @@ class SchoolProvisioner
      */
     public function destroyCompletely(School $school): void
     {
-        if ($school->is_first_school) {
-            throw new \InvalidArgumentException('Cannot permanently delete the first school tenant.');
-        }
-
         $dbName = (string) $school->db_name;
         $storagePath = $school->storage_path
             ?: (rtrim(config('tenancy.storage_root'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$school->slug);

@@ -151,7 +151,7 @@
                         <button v-else-if="s.status !== 'provisioning'" type="button" class="sa-text-btn ok" @click="setStatus(s, 'active')">Activate</button>
                         <button type="button" class="sa-text-btn" @click="openEdit(s)">Edit billing</button>
                         <button type="button" class="sa-text-btn" @click="resetAdmin(s)">Reset admin</button>
-                        <button v-if="!s.is_first_school" type="button" class="sa-text-btn danger" @click="openDelete(s)">Delete</button>
+                        <button type="button" class="sa-text-btn danger" @click="openDelete(s)">Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -256,6 +256,9 @@
         <h2>Delete school permanently</h2>
         <p class="sa-help">
           Drops database <code>{{ deleteTarget.db_name }}</code>, removes domains, and deletes tenant files. Cannot be undone.
+        </p>
+        <p v-if="deleteTarget.is_first_school" class="sa-help" style="color:#b91c1c;font-weight:600">
+          Warning: this is the first / original school tenant. Deleting it will permanently destroy that ERP database and all its data.
         </p>
         <ul class="sa-help-list">
           <li>School: <strong>{{ deleteTarget.name }}</strong></li>

@@ -129,10 +129,6 @@ class SchoolController extends Controller
 
     public function destroy(Request $request, School $school, SchoolProvisioner $provisioner)
     {
-        if ($school->is_first_school) {
-            return response()->json(['message' => 'Cannot permanently delete the first school tenant.'], 422);
-        }
-
         $data = $request->validate([
             'confirmation' => ['required', 'string', 'max:255'],
         ]);
