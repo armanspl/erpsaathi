@@ -132,24 +132,48 @@ class TenantManager
         app()->instance('tenant', $school);
     }
 
+    /**
+     * Public apex (erpsaathi.com) — no tenant DB; avoid default mysql sessions/cache.
+     */
+    public function usePublic(): void
+    {
+        $this->context->setCentral(false);
+        $this->context->set(null);
+        app()->instance('tenant', null);
+
+        $this->applyNonTenantSessionAndCache('public');
+    }
+
+    /**
+     * Super Admin / central host — master models only; file sessions/cache.
+     */
     public function useCentral(): void
     {
         $this->context->setCentral(true);
         $this->context->set(null);
+        app()->instance('tenant', null);
 
-        Config::set('cache.prefix', (env('CACHE_PREFIX') ?: Str::slug((string) env('APP_NAME', 'laravel'), '_').'_cache_').'central_');
-        Config::set('session.cookie', Str::slug((string) env('APP_NAME', 'laravel'), '_').'_central_session');
-        // Keep Super Admin sessions off tenant DBs.
+        $this->applyNonTenantSessionAndCache('central');
+    }
+
+    /**
+     * File session + file cache so public/central hosts do not need DB_DATABASE.
+     */
+    protected function applyNonTenantSessionAndCache(string $scope): void
+    {
+        $app = Str::slug((string) env('APP_NAME', 'laravel'), '_');
+
         Config::set('session.driver', 'file');
         Config::set('session.connection', null);
+        Config::set('session.cookie', $app.'_'.$scope.'_session');
 
-        if (app()->bound('cache')) {
-            try {
-                app('cache')->forgetDriver(config('cache.default'));
-            } catch (\Throwable) {
-                //
-            }
-        }
+        Config::set('cache.default', 'file');
+        Config::set(
+            'cache.prefix',
+            (env('CACHE_PREFIX') ?: $app.'_cache_').$scope.'_'
+        );
+
+        $this->forgetCacheDriver();
     }
 
     protected function applyStorage(School $school): void
@@ -178,22 +202,32 @@ class TenantManager
     protected function applyCachePrefix(School $school): void
     {
         $base = env('CACHE_PREFIX') ?: Str::slug((string) env('APP_NAME', 'laravel'), '_').'_cache_';
+        // File cache with tenant prefix — no dependency on default DB existing.
+        Config::set('cache.default', 'file');
         Config::set('cache.prefix', $base.'tenant_'.$school->slug.'_');
 
-        if (app()->bound('cache')) {
-            try {
-                app('cache')->forgetDriver(config('cache.default'));
-            } catch (\Throwable) {
-                //
-            }
-        }
+        $this->forgetCacheDriver();
     }
 
     protected function applySessionCookie(School $school): void
     {
+        // Per-tenant cookie + sessions table inside the switched tenant DB.
+        Config::set('session.driver', 'database');
         Config::set('session.cookie', 'erp_session_'.$school->slug);
-        // Sessions live in the tenant DB after connection switch.
         Config::set('session.connection', config('database.default'));
+    }
+
+    protected function forgetCacheDriver(): void
+    {
+        if (! app()->bound('cache')) {
+            return;
+        }
+
+        try {
+            app('cache')->forgetDriver(config('cache.default'));
+        } catch (\Throwable) {
+            //
+        }
     }
 
     public function configureTemporaryConnection(string $name, string $database, ?string $host = null): void

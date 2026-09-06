@@ -23,6 +23,8 @@ class IdentifyTenant
 
         // Apex marketing site (erpsaathi.com / www) — no school tenant.
         if ($this->isPublicApexHost($request)) {
+            $this->tenants->usePublic();
+
             return $next($request);
         }
 
