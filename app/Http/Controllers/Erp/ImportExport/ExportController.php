@@ -4,13 +4,11 @@ namespace App\Http\Controllers\Erp\ImportExport;
 
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
-use App\Models\Attendance;
+use App\Models\AttendanceMonthlySummary;
 use App\Models\BankTransaction;
 use App\Models\Expense;
 use App\Models\FeePayment;
-use App\Models\FuelLog;
 use App\Models\ImportExportLog;
-use App\Models\Mark;
 use App\Models\SalarySlip;
 use App\Models\Student;
 use App\Models\StudentSessionHistory;
@@ -31,7 +29,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ExportController extends Controller
 {
-    private const ENTITIES = ['student', 'student-udise', 'fee', 'expense', 'salary', 'bank', 'fuel-log', 'route', 'marks', 'attendance', 'global'];
+    private const ENTITIES = ['student', 'student-udise', 'fee', 'expense', 'salary', 'bank', 'route', 'attendance', 'global'];
 
     /** Header/tab accent per sheet — gives the multi-sheet Global Workbook a distinct color per data type. */
     private const SHEET_ACCENTS = [
@@ -41,9 +39,7 @@ class ExportController extends Controller
         'expense' => 'DC2626',
         'salary' => '7C3AED',
         'bank' => '2563EB',
-        'fuel-log' => 'EA580C',
         'route' => '0D9488',
-        'marks' => 'D97706',
         'attendance' => '0891B2',
     ];
 
@@ -74,13 +70,13 @@ class ExportController extends Controller
         'Bld Grp' => 'academic', 'ADM DATE' => 'academic', 'Class Admitted' => 'academic', 'Social Category' => 'academic',
         'Stoppage' => 'transport', 'Vehicle' => 'transport', 'Adm Type' => 'transport', 'Transport' => 'transport', 'Hostel' => 'transport',
         'Minority Group' => 'compliance', 'BPL beneficiary' => 'compliance', 'BELONGS TO EWS/DISADVANTAGED GROUP?' => 'compliance',
-        'CWSN' => 'compliance', 'clsl' => 'compliance', 'Name As per AADHAAR' => 'compliance', 'CHILD IS INDIAN NATIONAL?' => 'compliance',
+        'CWSN' => 'compliance', 'clsl' => 'compliance', 'Name As per AADHAAR' => 'compliance', 'INDIAN NATIONALity' => 'compliance',
         'MOTHER TONGUE' => 'compliance', 'Student State Code' => 'compliance',
         'Whether Antyodaya Anna Yojana (AAY) beneficiary?' => 'compliance', 'Type of Impairments' => 'compliance',
         'PREVIOUS ACADEMIC YEAR SCHOOLING STATUS' => 'previous_year', 'CLASS STUDIES IN PREVIOUS ACADEMIC YEAR' => 'previous_year',
         'ADMITED/ ENROLLED UNDER RTE/EWS? (For Private Unaided only)' => 'previous_year', 'Is Repeater' => 'previous_year',
         'APPEARED FOR EXAM IN PREVIOUS CLASS' => 'previous_year', 'RESULT FOR PREVIOUS EXAM' => 'previous_year',
-        'MARKS % OF PREVIOUS EXAM' => 'previous_year', 'CLASS ATTENDED DAYS (PREVIOUS YEAR)' => 'previous_year', 'C%' => 'previous_year',
+        'MARKS % OF PREVIOUS EXAM' => 'previous_year', 'CLASS ATTENDED DAYS (PREVIOUS YEAR)' => 'previous_year', 'ATTENDENCE %' => 'previous_year',
         'Status' => 'status', 'Student PEN' => 'status', 'TC Number' => 'status', 'TC Date' => 'status',
         'Last Class Studied' => 'status', 'STATUS' => 'status', 'UDISE' => 'status', 'Entry Status' => 'status',
     ];
@@ -107,13 +103,13 @@ class ExportController extends Controller
         'Bld Grp' => 9, 'ADM DATE' => 12, 'Class Admitted' => 14, 'Social Category' => 15,
         'Stoppage' => 16, 'Vehicle' => 12, 'Adm Type' => 10, 'Transport' => 11, 'Hostel' => 9,
         'Minority Group' => 15, 'BPL beneficiary' => 11, 'BELONGS TO EWS/DISADVANTAGED GROUP?' => 16,
-        'CWSN' => 9, 'clsl' => 9, 'Name As per AADHAAR' => 20, 'CHILD IS INDIAN NATIONAL?' => 14,
+        'CWSN' => 9, 'clsl' => 9, 'Name As per AADHAAR' => 20, 'INDIAN NATIONALity' => 16,
         'MOTHER TONGUE' => 14, 'Student State Code' => 12,
         'Whether Antyodaya Anna Yojana (AAY) beneficiary?' => 16, 'Type of Impairments' => 16,
         'PREVIOUS ACADEMIC YEAR SCHOOLING STATUS' => 16, 'CLASS STUDIES IN PREVIOUS ACADEMIC YEAR' => 16,
         'ADMITED/ ENROLLED UNDER RTE/EWS? (For Private Unaided only)' => 18, 'Is Repeater' => 10,
         'APPEARED FOR EXAM IN PREVIOUS CLASS' => 14, 'RESULT FOR PREVIOUS EXAM' => 14,
-        'MARKS % OF PREVIOUS EXAM' => 12, 'CLASS ATTENDED DAYS (PREVIOUS YEAR)' => 14, 'C%' => 8,
+        'MARKS % OF PREVIOUS EXAM' => 12, 'CLASS ATTENDED DAYS (PREVIOUS YEAR)' => 14, 'ATTENDENCE %' => 12,
         'Status' => 10, 'Student PEN' => 15, 'TC Number' => 16, 'TC Date' => 12,
         'Last Class Studied' => 16, 'STATUS' => 12, 'UDISE' => 12, 'Entry Status' => 12,
     ];
@@ -159,7 +155,7 @@ class ExportController extends Controller
         'CWSN',
         'clsl',
         'Name As per AADHAAR',
-        'CHILD IS INDIAN NATIONAL?',
+        'INDIAN NATIONALity',
         'Guardian Name (Optional)',
         'ALTERNATE MOBILE NUMBER (Optional)',
         'EMAIL ID (STUDENT/PARENT/GUARDIAN) (Optional)',
@@ -176,7 +172,7 @@ class ExportController extends Controller
         'RESULT FOR PREVIOUS EXAM',
         'MARKS % OF PREVIOUS EXAM',
         'CLASS ATTENDED DAYS (PREVIOUS YEAR)',
-        'C%',
+        'ATTENDENCE %',
         'Status',
         'Student PEN',
         'TC Number',
@@ -185,9 +181,7 @@ class ExportController extends Controller
         'STATUS',
         'UDISE',
         // Extended UDISE / Student Master profile columns (export-only if blank in records)
-        'Class & Section',
         'Aadhaar Status',
-        'Class/Section Roll No',
         'Is Child Identified as Out of School-Child',
         'When the Child is mainstreamed',
         'Whether having Disability Certificate?',
@@ -544,7 +538,6 @@ class ExportController extends Controller
             'expense' => ['Amount', 'Total expenses'],
             'salary' => ['Net Salary', 'Total net salary'],
             'bank' => ['Amount', 'Total bank movements'],
-            'fuel-log' => ['Cost', 'Total fuel cost'],
             default => null,
         };
 
@@ -569,7 +562,6 @@ class ExportController extends Controller
     private static function sheetTitle(string $entity): string
     {
         return match ($entity) {
-            'fuel-log' => 'Fuel Log',
             'student-udise' => 'Student UDISE',
             default => ucfirst($entity),
         };
@@ -586,10 +578,11 @@ class ExportController extends Controller
             'student' => $this->buildStudentMasterExport($request),
             'student-udise' => $this->buildStudentUdiseExport($request),
             'fee' => [
-                ['Receipt No', 'Student', 'Admission No', 'Amount', 'Discount', 'Fine', 'Mode', 'Date', 'Status'],
-                FeePayment::with('student:id,name,admission_no')
+                ['SESSION', 'Receipt No', 'Student', 'Admission No', 'Amount', 'Discount', 'Fine', 'Mode', 'Date', 'Status'],
+                FeePayment::with(['student:id,name,admission_no', 'academicSession:id,name'])
                     ->when(! $allSessions && $session, fn ($q) => $q->where('academic_session_id', $session->id))
                     ->orderByDesc('payment_date')->get()->map(fn (FeePayment $p) => [
+                        $p->academicSession->name ?? '',
                         $p->receipt_no, $p->student->name ?? '', $p->student->admission_no ?? '', (float) $p->amount,
                         (float) $p->discount_amount, (float) $p->fine_amount, $p->payment_mode, $p->payment_date->toDateString(), $p->status,
                     ])->all(),
@@ -616,12 +609,6 @@ class ExportController extends Controller
                     $t->bankAccount->account_name ?? '', $t->type, (float) $t->amount, $t->date->toDateString(), $t->reference_no,
                 ])->all(),
             ],
-            'fuel-log' => [
-                ['Vehicle', 'Date', 'Liters', 'Cost', 'Odometer'],
-                $byDate(FuelLog::with('vehicle:id,vehicle_no'))->orderByDesc('date')->get()->map(fn (FuelLog $f) => [
-                    $f->vehicle->vehicle_no ?? '', $f->date->toDateString(), (float) $f->liters, (float) $f->cost, $f->odometer_reading,
-                ])->all(),
-            ],
             // Routes aren't session-bound data (a route doesn't belong to an academic year) — never scoped.
             'route' => [
                 ['Route', 'Start Point', 'End Point', 'Vehicle', 'Status'],
@@ -629,50 +616,115 @@ class ExportController extends Controller
                     $r->name, $r->start_point, $r->end_point, $r->vehicle->vehicle_no ?? '', $r->status,
                 ])->all(),
             ],
-            'marks' => [
-                ['Student', 'Admission No', 'Exam', 'Subject', 'Marks Obtained', 'Max Marks'],
-                Mark::with(['student:id,name,admission_no', 'examSchedule.exam:id,name', 'examSchedule.subject:id,name'])
-                    ->when(! $allSessions && $session, fn ($q) => $q->whereHas('examSchedule.exam', fn ($eq) => $eq->where('academic_session_id', $session->id)))
-                    ->get()->map(fn (Mark $m) => [
-                        $m->student->name ?? '', $m->student->admission_no ?? '', $m->examSchedule->exam->name ?? '',
-                        $m->examSchedule->subject->name ?? '', (float) $m->marks_obtained, (float) ($m->examSchedule->max_marks ?? 0),
-                    ])->all(),
-            ],
-            'attendance' => $this->buildAttendanceExport($byDate),
+            'attendance' => $this->buildAttendanceExport($request),
             default => [[], []],
         };
     }
 
     /**
-     * Attendance has no direct Eloquent relation to Student (polymorphic `attendable`, keyed
-     * by a literal 'student' type string, not a morph map) — resolved manually here instead.
+     * Monthly attendance summaries (same source as Attendance Import / Student Attendance UI).
+     * One wide row per student+session — month cells are days present (Mar→Feb school year).
      *
      * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
      */
-    private function buildAttendanceExport(\Closure $byDate): array
+    private function buildAttendanceExport(?Request $request = null): array
     {
-        $rows = $byDate(Attendance::where('attendable_type', 'student'))
-            ->orderBy('date')
-            ->get(['attendable_id', 'date', 'status', 'remarks']);
+        [$session, $allSessions] = $this->resolveHeaderSession($request);
+        $sessionStartYear = (! $allSessions && $session?->start_date)
+            ? (int) $session->start_date->format('Y')
+            : null;
 
-        $students = Student::query()
-            ->whereIn('id', $rows->pluck('attendable_id')->unique())
-            ->with(['schoolClass:id,name', 'section:id,name'])
-            ->get(['id', 'name', 'admission_no', 'school_class_id', 'section_id'])
-            ->keyBy('id');
+        $query = AttendanceMonthlySummary::query()
+            ->with(['student:id,name,admission_no,school_class_id,section_id,roll_no', 'student.schoolClass:id,name', 'student.section:id,name']);
+        if ($sessionStartYear !== null) {
+            $query->where('session_start_year', $sessionStartYear);
+        }
 
-        return [
-            ['Admission No', 'Student', 'Class', 'Section', 'Date', 'Status', 'Remarks'],
-            $rows->map(function (Attendance $a) use ($students) {
-                $student = $students->get($a->attendable_id);
+        $grouped = $query->get()->groupBy(fn (AttendanceMonthlySummary $r) => $r->student_id.'|'.$r->session_start_year);
 
-                return [
-                    $student->admission_no ?? '', $student->name ?? '',
-                    $student->schoolClass->name ?? '', $student->section->name ?? '',
-                    $a->date->toDateString(), $a->status, $a->remarks ?? '',
-                ];
-            })->all(),
+        // Month slots matching Attendance Import: Mar–Sep (start year), Oct–Mar (next year).
+        $monthSlots = [
+            [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0], [9, 0],
+            [10, 0], [11, 0], [12, 0], [1, 1], [2, 1], [3, 1],
         ];
+
+        $headers = [
+            'ENROL', 'NAME', 'CLASS', 'SECTION', 'SESSION',
+            'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'TOT', '%',
+            'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR2', 'TOT2', '%2',
+            'G TOT', 'G %',
+        ];
+
+        $rows = [];
+        foreach ($grouped as $key => $summaries) {
+            /** @var \Illuminate\Support\Collection<int, AttendanceMonthlySummary> $summaries */
+            $first = $summaries->first();
+            $student = $first?->student;
+            $startYear = (int) $first->session_start_year;
+            $byYm = [];
+            foreach ($summaries as $s) {
+                $byYm[sprintf('%04d-%02d', $s->year, $s->month)] = $s;
+            }
+
+            $presentCells = [];
+            $half1Wd = 0;
+            $half1Dp = 0;
+            $half2Wd = 0;
+            $half2Dp = 0;
+
+            foreach ($monthSlots as $index => [$month, $yearOffset]) {
+                $year = $startYear + $yearOffset;
+                $ym = sprintf('%04d-%02d', $year, $month);
+                $s = $byYm[$ym] ?? null;
+                $presentCells[] = $s !== null ? (int) $s->days_present : '';
+                if ($s) {
+                    if ($index < 7) {
+                        $half1Wd += (int) $s->working_days;
+                        $half1Dp += (int) $s->days_present;
+                    } else {
+                        $half2Wd += (int) $s->working_days;
+                        $half2Dp += (int) $s->days_present;
+                    }
+                }
+            }
+
+            $gWd = $half1Wd + $half2Wd;
+            $gDp = $half1Dp + $half2Dp;
+
+            $rows[] = array_merge(
+                [
+                    $student->admission_no ?? '',
+                    $student->name ?? '',
+                    $student->schoolClass->name ?? ($first->class_sheet ?? ''),
+                    $student->section->name ?? '',
+                    sprintf('%04d-%02d', $startYear, ($startYear + 1) % 100),
+                ],
+                array_slice($presentCells, 0, 7),
+                [
+                    $half1Wd > 0 || $half1Dp > 0 ? $half1Dp : '',
+                    $half1Wd > 0 ? round(($half1Dp / $half1Wd) * 100, 2) : '',
+                ],
+                array_slice($presentCells, 7, 6),
+                [
+                    $half2Wd > 0 || $half2Dp > 0 ? $half2Dp : '',
+                    $half2Wd > 0 ? round(($half2Dp / $half2Wd) * 100, 2) : '',
+                    $gWd > 0 || $gDp > 0 ? $gDp : '',
+                    $gWd > 0 ? round(($gDp / $gWd) * 100, 2) : '',
+                ]
+            );
+        }
+
+        usort($rows, function (array $a, array $b) {
+            $sessionCmp = strcmp((string) $a[4], (string) $b[4]);
+            if ($sessionCmp !== 0) {
+                return $sessionCmp;
+            }
+            $classCmp = strcmp((string) $a[2], (string) $b[2]);
+
+            return $classCmp !== 0 ? $classCmp : strcmp((string) $a[0], (string) $b[0]);
+        });
+
+        return [$headers, $rows];
     }
 
     /**
@@ -711,6 +763,12 @@ class ExportController extends Controller
         }
 
         $students = $query->get();
+
+        $monthlyByKey = AttendanceMonthlySummary::query()
+            ->whereIn('student_id', $students->pluck('id'))
+            ->get()
+            ->groupBy(fn (AttendanceMonthlySummary $r) => $r->student_id.'|'.$r->session_start_year);
+
         $rows = [];
 
         foreach ($students as $student) {
@@ -722,13 +780,18 @@ class ExportController extends Controller
             if ($allHistories->isEmpty()) {
                 // Zero-history fallback — only when current session is in the filter (or filter is all).
                 if ($sessionFilter === null || ($currentSessionName !== '' && array_intersect($currentAliases, $sessionFilter))) {
-                    $rows[] = $this->studentMasterRow($student, null, $currentSessionName);
+                    $startYear = $this->sessionStartYearFromLabel($currentSessionName)
+                        ?? ($currentSession?->start_date ? (int) $currentSession->start_date->format('Y') : null);
+                    $monthlyStats = $this->monthlyStatsFromGrouped($monthlyByKey, $student->id, $startYear);
+                    $rows[] = $this->studentMasterRow($student, null, $currentSessionName, $monthlyStats);
                 }
                 continue;
             }
 
             foreach ($histories as $history) {
-                $rows[] = $this->studentMasterRow($student, $history, $currentSessionName);
+                $startYear = $this->sessionStartYearFromLabel($history->session);
+                $monthlyStats = $this->monthlyStatsFromGrouped($monthlyByKey, $student->id, $startYear);
+                $rows[] = $this->studentMasterRow($student, $history, $currentSessionName, $monthlyStats);
             }
         }
 
@@ -741,6 +804,45 @@ class ExportController extends Controller
         });
 
         return $this->projectStudentColumns(self::STUDENT_MASTER_HEADERS, $rows, $request);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<string, \Illuminate\Support\Collection<int, AttendanceMonthlySummary>>  $monthlyByKey
+     * @return array{days_present: int|null, percentage: float|null}|null
+     */
+    private function monthlyStatsFromGrouped($monthlyByKey, int $studentId, ?int $sessionStartYear): ?array
+    {
+        if (! $sessionStartYear) {
+            return null;
+        }
+        $rows = $monthlyByKey->get($studentId.'|'.$sessionStartYear);
+        if (! $rows || $rows->isEmpty()) {
+            return null;
+        }
+
+        $workingDays = 0;
+        $daysPresent = 0;
+        foreach ($rows as $row) {
+            $workingDays += (int) $row->working_days;
+            $daysPresent += (int) $row->days_present;
+        }
+
+        return [
+            'days_present' => $daysPresent,
+            'percentage' => $workingDays > 0 ? round(($daysPresent / $workingDays) * 100, 2) : null,
+        ];
+    }
+
+    private function sessionStartYearFromLabel(?string $label): ?int
+    {
+        if (! $label) {
+            return null;
+        }
+        if (preg_match('/(\d{4})\s*-\s*\d{2,4}/', $label, $m)) {
+            return (int) $m[1];
+        }
+
+        return null;
     }
 
     /**
@@ -1003,9 +1105,10 @@ class ExportController extends Controller
     }
 
     /**
+     * @param  array{days_present: int|null, percentage: float|null}|null  $monthlyStats
      * @return array<int, mixed>
      */
-    private function studentMasterRow(Student $student, ?StudentSessionHistory $history, string $fallbackSession): array
+    private function studentMasterRow(Student $student, ?StudentSessionHistory $history, string $fallbackSession, ?array $monthlyStats = null): array
     {
         $udise = $student->udiseDetail;
         $additional = $student->additionalDetail;
@@ -1017,9 +1120,13 @@ class ExportController extends Controller
         $status = $history?->status ?: $student->status;
         $promotionStatus = $history?->promotion_status ?? '';
 
-        $classSection = trim($class.($section !== '' ? ' / '.$section : ''));
-        $classSectionRoll = trim($classSection.($roll ? ' · Roll '.$roll : ''), ' ·');
         $aadhaar = (string) ($student->aadhar_no ?? '');
+
+        // Prefer monthly summary totals when present; fall back to stored Master history values.
+        $attendanceDays = $monthlyStats['days_present'] ?? $history?->attendance_days;
+        $attendancePercent = array_key_exists('percentage', $monthlyStats ?? []) && $monthlyStats['percentage'] !== null
+            ? $monthlyStats['percentage']
+            : $history?->attendance_percent;
 
         return [
             $this->cell($session),
@@ -1067,8 +1174,8 @@ class ExportController extends Controller
             $this->cell($history?->exam_appeared),
             $this->cell($history?->exam_result),
             $this->cell($history?->exam_marks_percent),
-            $this->cell($history?->attendance_days),
-            $this->cell($history?->attendance_percent),
+            $this->cell($attendanceDays),
+            $this->cell($attendancePercent),
             $this->cell($status),
             $this->cell($udise?->student_pen),
             $this->cell($additional?->tc_number),
@@ -1076,9 +1183,7 @@ class ExportController extends Controller
             $this->cell($additional?->last_class_studied),
             $this->cell($promotionStatus),
             $this->cell($udise?->entry_status),
-            $this->cell($classSection),
             $this->cell($aadhaar !== '' ? 'Available' : 'Not Available'),
-            $this->cell($classSectionRoll),
             '', // Out of school child
             '', // Mainstreamed when
             '', // Disability certificate

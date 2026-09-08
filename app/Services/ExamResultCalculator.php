@@ -32,7 +32,7 @@ class ExamResultCalculator
 
         $students = Student::whereIn('school_class_id', $schedulesByClass->keys())
             ->where('status', 'Active')
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->forBranch($branchId)
             ->when($sectionId, fn ($q) => $q->where('section_id', $sectionId))
             ->get();
 

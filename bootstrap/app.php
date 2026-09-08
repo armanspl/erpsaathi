@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => App\Http\Middleware\IdentifyTenant::class,
             'central' => App\Http\Middleware\EnsureCentralDomain::class,
             'super_admin.auth' => App\Http\Middleware\RedirectSuperAdmin::class,
+            'demo.no_import' => App\Http\Middleware\BlockDemoImportExport::class,
         ]);
 
         $middleware->encryptCookies(except: [

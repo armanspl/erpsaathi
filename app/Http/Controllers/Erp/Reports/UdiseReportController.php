@@ -141,7 +141,7 @@ class UdiseReportController extends Controller
         ])->where('status', 'Active');
 
         if (! empty($data['branch_id'])) {
-            $query->where('branch_id', $data['branch_id']);
+            $query->forBranch((int) $data['branch_id']);
         }
         if (! empty($data['school_class_id'])) {
             $query->where('school_class_id', $data['school_class_id']);

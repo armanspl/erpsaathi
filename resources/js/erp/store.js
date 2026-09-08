@@ -57,7 +57,16 @@ const state = reactive({
         browser_title: '',
         watermark_text: '',
         compact_sidebar: false,
+        is_demo: false,
+        demo_hidden_import_export: [],
     },
+
+    /** Public Try Demo school. */
+    isDemoSchool: !!(window.__ERP_SCHOOL__?.is_demo),
+    /** Menu keys hidden for demo via Super Admin. */
+    demoHiddenImportExport: Array.isArray(window.__ERP_SCHOOL__?.demo_hidden_import_export)
+        ? window.__ERP_SCHOOL__.demo_hidden_import_export
+        : [],
 
     /** Effective permission keys for the logged-in user (* = full access). */
     permissions: (window.__ERP_USER__?.role === 'admin') ? ['*'] : [],
@@ -258,6 +267,14 @@ export async function loadPermissions() {
     try {
         const { data } = await client.get('/settings/permissions/me');
         state.permissions = Array.isArray(data.permissions) ? data.permissions : [];
+        if (typeof data.is_demo === 'boolean') {
+            state.isDemoSchool = data.is_demo;
+            state.school = { ...state.school, is_demo: data.is_demo };
+        }
+        if (Array.isArray(data.demo_hidden_import_export)) {
+            state.demoHiddenImportExport = data.demo_hidden_import_export;
+            state.school = { ...state.school, demo_hidden_import_export: data.demo_hidden_import_export };
+        }
         state.permissionsLoaded = true;
     } catch {
         // Fail closed for non-admins; keep prior value if any.

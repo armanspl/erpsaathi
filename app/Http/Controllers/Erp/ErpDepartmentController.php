@@ -33,6 +33,8 @@ class ErpDepartmentController extends Controller
         return response()->json([
             'permissions' => $this->resolver->forUser($user),
             'role' => $user?->role,
+            'is_demo' => app(\App\Services\Tenancy\DemoSchoolService::class)->isDemoRequest(),
+            'demo_hidden_import_export' => app(\App\Services\Tenancy\DemoSchoolService::class)->hiddenImportExportKeys(),
         ]);
     }
 

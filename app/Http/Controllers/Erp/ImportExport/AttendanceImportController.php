@@ -4,14 +4,11 @@ namespace App\Http\Controllers\Erp\ImportExport;
 
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
-use App\Models\Attendance;
-use App\Models\Holiday;
+use App\Models\AttendanceMonthlySummary;
 use App\Models\ImportExportLog;
 use App\Models\SchoolClass;
 use App\Models\Student;
-use App\Models\WorkingDayConfig;
 use App\Services\SpreadsheetImportReader;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -23,14 +20,10 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
  * STD DETAILS / empty sheets are ignored.
  *
  * Each class sheet gives, per student per month, a raw "days present" COUNT — not which
- * specific calendar days. Months are only imported when row-2 declared working days (W DAY)
- * for that month is filled and > 0; blank/future months are skipped. Blank/None present
- * counts are treated as 0 (all Absent for that month's working days).
- *
- * Conversion: take that many of the month's working days (WorkingDayConfig + Holiday,
- * capped by the sheet's declared total) in chronological order as Present, the rest as
- * Absent — an explicit approximation (see REMARKS_TEXT). Columns K/L/S/T/U/V/W (totals,
- * %, formulas) are ignored.
+ * specific calendar days. Those monthly totals are stored in attendance_monthly_summaries
+ * (never expanded into daily Present/Absent rows). Blank month cells are skipped; a
+ * literal 0 is stored as 0 present. Working days come from row 2 of the same column.
+ * Columns K/L/S/T/U/V/W (totals, %, formulas) are ignored.
  */
 class AttendanceImportController extends Controller
 {
@@ -71,8 +64,6 @@ class AttendanceImportController extends Controller
         17 => [3, 1],  // R = Mar (next year)
     ];
 
-    private const REMARKS_TEXT = 'Imported (approximate) — exact day not tracked';
-
     public function store(Request $request)
     {
         $request->validate([
@@ -95,7 +86,7 @@ class AttendanceImportController extends Controller
                 continue;
             }
             if (isset(self::CLASS_SHEET_MAP[$key])) {
-                $matched[$title] = self::CLASS_SHEET_MAP[$key];
+                $matched[$title] = ['class_name' => self::CLASS_SHEET_MAP[$key], 'sheet_key' => $key];
             } else {
                 $ignoredSheets[] = $title;
             }
@@ -130,28 +121,26 @@ class AttendanceImportController extends Controller
             : null;
 
         $studentsByAdm = Student::query()->pluck('id', 'admission_no')->all();
-        // Case-insensitive class lookup: "nursery" / "Nursery" / "1" all resolve.
         $classIdByName = [];
         foreach (SchoolClass::query()->get(['id', 'name']) as $class) {
             $classIdByName[mb_strtolower(trim((string) $class->name))] = $class->id;
         }
-        $workingDayConfig = WorkingDayConfig::current();
 
-        $holidaysCache = [];
         $declaredCapCache = [];
-        $workingDatesCache = [];
 
         $total = 0;
         $success = 0;
         $failed = 0;
-        $attendanceBuffer = [];
+        $summaryBuffer = [];
         $failedRowsBuffer = [];
         $failedLogsBuffer = [];
         $failedRowsResponse = [];
         $sheetStats = [];
         $skippedNoClass = [];
 
-        foreach ($matched as $title => $className) {
+        foreach ($matched as $title => $meta) {
+            $className = $meta['class_name'];
+            $sheetKey = $meta['sheet_key'];
             $sheet = $spreadsheet->getSheetByName($title);
             if (! $sheet) {
                 continue;
@@ -172,7 +161,7 @@ class AttendanceImportController extends Controller
             $rowNumber = 3;
             $sheetSuccess = 0;
             $sheetFailed = 0;
-            $sheetAttendanceCount = 0;
+            $sheetSummaryCount = 0;
 
             foreach ($parsed['rows'] as $row) {
                 $rowNumber++;
@@ -219,51 +208,44 @@ class AttendanceImportController extends Controller
                         $year = $sessionStartYear + $yearOffset;
                         $ym = sprintf('%04d-%02d', $year, $month);
 
-                        // Only months with a declared W DAY count on row 2 are imported.
-                        // Blank/future months (Aug/Sep / term 2 currently empty) are skipped.
-                        $cap = $declaredCapCache[$title][$ym] ?? null;
-                        if ($cap === null || $cap <= 0) {
+                        $workingDays = $declaredCapCache[$title][$ym] ?? null;
+                        if ($workingDays === null || $workingDays <= 0) {
                             continue;
                         }
 
-                        if (! isset($workingDatesCache[$title][$ym])) {
-                            $workingDatesCache[$title][$ym] = $this->computeWorkingDates(
-                                $ym,
-                                $workingDayConfig,
-                                $holidaysCache,
-                                $cap
-                            );
-                        }
-                        $workingDates = $workingDatesCache[$title][$ym];
-                        if ($workingDates === []) {
-                            continue;
-                        }
-
-                        // Blank / "None" present count = 0 (all Absent), not "skip month".
+                        // Blank month cells = not filled yet → skip (do not write zero).
                         $presentCount = $this->parsePresentCount($row[$colIndex] ?? null);
-                        $presentCount = min($presentCount, count($workingDates));
-
-                        foreach ($workingDates as $i => $date) {
-                            $attendanceBuffer[] = [
-                                'attendable_type' => 'student',
-                                'attendable_id' => $studentId,
-                                'date' => $date,
-                                'status' => $i < $presentCount ? 'Present' : 'Absent',
-                                'remarks' => self::REMARKS_TEXT,
-                                'marked_by_id' => $userId,
-                                'created_at' => $now,
-                                'updated_at' => $now,
-                            ];
-                            $sheetAttendanceCount++;
+                        if ($presentCount === null) {
+                            continue;
                         }
+
+                        $percentage = $workingDays > 0
+                            ? round(($presentCount / $workingDays) * 100, 2)
+                            : 0.0;
+
+                        $summaryBuffer[] = [
+                            'student_id' => $studentId,
+                            'school_class_id' => $classId,
+                            'class_sheet' => $sheetKey,
+                            'month' => $month,
+                            'year' => $year,
+                            'session_start_year' => $sessionStartYear,
+                            'working_days' => $workingDays,
+                            'days_present' => $presentCount,
+                            'percentage' => $percentage,
+                            'imported_by_id' => $userId,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                        $sheetSummaryCount++;
                     }
                 }
 
                 $success++;
                 $sheetSuccess++;
 
-                if (count($attendanceBuffer) >= 800) {
-                    $this->flushAttendance($attendanceBuffer);
+                if (count($summaryBuffer) >= 500) {
+                    $this->flushSummaries($summaryBuffer);
                 }
             }
 
@@ -272,11 +254,11 @@ class AttendanceImportController extends Controller
                 'class' => $className,
                 'students' => $sheetSuccess,
                 'failed' => $sheetFailed,
-                'attendance_records' => $sheetAttendanceCount,
+                'monthly_summaries' => $sheetSummaryCount,
             ];
         }
 
-        $this->flushAttendance($attendanceBuffer);
+        $this->flushSummaries($summaryBuffer);
         foreach (array_chunk($failedRowsBuffer, 250) as $chunk) {
             DB::table('import_failed_rows')->insert($chunk);
         }
@@ -287,7 +269,7 @@ class AttendanceImportController extends Controller
         $spreadsheet->disconnectWorksheets();
         unset($spreadsheet);
 
-        $totalAttendanceRecords = array_sum(array_column($sheetStats, 'attendance_records'));
+        $totalSummaries = array_sum(array_column($sheetStats, 'monthly_summaries'));
 
         $log->update([
             'total_rows' => $total,
@@ -299,7 +281,7 @@ class AttendanceImportController extends Controller
             'Session: '.($sessionLabel ?? 'could not be determined — no attendance was written'),
             'Sheets matched: '.count($matched),
             'Students processed: '.$total,
-            'Attendance day-records written: '.$totalAttendanceRecords,
+            'Monthly summary rows written: '.$totalSummaries,
             'Failed (student not found): '.$failed,
         ];
         if ($skippedNoClass !== []) {
@@ -316,7 +298,8 @@ class AttendanceImportController extends Controller
                 'sheets' => $sheetStats,
                 'sheets_ignored' => $ignoredSheets,
                 'sheets_skipped_no_class' => $skippedNoClass,
-                'attendance_records_written' => $totalAttendanceRecords,
+                'monthly_summaries_written' => $totalSummaries,
+                'attendance_records_written' => $totalSummaries, // backward-compatible alias for ImportExport UI
                 'session' => $sessionLabel,
             ],
             'message' => implode(' | ', $messageParts),
@@ -324,13 +307,26 @@ class AttendanceImportController extends Controller
     }
 
     /** @param  list<array<string, mixed>>  $buffer */
-    private function flushAttendance(array &$buffer): void
+    private function flushSummaries(array &$buffer): void
     {
         if ($buffer === []) {
             return;
         }
         foreach (array_chunk($buffer, 500) as $chunk) {
-            Attendance::upsert($chunk, ['attendable_type', 'attendable_id', 'date'], ['status', 'remarks', 'marked_by_id', 'updated_at']);
+            AttendanceMonthlySummary::upsert(
+                $chunk,
+                ['student_id', 'year', 'month'],
+                [
+                    'school_class_id',
+                    'class_sheet',
+                    'session_start_year',
+                    'working_days',
+                    'days_present',
+                    'percentage',
+                    'imported_by_id',
+                    'updated_at',
+                ]
+            );
         }
         $buffer = [];
     }
@@ -340,18 +336,24 @@ class AttendanceImportController extends Controller
         return preg_replace('/\s+/', ' ', strtoupper(trim($title))) ?? '';
     }
 
-    /** Blank / "None" / non-numeric → 0 present days. */
-    private function parsePresentCount(mixed $raw): int
+    /**
+     * Blank / empty → null (skip month). Numeric including 0 → days present.
+     * "None" is treated as 0 present (explicit zero), not blank.
+     */
+    private function parsePresentCount(mixed $raw): ?int
     {
         if ($raw === null) {
-            return 0;
+            return null;
         }
         $text = trim((string) $raw);
-        if ($text === '' || strcasecmp($text, 'None') === 0 || strcasecmp($text, 'null') === 0) {
+        if ($text === '') {
+            return null;
+        }
+        if (strcasecmp($text, 'None') === 0 || strcasecmp($text, 'null') === 0) {
             return 0;
         }
         if (! is_numeric($text)) {
-            return 0;
+            return null;
         }
 
         return max(0, (int) round((float) $text));
@@ -389,11 +391,8 @@ class AttendanceImportController extends Controller
     }
 
     /**
-     * Row 2's own per-month working-day totals (D2, E2, F2... same column positions as the
-     * student data), where filled in — used as a cap on the computed working-day list, since
-     * the school's real calendar (mid-term breaks etc.) may not be fully reflected in
-     * WorkingDayConfig/Holiday yet. A blank/non-numeric/zero cell means "month not started"
-     * — that month is skipped entirely on import.
+     * Row 2's per-month working-day totals (same columns as student data).
+     * Blank/non-numeric/zero → month not started; that month is skipped on import.
      *
      * @return array<string, int>  Y-m => declared working days
      */
@@ -401,7 +400,7 @@ class AttendanceImportController extends Controller
     {
         $caps = [];
         foreach (self::MONTH_COLUMNS as $colIndex => [$month, $yearOffset]) {
-            $colLetter = Coordinate::stringFromColumnIndex($colIndex + 1); // 0-indexed -> 1-indexed
+            $colLetter = Coordinate::stringFromColumnIndex($colIndex + 1);
             $cell = $sheet->getCell($colLetter.'2');
             $raw = $cell->getCalculatedValue();
             if ($raw === null || $raw === '' || (is_string($raw) && str_starts_with($raw, '='))) {
@@ -419,35 +418,5 @@ class AttendanceImportController extends Controller
         }
 
         return $caps;
-    }
-
-    /** @return list<string> chronological working dates (Y-m-d) in this Y-m month, capped if given. */
-    private function computeWorkingDates(string $ym, WorkingDayConfig $config, array &$holidaysCache, ?int $cap): array
-    {
-        $start = Carbon::createFromFormat('Y-m', $ym)->startOfMonth();
-        $daysInMonth = $start->daysInMonth;
-
-        if (! isset($holidaysCache[$ym])) {
-            $holidaysCache[$ym] = Holiday::whereYear('date', $start->year)->whereMonth('date', $start->month)
-                ->pluck('date')->map(fn ($d) => $d->toDateString())->all();
-        }
-        $holidayDates = $holidaysCache[$ym];
-
-        $offDays = is_array($config->weekly_off_days ?? null) ? $config->weekly_off_days : [];
-
-        $dates = [];
-        for ($day = 1; $day <= $daysInMonth; $day++) {
-            $date = $start->copy()->day($day);
-            if (in_array($date->format('l'), $offDays, true) || in_array($date->toDateString(), $holidayDates, true)) {
-                continue;
-            }
-            $dates[] = $date->toDateString();
-        }
-
-        if ($cap !== null && $cap >= 0 && $cap < count($dates)) {
-            $dates = array_slice($dates, 0, $cap);
-        }
-
-        return $dates;
     }
 }

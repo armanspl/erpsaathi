@@ -65,7 +65,9 @@ return new class extends Migration
 .tc-logo-cell{ display:table-cell; width:18mm; vertical-align:middle; }
 .tc-logo-cell-right{ display:table-cell; width:18mm; vertical-align:middle; text-align:right; }
 .tc-logo{ width:16mm; height:16mm; object-fit:contain; }
-.tc-head{ display:table-cell; text-align:center; vertical-align:middle; padding:0 2mm; overflow:hidden; }
+/* Must stay block — official TC HTML uses <div class="tc-head"> outside any table.
+   display:table-cell here makes Dompdf throw "Parent table not found for table cell". */
+.tc-head{ display:block; text-align:center; vertical-align:middle; padding:0 2mm; margin-bottom:0.5mm; overflow:hidden; }
 .tc-school{ font-size:18pt; font-weight:bold; color:#1e3a8a; letter-spacing:0.3px; margin:0; overflow-wrap:anywhere; word-wrap:break-word; }
 .tc-address{ font-size:8pt; font-weight:bold; margin-top:1mm; overflow-wrap:anywhere; word-wrap:break-word; }
 .tc-phone{ font-size:8pt; font-weight:bold; margin-top:0.6mm; overflow-wrap:anywhere; word-wrap:break-word; }

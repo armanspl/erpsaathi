@@ -237,7 +237,7 @@ class MarkController extends Controller
             throw ValidationException::withMessages(['file' => 'No subject columns in this file matched a subject assigned to this class.']);
         }
 
-        $studentsByAdmission = Student::where('branch_id', $data['branch_id'])
+        $studentsByAdmission = Student::forBranch((int) $data['branch_id'])
             ->where('school_class_id', $data['school_class_id'])
             ->when(! empty($data['section_id']), fn ($q) => $q->where('section_id', $data['section_id']))
             ->get()
@@ -330,7 +330,7 @@ class MarkController extends Controller
     private function rosterStudents(array $data)
     {
         $query = Student::where('status', 'Active')
-            ->where('branch_id', $data['branch_id'])
+            ->forBranch((int) $data['branch_id'])
             ->where('school_class_id', $data['school_class_id'])
             ->when(! empty($data['section_id']), fn ($q) => $q->where('section_id', $data['section_id']));
 

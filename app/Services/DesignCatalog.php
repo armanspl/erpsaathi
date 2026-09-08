@@ -6,28 +6,29 @@ use Illuminate\Support\Facades\View;
 
 /**
  * Pre-built Blade designs offered when creating a new template — an alternative starting point
- * to the blank canvas starter. Each category ships two themes ("classic" and "modern"); picking
- * one seeds a render_mode="html" template (see DocumentRenderService) whose raw_html is generated
+ * to the blank canvas starter. Each category ships theme keys; picking one seeds a
+ * render_mode="html" template (see DocumentRenderService) whose raw_html is generated
  * once here and then edited/saved like any other custom-HTML template via the Code panel.
- *
- * Blade is only used as an authoring/rendering convenience at seed time — the resulting HTML is
- * static. Real per-document values are filled in later by the existing {{field}} substitution in
- * DocumentRenderService, exactly like a hand-pasted custom-HTML template. This means fields that
- * are pre-flattened multi-line strings (items_table, marks_table, etc.) render as a single
- * monospace block rather than a row-by-row HTML table — a real semantic table would need each
- * document type's row data exposed as its own token, which isn't part of this pass.
  */
 class DesignCatalog
 {
+    /** Default themes for most document categories. */
     public const THEMES = [
         'classic' => 'Classic',
         'modern' => 'Modern',
     ];
 
-    /** [width_mm, height_mm] per category — matches the dimensions the canvas starters already use. */
+    /** Admit Card ships three layout options (A4 Classic, A5 compact, A4 Modern). */
+    public const ADMIT_CARD_THEMES = [
+        'classic' => 'Classic (A4)',
+        'a5' => 'A5 Compact (2 per A4)',
+        'modern' => 'Modern (A4)',
+    ];
+
+    /** [width_mm, height_mm] default per category. */
     public const PAGE_SIZES = [
         'certificate' => [297, 210],
-        'admit_card' => [148, 210],
+        'admit_card' => [210, 297],
         'id_card' => [85.6, 54],
         'transport_card' => [85.6, 54],
         'library_card' => [85.6, 54],
@@ -39,6 +40,21 @@ class DesignCatalog
         'book_expense' => [210, 148],
     ];
 
+    /** Optional per-design page size overrides: category => designKey => [w, h]. */
+    public const DESIGN_PAGE_SIZES = [
+        'admit_card' => [
+            'classic' => [210, 297],
+            'modern' => [210, 297],
+            'a5' => [148, 210],
+        ],
+    ];
+
+    /** @return array<string, string> theme key => label for a category */
+    public static function themesFor(string $category): array
+    {
+        return $category === 'admit_card' ? self::ADMIT_CARD_THEMES : self::THEMES;
+    }
+
     /** @return array<int, array{key: string, label: string}> */
     public static function list(string $category): array
     {
@@ -46,11 +62,15 @@ class DesignCatalog
             return [];
         }
 
-        return collect(self::THEMES)->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values()->all();
+        return collect(self::themesFor($category))->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values()->all();
     }
 
-    public static function pageSize(string $category): array
+    public static function pageSize(string $category, ?string $designKey = null): array
     {
+        if ($designKey && isset(self::DESIGN_PAGE_SIZES[$category][$designKey])) {
+            return self::DESIGN_PAGE_SIZES[$category][$designKey];
+        }
+
         return self::PAGE_SIZES[$category] ?? [210, 297];
     }
 

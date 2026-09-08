@@ -22,12 +22,16 @@ Route::get('/', function () {
         'authenticated' => $authenticated,
         'loginUrl'      => url('/erp/login'),
         'dashboardUrl'  => url('/erp/dashboard'),
+        'tryDemoUrl'    => app(\App\Services\Tenancy\DemoSchoolService::class)->publicEnterUrl(),
         'schoolName'    => $tenant?->name ?: 'erpsaathi',
         'logoUrl'       => asset('assets/img/logo/erpsaathi.png'),
     ];
 
     return view('welcome', ['welcome' => $welcome]);
 })->name('home');
+
+// Public Try Demo — provisions Demo school + sample data, then opens ERP dashboard.
+Route::get('/erp/demo', App\Http\Controllers\DemoEnterController::class)->name('erp.demo');
 
 // ERP Auth Routes
 Route::post('/erp/authenticate', [App\Http\Controllers\ErpAuthController::class, 'login'])->name('erp.authenticate');

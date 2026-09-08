@@ -21,6 +21,25 @@ class IdentifyTenant
             return $next($request);
         }
 
+        // Public Try Demo entry.
+        // If Demo school already exists, boot it here so the ERP session cookie matches login.
+        // First-time provision still uses public mode; the controller then re-enters this route.
+        if ($request->is('erp/demo')) {
+            try {
+                $demoSlug = (string) config('tenancy.demo.slug', 'demo');
+                $demoSchool = $this->tenants->findBySlug($demoSlug);
+                if ($demoSchool && $demoSchool->status === 'active') {
+                    return $this->bootSchool($demoSchool, $next, $request);
+                }
+            } catch (\Throwable $e) {
+                // Master DB not ready — fall through to public provision attempt.
+            }
+
+            $this->tenants->usePublic();
+
+            return $next($request);
+        }
+
         // Apex marketing site (erpsaathi.com / www) — no school tenant.
         if ($this->isPublicApexHost($request)) {
             // ERP lives only on school subdomains (e.g. bright.erpsaathi.com).
@@ -28,6 +47,15 @@ class IdentifyTenant
                 abort(404);
             }
 
+            $this->tenants->usePublic();
+
+            return $next($request);
+        }
+
+        // Local only (127.0.0.1 / localhost): serve the same marketing homepage as
+        // production apex. Does not change erpsaathi.com or school subdomains.
+        // ERP continues below via ?school= / cookie / first-school fallback.
+        if ($this->isLocalHost($request) && $this->isLocalPublicPath($request)) {
             $this->tenants->usePublic();
 
             return $next($request);
@@ -59,6 +87,26 @@ class IdentifyTenant
         } catch (\Throwable $e) {
             // Master DB not bootstrapped yet — allow request through (local first-run).
             return $next($request);
+        }
+
+        // Stale ?school= / tenant cookie on local → try demo / first-school before 404.
+        if (! $school && $this->isLocalHost($request)) {
+            foreach (array_unique(array_filter([
+                config('tenancy.demo.slug'),
+                config('tenancy.first_school_slug'),
+            ])) as $fallback) {
+                if ($fallback === $slug) {
+                    continue;
+                }
+                try {
+                    $school = $this->tenants->findBySlug($fallback);
+                } catch (\Throwable $e) {
+                    $school = null;
+                }
+                if ($school) {
+                    break;
+                }
+            }
         }
 
         if (! $school) {
@@ -123,6 +171,23 @@ class IdentifyTenant
     protected function isSuperAdminPath(Request $request): bool
     {
         return $request->is('super-admin') || $request->is('super-admin/*');
+    }
+
+    /**
+     * Local paths that should behave like the production marketing apex.
+     * ERP + Super Admin keep normal tenant/central resolution.
+     */
+    protected function isLocalPublicPath(Request $request): bool
+    {
+        if ($this->isSuperAdminPath($request)) {
+            return false;
+        }
+
+        if ($request->is('erp') || $request->is('erp/*')) {
+            return false;
+        }
+
+        return true;
     }
 
     protected function isLocalHost(Request $request): bool

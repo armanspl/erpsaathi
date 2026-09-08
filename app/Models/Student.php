@@ -135,6 +135,21 @@ class Student extends Model
     }
 
     /**
+     * Match a selected branch, and also include students with no branch set.
+     * Imports/legacy rows often leave branch_id null on single-campus schools.
+     */
+    public function scopeForBranch($query, ?int $branchId)
+    {
+        if (! $branchId) {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($branchId) {
+            $q->where('branch_id', $branchId)->orWhereNull('branch_id');
+        });
+    }
+
+    /**
      * The most recent session's history row — `session` sorts lexically in chronological
      * order (e.g. "2026-27" > "2025-26"). `latestOfMany()`/`ofMany()` only exist on HasOne
      * (via the CanBeOneOfMany trait) — HasMany doesn't have them, so this must be defined as

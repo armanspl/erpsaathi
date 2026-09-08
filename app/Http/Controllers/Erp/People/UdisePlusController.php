@@ -32,7 +32,7 @@ class UdisePlusController extends Controller
         }
 
         if ($request->filled('branch_id')) {
-            $query->where('branch_id', $request->integer('branch_id'));
+            $query->forBranch($request->integer('branch_id'));
         }
         if ($request->filled('school_class_id')) {
             $query->where('school_class_id', $request->integer('school_class_id'));

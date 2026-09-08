@@ -80,6 +80,7 @@ import client from '../../api/client';
 
 const suggestions = [
     'How do I add a student?',
+    'How do I prepare UDISE+ FORM S02?',
     'How do I prepare UDISE+ FORM S03?',
     'Where are School Settings?',
     'How do I collect a fee payment?',

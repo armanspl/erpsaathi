@@ -150,6 +150,12 @@
                         <button v-if="s.status === 'active'" type="button" class="sa-text-btn warn" @click="setStatus(s, 'inactive')">Deactivate</button>
                         <button v-else-if="s.status !== 'provisioning'" type="button" class="sa-text-btn ok" @click="setStatus(s, 'active')">Activate</button>
                         <button type="button" class="sa-text-btn" @click="openEdit(s)">Edit billing</button>
+                        <button
+                          v-if="isDemoSchool(s)"
+                          type="button"
+                          class="sa-text-btn"
+                          @click="openDemoIe(s)"
+                        >Demo Import/Export</button>
                         <button type="button" class="sa-text-btn" @click="resetAdmin(s)">Reset admin</button>
                         <button type="button" class="sa-text-btn danger" @click="openDelete(s)">Delete</button>
                       </div>
@@ -250,6 +256,29 @@
       </div>
     </div>
 
+    <!-- Demo Import & Export visibility -->
+    <div v-if="demoIeTarget" class="sa-modal-backdrop" @click.self="demoIeTarget = null">
+      <div class="sa-modal">
+        <h2>Demo Import &amp; Export — {{ demoIeTarget.name }}</h2>
+        <p class="sa-help">
+          Choose which Import &amp; Export menu items visitors see in the Try Demo school.
+          Unchecked items are hidden from the sidebar and blocked in the API.
+        </p>
+        <div class="sa-demo-ie-list">
+          <label v-for="item in demoIeCatalog" :key="item.key" class="sa-demo-ie-row">
+            <input v-model="demoIeVisible[item.key]" type="checkbox" />
+            <span>{{ item.label }}</span>
+          </label>
+        </div>
+        <div class="sa-modal-actions">
+          <button type="button" class="sa-btn sa-btn-ghost" @click="demoIeTarget = null">Cancel</button>
+          <button type="button" class="sa-btn sa-btn-primary" :disabled="saving" @click="saveDemoIe">
+            {{ saving ? 'Saving…' : 'Save visibility' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Delete modal -->
     <div v-if="deleteTarget" class="sa-modal-backdrop" @click.self="closeDelete">
       <div class="sa-modal sa-modal-danger">
@@ -314,6 +343,18 @@ export default {
       form: emptyForm(),
       editTarget: null,
       editForm: { price: '', renewal_charge: '', billing_currency: 'INR' },
+      demoIeTarget: null,
+      demoIeVisible: {},
+      demoIeCatalog: [
+        { key: 'global-workbook-import', label: 'Global Workbook Import' },
+        { key: 'global-workbook-export', label: 'Global Workbook Export' },
+        { key: 'student-pen-import', label: 'Student PEN Import' },
+        { key: 'student-export', label: 'Student Export' },
+        { key: 'student-udise-export', label: 'Student UDISE Export' },
+        { key: 'attendance-import', label: 'Attendance Import' },
+        { key: 'attendance-export', label: 'Attendance Export' },
+        { key: 'exam-marks-import', label: 'Exam Marks Import' },
+      ],
       deleteTarget: null,
       deleteConfirmation: '',
       deleting: false,
@@ -461,6 +502,43 @@ export default {
         renewal_charge: school.renewal_charge ?? '',
         billing_currency: school.billing_currency || 'INR',
       };
+    },
+    isDemoSchool(school) {
+      return String(school?.slug || '') === 'demo';
+    },
+    openDemoIe(school) {
+      this.demoIeTarget = school;
+      const hidden = Array.isArray(school?.demo_settings?.hidden_import_export)
+        ? school.demo_settings.hidden_import_export
+        : [];
+      const visible = {};
+      this.demoIeCatalog.forEach((item) => {
+        visible[item.key] = !hidden.includes(item.key);
+      });
+      this.demoIeVisible = visible;
+    },
+    async saveDemoIe() {
+      if (!this.demoIeTarget) return;
+      this.saving = true;
+      this.error = null;
+      try {
+        const hidden = this.demoIeCatalog
+          .filter((item) => !this.demoIeVisible[item.key])
+          .map((item) => item.key);
+        await this.api(`/super-admin/api/schools/${this.demoIeTarget.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            demo_settings: { hidden_import_export: hidden },
+          }),
+        });
+        this.flash = `Demo Import & Export visibility updated for ${this.demoIeTarget.name}.`;
+        this.demoIeTarget = null;
+        await this.refresh();
+      } catch (e) {
+        this.error = e.message;
+      } finally {
+        this.saving = false;
+      }
     },
     async saveBilling() {
       if (!this.editTarget) return;
@@ -740,6 +818,26 @@ export default {
 .sa-modal h2 { margin: 0 0 14px; font-size: 1.1rem; }
 .sa-modal-danger h2 { color: #b91c1c; }
 .sa-help { margin: 0 0 10px; font-size: 13px; color: var(--sa-muted); line-height: 1.5; }
+.sa-demo-ie-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--sa-border, #e2e8f0);
+  border-radius: 10px;
+}
+.sa-demo-ie-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--sa-ink, #0f172a);
+  cursor: pointer;
+}
+.sa-demo-ie-row input { width: 16px; height: 16px; }
 .sa-help-list { margin: 0 0 14px; padding-left: 18px; font-size: 12px; color: var(--sa-muted); }
 .sa-form { display: flex; flex-direction: column; gap: 12px; }
 .sa-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

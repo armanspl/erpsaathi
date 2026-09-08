@@ -7,6 +7,7 @@ use App\Models\AcademicSession;
 use App\Models\AdmissionEnquiry;
 use App\Models\ParentGuardian;
 use App\Models\Student;
+use App\Services\DefaultSchoolBranchService;
 use App\Support\AdmissionsCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -98,6 +99,7 @@ class AdmissionEnquiryController extends Controller
                 $student = Student::create([
                     'admission_no' => $this->nextAdmissionNo(),
                     'name' => $enquiry->student_name,
+                    'branch_id' => $enquiry->branch_id ?: DefaultSchoolBranchService::ensure()->id,
                     'school_class_id' => $enquiry->class_applying_for_id,
                     'guardian_id' => $guardian->id,
                     'gender' => $enquiry->gender,

@@ -127,7 +127,7 @@ class AdmitCardController extends Controller
     {
         $query = Student::query()
             ->where('status', 'Active')
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->forBranch($branchId)
             ->when($schoolClassId, fn ($q) => $q->where('school_class_id', $schoolClassId))
             ->when($sectionId, fn ($q) => $q->where('section_id', $sectionId))
             ->with(['schoolClass:id,name', 'section:id,name', 'father:id,name', 'mother:id,name']);

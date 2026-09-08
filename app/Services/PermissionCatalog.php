@@ -139,19 +139,14 @@ class PermissionCatalog
                 'label' => 'Import & Export',
                 'pages' => [
                     'global-workbook-import' => [
-                        'label' => 'All Workbook Import',
+                        'label' => 'Global Workbook Import',
                         'path' => '/import-export',
                         'actions' => ['view' => 'View', 'import' => 'Import', 'upload' => 'Upload'],
                     ],
                     'global-workbook-export' => [
-                        'label' => 'All Workbook Export',
+                        'label' => 'Global Workbook Export',
                         'path' => '/import-export',
                         'actions' => ['view' => 'View', 'export' => 'Export'],
-                    ],
-                    'student-import' => [
-                        'label' => 'Student Import',
-                        'path' => '/import-export',
-                        'actions' => ['view' => 'View', 'import' => 'Import', 'upload' => 'Upload'],
                     ],
                     'student-pen-import' => [
                         'label' => 'Student PEN Import',
@@ -315,9 +310,14 @@ class PermissionCatalog
                         'path' => '/people/visitor-records',
                         'actions' => ['view' => 'View', 'create' => 'Check In', 'edit' => 'Check Out', 'delete' => 'Delete'],
                     ],
-                    'udise-plus' => [
-                        'label' => 'UDISE+',
-                        'path' => '/people/udise-plus',
+                    'udiseplus-s02' => [
+                        'label' => 'UDISE+ S02',
+                        'path' => '/people/udiseplus-s02',
+                        'actions' => ['view' => 'View', 'download' => 'Download FORM S02'],
+                    ],
+                    'udiseplus-s03' => [
+                        'label' => 'UDISE+ S03',
+                        'path' => '/people/udiseplus-s03',
                         'actions' => ['view' => 'View', 'download' => 'Download', 'export' => 'Download ZIP'],
                     ],
                     'employee-master-import' => [
@@ -384,6 +384,11 @@ class PermissionCatalog
                             'download' => 'Download Receipt',
                             'export' => 'Export',
                         ],
+                    ],
+                    'fee-paid' => [
+                        'label' => 'Fee Paid',
+                        'path' => '/fee-management/fee-paid',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
                     ],
                     'fee-history' => [
                         'label' => 'Fee History',

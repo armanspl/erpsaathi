@@ -28,7 +28,8 @@ use Illuminate\Support\Facades\DB;
  * starts with TRANSPORT (e.g. "TRANSPORT-26", "TRANSPORT-27" next year), and any sheet whose
  * name starts with "Student Master" (e.g. "Student Master 22-26", "Student Master 23-27") are
  * processed; pivots, bank statements, salary, fuel, student duplicates, and summary dashboards
- * are ignored. Student Master runs first — see the note at that block in store().
+ * are ignored. TRANSPORT runs before Student Master so stoppage routes exist when bus
+ * numbers are attached — see the note at that block in store().
  *
  * The Student Master sheet is processed by {@see StudentMasterImportService} — the exact same
  * pipeline erp/dashboard/import-export?type=student-import uses on its own, so the two never
@@ -395,7 +396,14 @@ class GlobalWorkbookImportController extends Controller
             }
         };
 
-        // Student Master runs FIRST, before Income/Expenses — a new admission in this workbook
+        // TRANSPORT sheet first — builds Stoppage routes/fares before Student Master attaches
+        // Vehicle bus numbers (and student assignments) onto those routes.
+        $transportStats = ['transport_stops_updated' => 0, 'transport_stops_created' => 0, 'transport_routes_created' => 0, 'transport_rows_skipped' => 0];
+        if ($transportSheet) {
+            $transportStats = $this->importTransportSheet($transportSheet);
+        }
+
+        // Student Master runs before Income/Expenses — a new admission in this workbook
         // must exist in `students` before Income rows try to resolve it by Adm No.
         $studentMasterResult = null;
         if ($studentMasterSheet) {
@@ -437,10 +445,6 @@ class GlobalWorkbookImportController extends Controller
 
         $flush();
 
-        $transportStats = ['transport_stops_updated' => 0, 'transport_stops_created' => 0, 'transport_routes_created' => 0, 'transport_rows_skipped' => 0];
-        if ($transportSheet) {
-            $transportStats = $this->importTransportSheet($transportSheet);
-        }
         $stats = array_merge($stats, $transportStats);
 
         $breakdown['total_rows'] = $total;
@@ -469,9 +473,11 @@ class GlobalWorkbookImportController extends Controller
                 'counters' => $studentMasterResult['counters'],
                 'header_warnings' => $studentMasterResult['header_warnings'],
             ];
+            $vehiclesCreated = (int) ($studentMasterResult['counters']['vehicles_created'] ?? 0);
             $message .= ' | Student Master ('.$studentMasterSheet['title'].'): '
                 .$studentMasterResult['success_count'].' row(s) imported, '
                 .$studentMasterResult['failed_count'].' failed'
+                .($vehiclesCreated > 0 ? ', '.$vehiclesCreated.' vehicle(s) auto-created' : '')
                 .($studentMasterResult['header_warnings'] !== [] ? ', '.count($studentMasterResult['header_warnings']).' header warning(s)' : '')
                 .'. See Import Log for details.';
         }

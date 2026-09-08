@@ -148,7 +148,7 @@ class SeatPlanController extends Controller
     {
         $query = Student::query()
             ->where('status', 'Active')
-            ->where('branch_id', $data['branch_id'])
+            ->forBranch((int) $data['branch_id'])
             ->when(! empty($data['school_class_id']), fn ($q) => $q->where('school_class_id', $data['school_class_id']))
             ->when(! empty($data['section_id']), fn ($q) => $q->where('section_id', $data['section_id']));
 

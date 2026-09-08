@@ -60,7 +60,7 @@ class AnnualReportCalculator
         $students = Student::query()
             ->whereIn('school_class_id', $classIds)
             ->where('status', 'Active')
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->forBranch($branchId)
             ->when($sectionId, fn ($q) => $q->where('section_id', $sectionId))
             ->when($schoolClassId, fn ($q) => $q->where('school_class_id', $schoolClassId))
             ->get();

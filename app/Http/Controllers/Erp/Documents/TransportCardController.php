@@ -81,7 +81,7 @@ class TransportCardController extends Controller
     private function scopedStudents(Request $request): Collection
     {
         $query = Student::where('status', 'Active')
-            ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->integer('branch_id')))
+            ->when($request->filled('branch_id'), fn ($q) => $q->forBranch($request->integer('branch_id')))
             ->when($request->filled('school_class_id'), fn ($q) => $q->where('school_class_id', $request->integer('school_class_id')))
             ->when($request->filled('section_id'), fn ($q) => $q->where('section_id', $request->integer('section_id')))
             ->when($request->filled('search'), function ($q) use ($request) {

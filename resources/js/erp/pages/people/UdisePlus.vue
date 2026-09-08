@@ -2,8 +2,8 @@
     <div class="space-y-5">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">UDISE+</h1>
-                <Breadcrumb :items="['Dashboard', 'People', 'UDISE+']" class="mt-1" />
+                <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">UDISE+ S03</h1>
+                <Breadcrumb :items="['Dashboard', 'People', 'UDISE+ S03']" class="mt-1" />
                 <p class="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
                     Download <strong class="font-medium text-slate-700 dark:text-slate-200">FORM S03/UDISE</strong> — Format to update student details — pre-filled from school settings and student records. Shows all students by default; filter by status below if needed.
                 </p>

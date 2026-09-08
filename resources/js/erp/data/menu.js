@@ -21,7 +21,7 @@ const rawMenu = [
         label: 'Import & Export',
         icon: '📥',
         children: [
-            'Global Workbook Import', 'Global Workbook Export', 'Student Import', 'Student PEN Import', 'Student Export',
+            'Global Workbook Import', 'Global Workbook Export', 'Student PEN Import', 'Student Export',
             'Student UDISE Export',
             'Attendance Import', 'Attendance Export', 'Exam Marks Import',
         ],
@@ -39,7 +39,7 @@ const rawMenu = [
     {
         label: 'People',
         icon: '👥',
-        children: ['Users', 'Students', 'Parents', 'Teachers', 'Staff', 'Drivers', 'Visitor Records', 'UDISE+', 'Employee Master Import'],
+        children: ['Users', 'Students', 'Parents', 'Teachers', 'Staff', 'Drivers', 'Visitor Records', 'UDISE+ S02', 'UDISE+ S03', 'Employee Master Import'],
     },
     {
         label: 'Attendance',
@@ -52,7 +52,7 @@ const rawMenu = [
     {
         label: 'Fee Management',
         icon: '💰',
-        children: ['Fee Structure', 'Fee Due', 'Fee History', 'Pay Fee', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
+        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Pay Fee', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
     },
     {
         label: 'Finance & Payroll',

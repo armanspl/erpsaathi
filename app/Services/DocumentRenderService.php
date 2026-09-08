@@ -91,6 +91,7 @@ class DocumentRenderService
     {
         if ($template->render_mode === 'html' && $template->raw_html) {
             $body = $this->substituteTokens($template->raw_html, $data, $preserveTokens);
+            $body = $this->sanitizeCertificateHtmlForDompdf($body);
 
             return Str::contains(strtolower($body), '<html') ? $body : $this->wrapRawHtmlFragment($template, $body);
         }
@@ -347,6 +348,22 @@ class DocumentRenderService
         }
 
         return $out;
+    }
+
+    /**
+     * Dompdf treats display:table-cell as a real table cell and requires a parent table.
+     * Some TC templates incorrectly set .tc-head { display:table-cell } on a lone <div>,
+     * which throws "Parent table not found for table cell" during PDF render.
+     */
+    private function sanitizeCertificateHtmlForDompdf(string $html): string
+    {
+        $fixed = preg_replace(
+            '/\.tc-head\s*\{[^}]*display\s*:\s*table-cell[^}]*\}/i',
+            '.tc-head{ display:block; text-align:center; vertical-align:middle; padding:0 2mm; margin-bottom:0.5mm; overflow:hidden; }',
+            $html
+        );
+
+        return is_string($fixed) ? $fixed : $html;
     }
 
     /** Wraps a raw-HTML template's body fragment in a minimal document shell (@page sizing only). */

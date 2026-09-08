@@ -17,7 +17,7 @@
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Select Data To Import</h3>
                 <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
                     <button
-                        v-for="m in [...ENTITIES, ...EXTRA_IMPORT_ENTITIES]"
+                        v-for="m in visibleImportEntities"
                         :key="m.key"
                         type="button"
                         class="flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition"
@@ -30,10 +30,9 @@
                 </div>
             </div>
 
-            <div v-if="activeEntity === 'student' || activeEntity === 'student-pen' || activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-if="activeEntity === 'student-pen' || activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Upload — {{ uploadTitle }}</h3>
-                <p v-if="activeEntity === 'student'" class="mb-3 text-xs text-slate-400">Upload the Student Master Record workbook as-is (every academic session stacked in one sheet) — its real headers (Adm No., Class, DOB, Aadhaar No., etc.) are recognized directly, no renaming needed. Adm No. and Name are always required; Class is required only when creating a brand-new student. Rows are processed oldest-session-first, so the latest session always wins as the student's current data.</p>
-                <p v-else-if="activeEntity === 'student-pen'" class="mb-3 text-xs text-slate-400">Upload the UDISE portal's "Students Details" export as-is — run this after Student Import. Its title row (row 1) is skipped automatically. Matching is by ENRL # (same value as Master Record Adm No.); only the Student PEN column is imported, everything else (including the masked Aadhaar) is ignored.</p>
+                <p v-if="activeEntity === 'student-pen'" class="mb-3 text-xs text-slate-400">Upload the UDISE portal's "Students Details" export as-is — run this after Global Workbook Import (Student Master sheet). Its title row (row 1) is skipped automatically. Matching is by ENRL # (same value as Master Record Adm No.); only the Student PEN column is imported, everything else (including the masked Aadhaar) is ignored.</p>
                 <div v-else-if="activeEntity === 'exam-marks'" class="mb-3 space-y-2 text-xs text-slate-400">
                     <p>Upload one <strong class="text-slate-600 dark:text-slate-300">CLASS_&lt;name&gt;_TERM-1_&lt;session&gt;.xlsx</strong> file. Every marks sheet is processed: <strong class="text-slate-600 dark:text-slate-300">PT-1, NB-1, SEA-1, UNIT TEST / UNIT 1, GRADE</strong>. ATTD is ignored (attendance summary, not marks).</p>
                     <ul class="list-disc space-y-1 pl-4">
@@ -44,18 +43,18 @@
                     </ul>
                 </div>
                 <div v-else-if="activeEntity === 'attendance'" class="mb-3 space-y-2 text-xs text-slate-400">
-                    <p>Upload the per-class attendance workbook — one sheet per class named <strong class="text-slate-600 dark:text-slate-300">NUR, LKG, UKG, 1st–8th</strong>. Each sheet's row 3 is the header, student rows start at row 4 (read until ENROL is blank), and only the raw "days present" month columns are used — TOT/% columns are formulas and are ignored.</p>
+                    <p>Upload the per-class attendance workbook — one sheet per class named <strong class="text-slate-600 dark:text-slate-300">NUR, LKG, UKG, 1st–8th</strong>. Each sheet's row 3 is the header, student rows start at row 4 (read until ENROL is blank). Only the raw "days present" month columns are imported — TOT/% formula columns are ignored.</p>
                     <ul class="list-disc space-y-1 pl-4">
                         <li>Students matched by ENROL (admission no.) — must already exist</li>
-                        <li>Each month's count becomes real dated attendance rows: the school's actual working days for that month (from Working Day Config + Holidays, capped by the sheet's own row-2 total when smaller) are taken in order — the first N as Present, the rest Absent</li>
-                        <li>This is an approximation, not the true day-by-day record — every imported row is tagged "Imported (approximate)" in Remarks</li>
-                        <li>Re-importing the same file safely overwrites the same dates instead of duplicating</li>
+                        <li>Each filled month cell is stored as a monthly summary (working days from row 2, days present, %) — no daily Present/Absent rows are invented</li>
+                        <li>Blank month cells are skipped (month not filled yet); a literal 0 is stored as 0 present</li>
+                        <li>Re-import upserts the same student+month+year row instead of duplicating</li>
                     </ul>
                 </div>
                 <div v-else class="mb-3 space-y-2 text-xs text-slate-400">
                     <p>Upload the full school Excel workbook (.xlsx). Only <strong class="text-slate-600 dark:text-slate-300">INCOME</strong>, <strong class="text-slate-600 dark:text-slate-300">EXPENSES</strong>, <strong class="text-slate-600 dark:text-slate-300">TRANSPORT-*</strong>, and <strong class="text-slate-600 dark:text-slate-300">Student Master*</strong> sheets are imported.</p>
                     <ul class="list-disc space-y-1 pl-4">
-                        <li>Student Master* (e.g. "Student Master 22-26") → runs first, using the exact same import as Student Import, so new admissions in this sheet exist before INCOME rows try to match them</li>
+                        <li>Student Master* (e.g. "Student Master 22-26") → runs first so new admissions in this sheet exist before INCOME rows try to match them</li>
                         <li>INCOME with Adm No. → Fee Receipts (students must already exist)</li>
                         <li>INCOME without Adm No. → Finance Income</li>
                         <li>EXPENSES → Finance Expenses (Part-1 becomes category)</li>
@@ -149,7 +148,7 @@
 
         <!-- Export tab -->
         <div v-else-if="activeTab === 'export'" class="space-y-4">
-            <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-if="canUseIeKey('student-export')" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Student Export</h3>
                 <p class="mb-4 text-xs text-slate-400">Full session history in Master Import format. Filter by student status and academic sessions, then download.</p>
                 <div class="max-w-md rounded-xl border border-slate-100 p-3 dark:border-slate-800">
@@ -157,7 +156,7 @@
                 </div>
             </div>
 
-            <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-if="canUseIeKey('student-udise-export')" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Student UDISE Export</h3>
                 <p class="mb-4 text-xs text-slate-400">Only students marked In UDISE. Pick status, sessions, and columns — Excel includes checked columns in the order listed.</p>
                 <div class="max-w-md rounded-xl border border-slate-100 p-3 dark:border-slate-800">
@@ -165,10 +164,10 @@
                 </div>
             </div>
 
-            <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-if="visibleOtherExportEntities.length" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Other Exports</h3>
                 <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                    <div v-for="m in ENTITIES.filter((e) => e.key !== 'student')" :key="m.key" class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800" :class="m.key === 'global' && 'border-primary-200 bg-primary-50/40 dark:border-primary-500/30 dark:bg-primary-500/5'">
+                    <div v-for="m in visibleOtherExportEntities" :key="m.key" class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800" :class="m.key === 'global' && 'border-primary-200 bg-primary-50/40 dark:border-primary-500/30 dark:bg-primary-500/5'">
                         <div class="flex items-center gap-2.5">
                             <span class="text-lg">{{ m.icon }}</span>
                             <div>
@@ -263,11 +262,12 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from '../components/common/Breadcrumb.vue';
 import StudentExportPanel from '../components/export/StudentExportPanel.vue';
 import StudentUdiseExportPanel from '../components/export/StudentUdiseExportPanel.vue';
 import client from '../api/client';
+import { erpStore } from '../store';
 import { pushToast } from '../utils/toast';
 import { downloadExport } from '../utils/downloadExport';
 
@@ -288,9 +288,47 @@ const EXTRA_EXPORT_ENTITIES = [
     { key: 'student-udise', label: 'Student UDISE', icon: '📋', slug: 'student-udise' },
 ];
 
+// Dedicated Student Master import removed — use Global Workbook (Student Master sheet) instead.
+const IMPORT_PICKER_ENTITIES = [
+    ...ENTITIES.filter((e) => e.key !== 'student'),
+    ...EXTRA_IMPORT_ENTITIES,
+];
+
 const ALL_ROUTE_ENTITIES = [...ENTITIES, ...EXTRA_IMPORT_ENTITIES, ...EXTRA_EXPORT_ENTITIES];
 
+const IMPORT_ENTITY_TO_MENU_KEY = {
+    global: 'global-workbook-import',
+    'student-pen': 'student-pen-import',
+    attendance: 'attendance-import',
+    'exam-marks': 'exam-marks-import',
+};
+
+const EXPORT_ENTITY_TO_MENU_KEY = {
+    global: 'global-workbook-export',
+    attendance: 'attendance-export',
+};
+
+function canUseIeKey(menuKey) {
+    if (!erpStore.isDemoSchool) return true;
+    return !(erpStore.demoHiddenImportExport || []).includes(menuKey);
+}
+
+const visibleImportEntities = computed(() =>
+    IMPORT_PICKER_ENTITIES.filter((e) => {
+        const key = IMPORT_ENTITY_TO_MENU_KEY[e.key];
+        return !key || canUseIeKey(key);
+    }),
+);
+
+const visibleOtherExportEntities = computed(() =>
+    ENTITIES.filter((e) => e.key !== 'student').filter((e) => {
+        const key = EXPORT_ENTITY_TO_MENU_KEY[e.key];
+        return !key || canUseIeKey(key);
+    }),
+);
+
 const route = useRoute();
+const router = useRouter();
 const typeParam = computed(() => route.query.type?.toString() || '');
 
 const parsedType = computed(() => {
@@ -301,7 +339,11 @@ const parsedType = computed(() => {
 });
 
 const activeTab = ref(parsedType.value.direction || 'import');
-const activeEntity = ref(parsedType.value.entity?.key || 'student');
+const activeEntity = ref(
+    parsedType.value.entity?.key === 'student' && parsedType.value.direction === 'import'
+        ? 'global'
+        : (parsedType.value.entity?.key || 'global'),
+);
 const activeEntityLabel = computed(() => ALL_ROUTE_ENTITIES.find((e) => e.key === activeEntity.value)?.label || '');
 const uploadTitle = computed(() => {
     if (activeEntity.value === 'student') return 'Students';
@@ -320,6 +362,17 @@ const IMPORT_ENDPOINTS = {
     'exam-marks': '/import-export/import/class-term-marks',
 };
 
+// Redirect legacy Student Import bookmark to Global Workbook Import.
+watch(
+    typeParam,
+    (type) => {
+        if (type === 'student-import') {
+            router.replace({ path: route.path, query: { type: 'global-workbook-import' } });
+        }
+    },
+    { immediate: true },
+);
+
 // The whole Import & Export sidebar group shares this one route (only `type` in the
 // query differs), so Vue Router reuses this component instance across navigations —
 // re-sync local state from the query on every change instead of only at setup.
@@ -327,7 +380,13 @@ watch(
     parsedType,
     ({ direction, entity }) => {
         if (direction) activeTab.value = direction;
-        if (entity) activeEntity.value = entity.key;
+        if (entity) {
+            if (direction === 'import' && entity.key === 'student') {
+                activeEntity.value = 'global';
+            } else {
+                activeEntity.value = entity.key;
+            }
+        }
         resetUpload();
     },
 );
@@ -378,6 +437,19 @@ function resetUpload() {
     importPhase.value = 'idle';
     uploadProgress.value = 0;
 }
+
+watch(
+    visibleImportEntities,
+    (list) => {
+        if (activeTab.value !== 'import') return;
+        if (!list.length) return;
+        if (!list.some((e) => e.key === activeEntity.value)) {
+            activeEntity.value = list[0].key;
+            resetUpload();
+        }
+    },
+    { immediate: true },
+);
 
 async function submitImport() {
     const endpoint = IMPORT_ENDPOINTS[activeEntity.value];

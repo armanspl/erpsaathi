@@ -112,6 +112,10 @@ function childViewKey(group, child) {
 
 function canSeeChild(group, child) {
     if (child.action === 'logout') return true;
+    if (group.key === 'import-and-export' && erpStore.isDemoSchool
+        && (erpStore.demoHiddenImportExport || []).includes(child.key)) {
+        return false;
+    }
     if (!erpStore.permissionsLoaded && erpStore.user?.role === 'admin') return true;
     const key = childViewKey(group, child);
     return !key || can(key);

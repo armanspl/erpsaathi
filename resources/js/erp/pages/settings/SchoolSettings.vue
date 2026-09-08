@@ -135,11 +135,11 @@
                         </div>
                         <div>
                             <label class="form-label">District</label>
-                            <input v-model="form.district" type="text" class="form-input" placeholder="Used on UDISE+ S03 form" />
+                            <input v-model="form.district" type="text" class="form-input" placeholder="Used on UDISE+ S02 / S03 forms" />
                         </div>
                         <div>
                             <label class="form-label">Block</label>
-                            <input v-model="form.block" type="text" class="form-input" placeholder="Used on UDISE+ S03 form" />
+                            <input v-model="form.block" type="text" class="form-input" placeholder="Used on UDISE+ S02 / S03 forms" />
                         </div>
                         <div>
                             <label class="form-label">Pincode</label>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Erp\Attendance\Concerns\ResolvesAttendableType;
 use App\Models\AcademicSession;
 use App\Models\Attendance;
+use App\Models\AttendanceMonthlySummary;
 use App\Models\Driver;
 use App\Models\Holiday;
 use App\Models\Staff;
@@ -66,7 +67,342 @@ class AttendanceController extends Controller
                 'total_marked' => $total,
                 'percentage' => $percentage,
             ],
+            'monthly' => $this->buildMonthlyPayloadForStudent($student->id, $request->integer('session_start_year') ?: null),
         ]);
+    }
+
+    /**
+     * Monthly attendance summaries from Excel import (no invented daily rows).
+     * Filters: session_start_year, school_class_id, section_id, branch_id, search, student_id.
+     */
+    public function studentMonthlySummaries(Request $request)
+    {
+        $data = $request->validate([
+            'session_start_year' => 'nullable|integer|min:2000|max:2100',
+            'school_class_id' => 'nullable|exists:school_classes,id',
+            'section_id' => 'nullable|exists:sections,id',
+            'branch_id' => 'nullable|exists:branches,id',
+            'student_id' => 'nullable|exists:students,id',
+            'search' => 'nullable|string|max:120',
+        ]);
+
+        $sessionStartYear = isset($data['session_start_year'])
+            ? (int) $data['session_start_year']
+            : (AttendanceMonthlySummary::query()->max('session_start_year')
+                ?? (AcademicSession::where('is_current', true)->value('start_date')
+                    ? (int) AcademicSession::where('is_current', true)->first()->start_date->format('Y')
+                    : (int) now()->format('Y')));
+
+        $years = AttendanceMonthlySummary::query()
+            ->select('session_start_year')
+            ->distinct()
+            ->orderByDesc('session_start_year')
+            ->pluck('session_start_year')
+            ->map(fn ($y) => (int) $y)
+            ->values()
+            ->all();
+
+        // Always offer nearby session years so staff can enter data before any import.
+        $currentY = (int) now()->format('Y');
+        foreach (range($currentY - 2, $currentY + 1) as $y) {
+            if (! in_array($y, $years, true)) {
+                $years[] = $y;
+            }
+        }
+        rsort($years);
+
+        if (! empty($data['student_id'])) {
+            $student = Student::query()->findOrFail($data['student_id']);
+
+            return response()->json([
+                'session_start_year' => $sessionStartYear,
+                'available_years' => $years,
+                'student' => [
+                    'id' => $student->id,
+                    'name' => $student->name,
+                    'admission_no' => $student->admission_no,
+                    'school_class_id' => $student->school_class_id,
+                ],
+                'detail' => $this->buildMonthlyPayloadForStudent($student->id, $sessionStartYear),
+                'students' => [],
+            ]);
+        }
+
+        $studentQuery = Student::query()->orderBy('name');
+        if (! empty($data['branch_id'])) {
+            $studentQuery->forBranch((int) $data['branch_id']);
+        }
+        if (! empty($data['school_class_id'])) {
+            $studentQuery->where('school_class_id', $data['school_class_id']);
+        }
+        if (! empty($data['section_id'])) {
+            $studentQuery->where('section_id', $data['section_id']);
+        }
+        if (! empty($data['search'])) {
+            $term = trim($data['search']);
+            $studentQuery->where(function ($q) use ($term) {
+                $q->where('name', 'like', "%{$term}%")
+                    ->orWhere('admission_no', 'like', "%{$term}%");
+            });
+        }
+
+        $hasClassOrSearch = ! empty($data['school_class_id']) || ! empty($data['search']);
+
+        // With class/search: list those students so staff can enter monthly totals.
+        // Without: only students who already have monthly rows.
+        $studentIdsWithData = AttendanceMonthlySummary::query()
+            ->where('session_start_year', $sessionStartYear)
+            ->when(! empty($data['school_class_id']), fn ($q) => $q->where('school_class_id', $data['school_class_id']))
+            ->distinct()
+            ->pluck('student_id');
+
+        if (! $hasClassOrSearch) {
+            if ($studentIdsWithData->isEmpty()) {
+                return response()->json([
+                    'session_start_year' => $sessionStartYear,
+                    'available_years' => $years,
+                    'session_label' => sprintf('%04d-%02d', $sessionStartYear, ($sessionStartYear + 1) % 100),
+                    'students' => [],
+                ]);
+            }
+            $studentQuery->whereIn('id', $studentIdsWithData);
+        }
+
+        $students = $studentQuery->limit(300)->get(['id', 'name', 'admission_no', 'school_class_id', 'section_id', 'roll_no']);
+
+        $summariesByStudent = AttendanceMonthlySummary::query()
+            ->where('session_start_year', $sessionStartYear)
+            ->whereIn('student_id', $students->pluck('id'))
+            ->get()
+            ->groupBy('student_id');
+
+        $rows = $students->map(function (Student $student) use ($summariesByStudent, $sessionStartYear) {
+            $payload = $this->formatMonthlyPayload(
+                $summariesByStudent->get($student->id, collect()),
+                $sessionStartYear
+            );
+
+            return [
+                'id' => $student->id,
+                'name' => $student->name,
+                'admission_no' => $student->admission_no,
+                'roll_no' => $student->roll_no,
+                'school_class_id' => $student->school_class_id,
+                'half1_percentage' => $payload['half1']['percentage'],
+                'half2_percentage' => $payload['half2']['percentage'],
+                'full_percentage' => $payload['full']['percentage'],
+                'days_present_total' => $payload['full']['days_present'],
+                'working_days_total' => $payload['full']['working_days'],
+                'months' => $payload['months'],
+                'half1' => $payload['half1'],
+                'half2' => $payload['half2'],
+                'full' => $payload['full'],
+            ];
+        })->values();
+
+        return response()->json([
+            'session_start_year' => $sessionStartYear,
+            'available_years' => $years,
+            'session_label' => sprintf('%04d-%02d', $sessionStartYear, ($sessionStartYear + 1) % 100),
+            'students' => $rows,
+        ]);
+    }
+
+    /**
+     * Create/update/clear monthly attendance totals for one student (manual entry or correction).
+     * Months with both working_days and days_present blank are deleted if they exist.
+     */
+    public function storeStudentMonthlySummaries(Request $request)
+    {
+        $data = $request->validate([
+            'student_id' => 'required|exists:students,id',
+            'session_start_year' => 'required|integer|min:2000|max:2100',
+            'months' => 'required|array|min:1',
+            'months.*.month' => 'required|integer|min:1|max:12',
+            'months.*.year' => 'required|integer|min:2000|max:2100',
+            'months.*.working_days' => 'nullable|integer|min:0|max:31',
+            'months.*.days_present' => 'nullable|integer|min:0|max:31',
+        ]);
+
+        $student = Student::query()->findOrFail($data['student_id']);
+        $sessionStartYear = (int) $data['session_start_year'];
+        $userId = Auth::guard('erp')->id();
+        $now = now();
+
+        $saved = 0;
+        $cleared = 0;
+
+        foreach ($data['months'] as $monthRow) {
+            $month = (int) $monthRow['month'];
+            $year = (int) $monthRow['year'];
+            $workingRaw = $monthRow['working_days'] ?? null;
+            $presentRaw = $monthRow['days_present'] ?? null;
+
+            $workingBlank = $workingRaw === null || $workingRaw === '';
+            $presentBlank = $presentRaw === null || $presentRaw === '';
+
+            if ($workingBlank && $presentBlank) {
+                $deleted = AttendanceMonthlySummary::query()
+                    ->where('student_id', $student->id)
+                    ->where('year', $year)
+                    ->where('month', $month)
+                    ->delete();
+                $cleared += $deleted;
+
+                continue;
+            }
+
+            $workingDays = max(0, (int) ($workingRaw ?? 0));
+            $daysPresent = max(0, (int) ($presentRaw ?? 0));
+            if ($daysPresent > $workingDays && $workingDays > 0) {
+                $daysPresent = $workingDays;
+            }
+
+            $percentage = $workingDays > 0
+                ? round(($daysPresent / $workingDays) * 100, 2)
+                : 0.0;
+
+            AttendanceMonthlySummary::query()->updateOrCreate(
+                [
+                    'student_id' => $student->id,
+                    'year' => $year,
+                    'month' => $month,
+                ],
+                [
+                    'school_class_id' => $student->school_class_id,
+                    'class_sheet' => null,
+                    'session_start_year' => $sessionStartYear,
+                    'working_days' => $workingDays,
+                    'days_present' => $daysPresent,
+                    'percentage' => $percentage,
+                    'imported_by_id' => $userId,
+                    'updated_at' => $now,
+                ]
+            );
+            $saved++;
+        }
+
+        $detail = $this->buildMonthlyPayloadForStudent($student->id, $sessionStartYear);
+
+        return response()->json([
+            'message' => "Saved {$saved} month(s)".($cleared ? ", cleared {$cleared}" : '').'.',
+            'saved' => $saved,
+            'cleared' => $cleared,
+            'detail' => $detail,
+            'student' => [
+                'id' => $student->id,
+                'name' => $student->name,
+                'admission_no' => $student->admission_no,
+                'school_class_id' => $student->school_class_id,
+                'months' => $detail['months'],
+                'half1' => $detail['half1'],
+                'half2' => $detail['half2'],
+                'full' => $detail['full'],
+                'days_present_total' => $detail['full']['days_present'],
+                'working_days_total' => $detail['full']['working_days'],
+                'full_percentage' => $detail['full']['percentage'],
+            ],
+        ]);
+    }
+
+    /** @return array{months: list<array<string, mixed>>, half1: array<string, mixed>, half2: array<string, mixed>, full: array<string, mixed>} */
+    private function buildMonthlyPayloadForStudent(int $studentId, ?int $sessionStartYear): array
+    {
+        $query = AttendanceMonthlySummary::query()->where('student_id', $studentId);
+        if ($sessionStartYear) {
+            $query->where('session_start_year', $sessionStartYear);
+        } else {
+            $sessionStartYear = (int) ((clone $query)->max('session_start_year') ?: 0);
+            if ($sessionStartYear > 0) {
+                $query->where('session_start_year', $sessionStartYear);
+            }
+        }
+
+        $rows = $query->orderBy('year')->orderBy('month')->get();
+
+        return $this->formatMonthlyPayload($rows, $sessionStartYear ?: null);
+    }
+
+    /**
+     * Build Excel-shaped month list (Mar→Feb) with half-year and full-year totals.
+     *
+     * @param  \Illuminate\Support\Collection<int, AttendanceMonthlySummary>  $rows
+     * @return array{months: list<array<string, mixed>>, half1: array<string, mixed>, half2: array<string, mixed>, full: array<string, mixed>}
+     */
+    private function formatMonthlyPayload($rows, ?int $sessionStartYear): array
+    {
+        $byKey = [];
+        foreach ($rows as $row) {
+            $byKey[sprintf('%04d-%02d', $row->year, $row->month)] = $row;
+        }
+
+        $monthOrder = [
+            [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0], [9, 0], // Mar–Sep
+            [10, 0], [11, 0], [12, 0], [1, 1], [2, 1], [3, 1], // Oct–Mar
+        ];
+
+        $months = [];
+        $half1 = ['working_days' => 0, 'days_present' => 0];
+        $half2 = ['working_days' => 0, 'days_present' => 0];
+
+        if (! $sessionStartYear) {
+            return [
+                'months' => [],
+                'half1' => $this->pctBucket($half1),
+                'half2' => $this->pctBucket($half2),
+                'full' => $this->pctBucket(['working_days' => 0, 'days_present' => 0]),
+            ];
+        }
+
+        foreach ($monthOrder as $index => [$month, $yearOffset]) {
+            $year = $sessionStartYear + $yearOffset;
+            $key = sprintf('%04d-%02d', $year, $month);
+            $row = $byKey[$key] ?? null;
+            $months[] = [
+                'month' => $month,
+                'year' => $year,
+                'month_label' => date('F', mktime(0, 0, 0, $month, 1)),
+                'working_days' => $row?->working_days,
+                'days_present' => $row?->days_present,
+                'percentage' => $row !== null ? (float) $row->percentage : null,
+                'imported' => $row !== null,
+            ];
+
+            if ($row) {
+                if ($index < 7) {
+                    $half1['working_days'] += (int) $row->working_days;
+                    $half1['days_present'] += (int) $row->days_present;
+                } else {
+                    $half2['working_days'] += (int) $row->working_days;
+                    $half2['days_present'] += (int) $row->days_present;
+                }
+            }
+        }
+
+        $full = [
+            'working_days' => $half1['working_days'] + $half2['working_days'],
+            'days_present' => $half1['days_present'] + $half2['days_present'],
+        ];
+
+        return [
+            'months' => $months,
+            'half1' => $this->pctBucket($half1),
+            'half2' => $this->pctBucket($half2),
+            'full' => $this->pctBucket($full),
+        ];
+    }
+
+    /** @param  array{working_days: int, days_present: int}  $bucket */
+    private function pctBucket(array $bucket): array
+    {
+        $wd = (int) $bucket['working_days'];
+        $dp = (int) $bucket['days_present'];
+
+        return [
+            'working_days' => $wd,
+            'days_present' => $dp,
+            'percentage' => $wd > 0 ? round(($dp / $wd) * 100, 2) : null,
+        ];
     }
 
     /** Dates that have at least one student attendance row in the range (History tab). */
@@ -135,7 +471,7 @@ class AttendanceController extends Controller
 
         $students = Student::query()
             ->where('status', 'Active')
-            ->when($data['branch_id'] ?? null, fn ($q, $id) => $q->where('branch_id', $id))
+            ->when($data['branch_id'] ?? null, fn ($q, $id) => $q->forBranch((int) $id))
             ->where('school_class_id', $data['school_class_id'])
             ->when($data['section_id'] ?? null, fn ($q, $id) => $q->where('section_id', $id))
             ->orderBy('roll_no')
@@ -636,7 +972,7 @@ class AttendanceController extends Controller
 
             $query->with(['section:id,name'])->where('status', 'Active');
             if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->query('branch_id'));
+                $query->forBranch((int) $request->query('branch_id'));
             }
             if ($request->filled('school_class_id')) {
                 $query->where('school_class_id', $request->query('school_class_id'));
@@ -762,7 +1098,7 @@ class AttendanceController extends Controller
 
         $students = Student::query()
             ->where('status', 'Active')
-            ->when($data['branch_id'] ?? null, fn ($q, $id) => $q->where('branch_id', $id))
+            ->when($data['branch_id'] ?? null, fn ($q, $id) => $q->forBranch((int) $id))
             ->where('school_class_id', $data['school_class_id'])
             ->when($data['section_id'] ?? null, fn ($q, $id) => $q->where('section_id', $id))
             ->orderBy('roll_no')->orderBy('name')
@@ -868,7 +1204,7 @@ class AttendanceController extends Controller
     {
         $query = Student::query()->where('status', 'Active');
         if (! empty($filters['branch_id'])) {
-            $query->where('branch_id', $filters['branch_id']);
+            $query->forBranch((int) $filters['branch_id']);
         }
         if (! empty($filters['school_class_id'])) {
             $query->where('school_class_id', $filters['school_class_id']);

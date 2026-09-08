@@ -19,6 +19,7 @@ use App\Models\StudentAdditionalDetail;
 use App\Models\StudentDocument;
 use App\Models\StudentSessionHistory;
 use App\Models\StudentUdiseDetail;
+use App\Services\DefaultSchoolBranchService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -79,7 +80,7 @@ class StudentController extends Controller
                 });
             }
             if ($request->filled('branch_id')) {
-                $query->where('branch_id', $request->integer('branch_id'));
+                $query->forBranch($request->integer('branch_id'));
             }
             if ($request->filled('school_class_id')) {
                 $query->where('school_class_id', $request->integer('school_class_id'));
@@ -184,6 +185,9 @@ class StudentController extends Controller
 
         // Default Active students from People stay Admitted; Registration/Admission forms set explicitly.
         $data['admission_status'] = $data['admission_status'] ?? 'Admitted';
+        if (empty($data['branch_id'])) {
+            $data['branch_id'] = DefaultSchoolBranchService::ensure()->id;
+        }
 
         // A student created here (not via Student Master Import) is, by definition, a fresh
         // admission into this system — default to "New" unless the form explicitly said "Old"
@@ -219,6 +223,10 @@ class StudentController extends Controller
 
         DB::transaction(function () use ($student, $data, $detailData, $udiseData, $request) {
             $this->applyResolvedGuardians($data, $request);
+
+            if (empty($data['branch_id'])) {
+                $data['branch_id'] = $student->branch_id ?: DefaultSchoolBranchService::ensure()->id;
+            }
 
             $student->update($data);
             $this->saveDetail($student, $detailData);

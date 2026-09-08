@@ -60,6 +60,13 @@ class PermissionResolver
             return true;
         }
 
+        // Legacy UDISE+ keys still grant UDISE+ S03 after rename.
+        $legacyUdise = preg_replace('/^people\.udiseplus-s03\./', 'people.udise-plus.', $permission);
+        $legacyUdise = preg_replace('/^people\.udiseplus\./', 'people.udise-plus.', $legacyUdise);
+        if ($legacyUdise !== $permission && in_array($legacyUdise, $perms, true)) {
+            return true;
+        }
+
         // Legacy module write gates (routes still use fee.manage etc.):
         // any non-view page action under that module satisfies the gate.
         $legacyWrite = [

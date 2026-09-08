@@ -1,0 +1,34 @@
+[
+    {
+        "label": "Bonafide",
+        "prefix": "BON",
+        "roles": "[\"student\"]",
+        "custom_fields": "[]",
+        "is_system": 1,
+        "template_name": "Bonafide Certificate"
+    },
+    {
+        "label": "Transfer Certificate",
+        "prefix": "TC",
+        "roles": "[\"student\"]",
+        "custom_fields": "[]",
+        "is_system": 1,
+        "template_name": "Transfer Certificate"
+    },
+    {
+        "label": "Character Certificate",
+        "prefix": "CC",
+        "roles": "[\"student\"]",
+        "custom_fields": "[]",
+        "is_system": 1,
+        "template_name": "Character Certificate"
+    },
+    {
+        "label": "Migration Certificate",
+        "prefix": "MC",
+        "roles": "[\"student\"]",
+        "custom_fields": "[]",
+        "is_system": 1,
+        "template_name": "Migration Certificate"
+    }
+]

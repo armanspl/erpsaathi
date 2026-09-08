@@ -179,6 +179,8 @@ class ErpAuthController extends Controller
                 'browser_title' => $school->browser_title,
                 'watermark_text' => $school->watermark_text,
                 'compact_sidebar' => (bool) $school->compact_sidebar,
+                'is_demo' => app(\App\Services\Tenancy\DemoSchoolService::class)->isDemoRequest(),
+                'demo_hidden_import_export' => app(\App\Services\Tenancy\DemoSchoolService::class)->hiddenImportExportKeys(),
             ],
         ]);
     }

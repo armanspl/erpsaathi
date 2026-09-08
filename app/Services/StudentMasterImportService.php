@@ -68,6 +68,10 @@ class StudentMasterImportService
         'clsl' => 'clsl',
         'name as per aadhaar' => 'name_as_per_aadhaar',
         'child is indian national?' => 'indian_national',
+        'indian nationality' => 'indian_national',
+        'indian nationality?' => 'indian_national',
+        'nationality' => 'indian_national',
+        'indian national' => 'indian_national',
         'guardian name (optional)' => 'guardian_name',
         'alternate mobile number (optional)' => 'alternate_mobile',
         'email id (student/parent/guardian) (optional)' => 'email',
@@ -84,7 +88,14 @@ class StudentMasterImportService
         'result for previous exam' => 'exam_result',
         'marks % of previous exam' => 'exam_marks_percent',
         'class attended days (previous year)' => 'attendance_days',
+        // Legacy Master sheet used "C%"; live workbooks use "ATTENDENCE %" (their spelling).
         'c%' => 'attendance_percent',
+        'attendance_percent' => 'attendance_percent',
+        'attendance %' => 'attendance_percent',
+        'attendance%' => 'attendance_percent',
+        'attendence %' => 'attendance_percent',
+        'attendence%' => 'attendance_percent',
+        'attendence_percent' => 'attendance_percent',
         'student pen' => 'student_pen',
         // Sheet column renamed Entry Status → UDISE; both headers write entry_status.
         'udise' => 'entry_status',
@@ -109,9 +120,17 @@ class StudentMasterImportService
 
     private static function parseYesNo(string $value): ?bool
     {
-        return match (strtolower(trim($value))) {
-            'yes' => true,
-            'no' => false,
+        $value = strtolower(trim($value));
+        if ($value === '') {
+            return null;
+        }
+
+        return match ($value) {
+            'yes', 'y', 'true', '1' => true,
+            'no', 'n', 'false', '0' => false,
+            // Student Master "INDIAN NATIONALity" column variants
+            'indian', 'indian nationality', 'indian national', 'india' => true,
+            'other', 'foreign', 'non-indian', 'non indian', 'nri' => false,
             default => null,
         };
     }
@@ -135,6 +154,36 @@ class StudentMasterImportService
             'other' => 'Other',
             default => $value,
         };
+    }
+
+    /**
+     * Excel often stores 85% as 0.85. Normalize to a readable percent string (e.g. "85").
+     */
+    private static function normalizeAttendancePercent(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '' || strcasecmp($raw, 'none') === 0) {
+            return '';
+        }
+
+        $raw = rtrim($raw, '%');
+        if (! is_numeric($raw)) {
+            return trim((string) $value);
+        }
+
+        $num = (float) $raw;
+        // Spreadsheet percent cells are typically 0–1 fractions.
+        if ($num > 0 && $num <= 1) {
+            $num *= 100;
+        }
+
+        $formatted = rtrim(rtrim(number_format($num, 2, '.', ''), '0'), '.');
+
+        return $formatted === '' ? '0' : $formatted;
     }
 
     /** Same casing-normalization idea as normalizeGender() — "NEW"/"new" and "OLD"/"old" → "New"/"Old". */
@@ -205,7 +254,8 @@ class StudentMasterImportService
         $statusOccurrence = 0;
 
         foreach ($header as $index => $rawName) {
-            $name = strtolower(trim((string) $rawName));
+            $name = strtolower(trim(str_replace("\xc2\xa0", ' ', (string) $rawName)));
+            $name = preg_replace('/\s+/', ' ', $name) ?? $name;
 
             if ($name === '') {
                 $warnings[] = 'Blank header at column ' . self::columnLetter($index) . ' — any data in that column was not imported.';
@@ -261,10 +311,11 @@ class StudentMasterImportService
      * parses rows by header NAME (never position), sorts each student's rows oldest-session
      * first (so `students` ends up reflecting the latest session regardless of file order —
      * usort is stable as of PHP 8, so same-session rows keep their original file order),
-     * upserts students + udise/additional details + session history for every row, but only
-     * creates Stoppage/Vehicle (and assigns transport) for rows whose SESSION matches the
-     * school's current academic session — older/other sessions in the sheet are skipped for
-     * transport master data.
+     * upserts students + udise/additional details + session history for every row.
+     * Vehicle numbers are always auto-created as master data (any session). Student
+     * transport assignment (and new Stoppage→Route creation) still only runs for rows
+     * whose SESSION matches the school's current academic session — older sessions are
+     * skipped for assignments so historical stoppages do not overwrite today's roster.
      *
      * @param  array<int, string>  $header
      * @param  array<int, array<int, mixed>>  $rows
@@ -280,7 +331,13 @@ class StudentMasterImportService
 
             $row = ['row_number' => $rowNumber];
             foreach ($columnMap as $field => $index) {
-                $value = trim((string) ($line[$index] ?? ''));
+                $raw = $line[$index] ?? '';
+                // Keep numeric Excel cells (including 0 / percentage fractions) instead of losing them.
+                if (is_int($raw) || is_float($raw)) {
+                    $value = (string) $raw;
+                } else {
+                    $value = trim((string) $raw);
+                }
                 $row[$field] = strtolower($value) === 'none' ? '' : $value;
             }
 
@@ -337,7 +394,9 @@ class StudentMasterImportService
             'classes' => SchoolClass::query()->pluck('id', 'name')->all(),
             'sections' => $sectionCache,
             'parents' => ParentGuardian::query()->pluck('id', 'name')->all(),
-            'vehicles' => Vehicle::query()->pluck('id', 'vehicle_no')->all(),
+            'vehicles' => Vehicle::query()->get(['id', 'vehicle_no'])
+                ->mapWithKeys(fn (Vehicle $v) => [mb_strtoupper(trim($v->vehicle_no)) => $v->id])
+                ->all(),
             'routes' => TransportRoute::query()->get(['id', 'name', 'vehicle_id'])->keyBy(fn ($r) => mb_strtolower($r->name))->all(),
             'default_branch_id' => $defaultBranch->id,
         ];
@@ -540,16 +599,18 @@ class StudentMasterImportService
         }
 
         $vehicleCreated = false;
-        $applyTransport = $this->rowMatchesCurrentSession($row, $currentSession);
-        if ($applyTransport && ($row['vehicle'] ?? '') !== '') {
-            $vehicleNo = trim($row['vehicle']);
-            if (! isset($cache['vehicles'][$vehicleNo])) {
-                $vehicle = Vehicle::create(['vehicle_no' => $vehicleNo]);
-                $cache['vehicles'][$vehicleNo] = $vehicle->id;
-                $vehicleCreated = true;
+        // Vehicle master data is created for every session row — not only the current one —
+        // so Transport → Vehicles fills in even when Student Master has stacked history years.
+        if (($row['vehicle'] ?? '') !== '') {
+            [$vehicleId, $vehicleCreated] = $this->ensureVehicle(trim((string) $row['vehicle']), $cache);
+            // If TRANSPORT sheet already created the stoppage route, attach this bus number.
+            $stoppage = trim((string) ($row['stoppage'] ?? ''));
+            if ($vehicleId && $stoppage !== '') {
+                $this->attachVehicleToRouteNamed($stoppage, $vehicleId, $cache);
             }
         }
 
+        $applyTransport = $this->rowMatchesCurrentSession($row, $currentSession);
         // Fee Start Month defaults to admission month when not already set.
         if (! empty($data['admission_date'])) {
             $admissionMonth = is_string($data['admission_date'])
@@ -624,6 +685,57 @@ class StudentMasterImportService
     }
 
     /**
+     * Create/match a vehicle by bus number. Keys are uppercased so "DL-01" and "dl-01" share one row.
+     *
+     * @param  array<string, mixed>  $cache
+     * @return array{0: int|null, 1: bool} [vehicle_id, was_created]
+     */
+    private function ensureVehicle(string $vehicleNo, array &$cache): array
+    {
+        $vehicleNo = trim($vehicleNo);
+        if ($vehicleNo === '') {
+            return [null, false];
+        }
+
+        $key = mb_strtoupper($vehicleNo);
+        if (isset($cache['vehicles'][$key])) {
+            return [(int) $cache['vehicles'][$key], false];
+        }
+
+        $vehicle = Vehicle::create([
+            'vehicle_no' => $vehicleNo,
+            'type' => 'Bus',
+            'capacity' => 40,
+            'status' => 'Active',
+        ]);
+        $cache['vehicles'][$key] = $vehicle->id;
+
+        return [$vehicle->id, true];
+    }
+
+    /**
+     * Attach a vehicle to an existing route named after a stoppage (e.g. created by TRANSPORT sheet).
+     *
+     * @param  array<string, mixed>  $cache
+     */
+    private function attachVehicleToRouteNamed(string $stoppage, int $vehicleId, array &$cache): void
+    {
+        $routeKey = mb_strtolower(trim($stoppage));
+        if ($routeKey === '' || ! isset($cache['routes'][$routeKey])) {
+            return;
+        }
+
+        $route = $cache['routes'][$routeKey];
+        if (! empty($route->vehicle_id)) {
+            return;
+        }
+
+        $route->vehicle_id = $vehicleId;
+        $route->save();
+        $cache['routes'][$routeKey] = $route;
+    }
+
+    /**
      * From Excel Stoppage + Vehicle (current session rows only):
      * - Stoppage/Vehicle "None"/blank → student is not on school transport (clear assignment).
      * - Otherwise create/match a Route named after Stoppage, assign Vehicle, ensure a stop
@@ -653,12 +765,7 @@ class StudentMasterImportService
         $vehicleCreated = false;
         $vehicleId = null;
         if ($vehicleNo !== '') {
-            if (! isset($cache['vehicles'][$vehicleNo])) {
-                $vehicle = Vehicle::create(['vehicle_no' => $vehicleNo]);
-                $cache['vehicles'][$vehicleNo] = $vehicle->id;
-                $vehicleCreated = true;
-            }
-            $vehicleId = $cache['vehicles'][$vehicleNo];
+            [$vehicleId, $vehicleCreated] = $this->ensureVehicle($vehicleNo, $cache);
         }
 
         $routeKey = mb_strtolower($stoppage);
@@ -680,6 +787,7 @@ class StudentMasterImportService
             if ($vehicleId && empty($route->vehicle_id)) {
                 $route->vehicle_id = $vehicleId;
                 $route->save();
+                $cache['routes'][$routeKey] = $route;
             }
         }
 
@@ -854,9 +962,17 @@ class StudentMasterImportService
             'previous_year_schooling_status', 'previous_year_class', 'exam_appeared', 'exam_result',
             'exam_marks_percent', 'attendance_days', 'attendance_percent', 'promotion_status',
         ] as $field) {
-            if (($row[$field] ?? '') !== '') {
-                $data[$field] = $row[$field];
+            if (($row[$field] ?? '') === '') {
+                continue;
             }
+            $value = $row[$field];
+            if ($field === 'attendance_percent') {
+                $value = self::normalizeAttendancePercent($value);
+                if ($value === '') {
+                    continue;
+                }
+            }
+            $data[$field] = $value;
         }
 
         if (($row['class'] ?? '') !== '') {

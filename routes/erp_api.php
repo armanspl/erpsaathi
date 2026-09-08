@@ -54,6 +54,7 @@ use App\Http\Controllers\Erp\FeeManagement\ErpFeeStructureController;
 use App\Http\Controllers\Erp\FeeManagement\FeeDiscountController;
 use App\Http\Controllers\Erp\FeeManagement\FeeDueController;
 use App\Http\Controllers\Erp\FeeManagement\FeeHistoryController;
+use App\Http\Controllers\Erp\FeeManagement\FeePaidController;
 use App\Http\Controllers\Erp\FeeManagement\FeeHeadController;
 use App\Http\Controllers\Erp\FeeManagement\FeeLookupController;
 use App\Http\Controllers\Erp\FeeManagement\FeePaymentController;
@@ -109,6 +110,7 @@ use App\Http\Controllers\Erp\People\PeopleLookupController;
 use App\Http\Controllers\Erp\People\StaffController;
 use App\Http\Controllers\Erp\People\StudentController;
 use App\Http\Controllers\Erp\People\UdisePlusController;
+use App\Http\Controllers\Erp\People\UdisePlusS02Controller;
 use App\Http\Controllers\Erp\People\TeacherController;
 use App\Http\Controllers\Erp\People\UserController;
 use App\Http\Controllers\Erp\People\VisitorController;
@@ -234,12 +236,16 @@ Route::prefix('people')->name('people.')->group(function () {
         Route::get('students/{student}', [StudentController::class, 'show'])->name('students.show');
     });
     Route::middleware('erp.permission:people.students.download')->get('students/{student}/documents/{type}', [StudentController::class, 'downloadDocument'])->name('students.documents.download');
-    Route::middleware('erp.permission:people.udise-plus.view')->group(function () {
+    Route::middleware('erp.permission:people.udiseplus-s03.view|people.udise-plus.view')->group(function () {
         Route::get('udise-plus', [UdisePlusController::class, 'index'])->name('udise-plus.index');
         Route::get('udise-plus/{student}', [UdisePlusController::class, 'show'])->name('udise-plus.show');
     });
-    Route::middleware('erp.permission:people.udise-plus.export')->get('udise-plus/zip', [UdisePlusController::class, 'downloadZip'])->name('udise-plus.zip');
-    Route::middleware('erp.permission:people.udise-plus.download')->get('udise-plus/{student}/s03-pdf', [UdisePlusController::class, 'downloadS03'])->name('udise-plus.s03-pdf');
+    Route::middleware('erp.permission:people.udiseplus-s03.export|people.udise-plus.export')->get('udise-plus/zip', [UdisePlusController::class, 'downloadZip'])->name('udise-plus.zip');
+    Route::middleware('erp.permission:people.udiseplus-s03.download|people.udise-plus.download')->get('udise-plus/{student}/s03-pdf', [UdisePlusController::class, 'downloadS03'])->name('udise-plus.s03-pdf');
+
+    Route::middleware('erp.permission:people.udiseplus-s02.view')->get('udise-plus-s02', [UdisePlusS02Controller::class, 'index'])->name('udise-plus-s02.index');
+    Route::middleware('erp.permission:people.udiseplus-s02.download')->post('udise-plus-s02/pdf', [UdisePlusS02Controller::class, 'downloadPdf'])->name('udise-plus-s02.pdf');
+
     Route::middleware('erp.permission:people.parents.view')->get('parents', [ParentController::class, 'index'])->name('parents.index');
     Route::middleware('erp.permission:people.teachers.view')->group(function () {
         Route::get('teachers', [TeacherController::class, 'index'])->name('teachers.index');
@@ -330,6 +336,8 @@ Route::prefix('fee-management')->name('fee-management.')->group(function () {
     Route::get('fine-rules', [FineRuleController::class, 'index'])->name('fine-rules.index');
     Route::get('due', [FeeDueController::class, 'index'])->name('due.index');
     Route::get('due/meta', [FeeDueController::class, 'meta'])->name('due.meta');
+    Route::get('fee-paid', [FeePaidController::class, 'index'])->name('fee-paid.index');
+    Route::middleware('erp.permission:fee-management.fee-paid.export')->get('fee-paid/export', [FeePaidController::class, 'export'])->name('fee-paid.export');
     Route::get('fee-history/meta', [FeeHistoryController::class, 'meta'])->name('fee-history.meta');
     Route::get('fee-history', [FeeHistoryController::class, 'index'])->name('fee-history.index');
     Route::get('fee-history/export', [FeeHistoryController::class, 'export'])->name('fee-history.export');
@@ -398,6 +406,7 @@ Route::prefix('attendance')->name('attendance.')->group(function () {
     Route::get('reports', [AttendanceReportController::class, 'index'])->name('reports.index');
     Route::get('mine', [AttendanceController::class, 'mine'])->name('mine');
     Route::get('student/sessions', [AttendanceController::class, 'studentSessions'])->name('student.sessions');
+    Route::get('student/monthly-summaries', [AttendanceController::class, 'studentMonthlySummaries'])->name('student.monthly-summaries');
     Route::get('student/sheet', [AttendanceController::class, 'studentSheet'])->name('student.sheet');
     Route::get('student/sheet/export', [AttendanceController::class, 'exportStudentSheet'])->name('student.sheet.export');
     Route::get('student/month', [AttendanceController::class, 'studentMonthGrid'])->name('student.month.grid');
@@ -430,6 +439,7 @@ Route::prefix('attendance')->name('attendance.')->group(function () {
         Route::post('driver/check-in', [AttendanceController::class, 'driverCheckIn'])->name('driver.check-in');
         Route::post('driver/route-students', [AttendanceController::class, 'storeDriverRouteStudents'])->name('driver.route-students.store');
         Route::post('student/month', [AttendanceController::class, 'storeStudentMonth'])->name('student.month.store');
+        Route::post('student/monthly-summaries', [AttendanceController::class, 'storeStudentMonthlySummaries'])->name('student.monthly-summaries.store');
         Route::post('{type}', [AttendanceController::class, 'store'])->whereIn('type', ['student', 'teacher', 'staff', 'driver'])->name('marking.store');
     });
 });
@@ -830,7 +840,7 @@ Route::prefix('reports')->name('reports.')->middleware('erp.permission:reports.v
     Route::put('udise/{student}', [UdiseReportController::class, 'update'])->name('udise.update');
 });
 
-Route::prefix('import-export')->name('import-export.')->group(function () {
+Route::prefix('import-export')->name('import-export.')->middleware('demo.no_import')->group(function () {
     // Reads are available to any authenticated ERP user.
     Route::get('export/{entity}', [ExportController::class, 'download'])->name('export.download');
     Route::get('logs', [ImportExportLogController::class, 'index'])->name('logs.index');

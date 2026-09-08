@@ -155,7 +155,7 @@ class FeeSettingController extends Controller
             $query->whereDate('payment_date', '<=', $data['to']);
         }
         if (! empty($data['branch_id'])) {
-            $query->whereHas('student', fn ($q) => $q->where('branch_id', $data['branch_id']));
+            $query->whereHas('student', fn ($q) => $q->forBranch((int) $data['branch_id']));
         }
 
         $vouchers = [];

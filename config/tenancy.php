@@ -72,4 +72,20 @@ return [
     */
     'production_notes' => 'Wildcard DNS *.erpsaathi.com → app; Super Admin on admin.erpsaathi.com',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Public Try Demo school
+    |--------------------------------------------------------------------------
+    |
+    | Marketing "Try Demo" provisions/opens this tenant with sample data.
+    |
+    */
+    'demo' => [
+        'slug' => env('DEMO_SCHOOL_SLUG', 'demo'),
+        'name' => env('DEMO_SCHOOL_NAME', 'Demo School'),
+        'admin_email' => env('DEMO_ADMIN_EMAIL', 'demo@erpsaathi.com'),
+        'admin_name' => env('DEMO_ADMIN_NAME', 'Demo Admin'),
+        'admin_password' => env('DEMO_ADMIN_PASSWORD', 'Demo@12345'),
+    ],
+
 ];

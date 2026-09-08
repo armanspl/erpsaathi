@@ -95,7 +95,6 @@ const COLUMN_GROUPS = [
         label: 'Basic Student Information',
         columns: [
             { key: 'Name', label: 'Student Name', mandatory: true },
-            { key: 'Class & Section', label: 'Class & Section' },
             { key: 'SESSION', label: 'Academic Year' },
             { key: 'Student PEN', label: 'Permanent Education Number (PEN)' },
             { key: 'Aadhaar Status', label: 'Aadhaar Status' },
@@ -119,7 +118,7 @@ const COLUMN_GROUPS = [
             { key: 'BELONGS TO EWS/DISADVANTAGED GROUP?', label: 'Whether belongs to EWS / Disadvantaged Group' },
             { key: 'CWSN', label: 'Whether CWSN' },
             { key: 'Type of Impairments', label: 'Type of Impairments' },
-            { key: 'CHILD IS INDIAN NATIONAL?', label: 'Indian Nationality' },
+            { key: 'INDIAN NATIONALity', label: 'INDIAN NATIONALity' },
             { key: 'Is Child Identified as Out of School-Child', label: 'Is Child Identified as Out of School-Child' },
             { key: 'When the Child is mainstreamed', label: 'When the Child is mainstreamed' },
             { key: 'Whether having Disability Certificate?', label: 'Whether having Disability Certificate?' },
@@ -132,7 +131,6 @@ const COLUMN_GROUPS = [
         columns: [
             { key: 'Adm No.', label: 'Admission Number in Present School', mandatory: true },
             { key: 'ADM DATE', label: 'Admission Date in Present School' },
-            { key: 'Class/Section Roll No', label: 'Class/Section Roll No' },
             { key: 'Medium of Instruction', label: 'Medium of Instruction' },
             { key: 'Languages Group Studied', label: 'Languages Group Studied' },
             { key: 'Academic Stream opted', label: 'Academic Stream opted' },
@@ -178,7 +176,7 @@ const COLUMN_GROUPS = [
             { key: 'Student State Code', label: 'Student State Code' },
             { key: 'Is Repeater', label: 'Is Repeater' },
             { key: 'APPEARED FOR EXAM IN PREVIOUS CLASS', label: 'Appeared for Exam in Previous Class' },
-            { key: 'C%', label: 'Attendance %' },
+            { key: 'ATTENDENCE %', label: 'ATTENDENCE %' },
             { key: 'Status', label: 'Status' },
             { key: 'TC Number', label: 'TC Number' },
             { key: 'TC Date', label: 'TC Date' },

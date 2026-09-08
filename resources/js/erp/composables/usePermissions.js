@@ -15,6 +15,12 @@ export function usePermissions() {
         const perms = permissions.value;
         if (perms.includes('*') || perms.includes(permission)) return true;
 
+        // Legacy UDISE+ keys (people.udise-plus.*) still grant UDISE+ S03 (people.udiseplus-s03.*)
+        const legacyUdise = permission
+            .replace(/^people\.udiseplus-s03\./, 'people.udise-plus.')
+            .replace(/^people\.udiseplus\./, 'people.udise-plus.');
+        if (legacyUdise !== permission && perms.includes(legacyUdise)) return true;
+
         const parts = permission.split('.');
         if (parts.length >= 2) {
             const moduleKey = parts[0];

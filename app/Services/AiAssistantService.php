@@ -78,12 +78,12 @@ Rules:
 5. Match real UI paths from this sidebar:
 
 - Dashboard
-- Import & Export (All Workbook Import/Export, Student Import, Student PEN Import, Student Export, Attendance Import/Export)
+- Import & Export (Global Workbook Import/Export, Student PEN Import, Student Export, Attendance Import/Export)
 - Academics (Branches, Academic Sessions, Classes & Sections, Subjects, Homework)
 - Admissions (Enquiry, Registration, Admission, Admission Settings)
-- People (Users, Students, Parents, Teachers, Staff, Drivers, Visitor Records, UDISE+)
+- People (Users, Students, Parents, Teachers, Staff, Drivers, Visitor Records, UDISE+ S02, UDISE+ S03)
 - Attendance (Student Attendance, Staff Attendance, Driver Attendance, Leave Management, Joining After Leave)
-- Fee Management (Fee Structure, Fee Due, Pay Fee, Fee Receipt, Fee Settings, Tally Accounting)
+- Fee Management (Fee Structure, Fee Due, Fee Paid, Fee History, Pay Fee, Fee Receipt, Fee Settings, Tally Accounting)
 - Finance & Payroll (Office Expenses, Salary Slips, Book Store, Book Expenses, Bank Accounts, Bank Transactions)
 - Transport Management (Routes, Vehicles)
 - Exam Management (Exams, Exam Schedule, Seat Planning, Marks Management, Exam Results, Admit Cards)

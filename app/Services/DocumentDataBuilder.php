@@ -597,9 +597,12 @@ class DocumentDataBuilder
 
         $escape = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-        $scheduleSheet = ExamScheduleSheet::where('exam_id', $exam->id)->where('branch_id', $student->branch_id)
-            ->with('dates.cells.subject:id,name')
-            ->first();
+        $scheduleQuery = ExamScheduleSheet::where('exam_id', $exam->id)
+            ->with('dates.cells.subject:id,name');
+        $scheduleSheet = $student->branch_id
+            ? ((clone $scheduleQuery)->where('branch_id', $student->branch_id)->first()
+                ?? $scheduleQuery->first())
+            : $scheduleQuery->first();
 
         // One date row: Date | Day | Sitting | Subject | Sitting | Subject | …
         // No Timing. Extra sittings wrap onto continuation rows (blank Date/Day).

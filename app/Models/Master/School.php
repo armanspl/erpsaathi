@@ -22,6 +22,7 @@ class School extends Model
         'storage_path',
         'is_first_school',
         'notes',
+        'demo_settings',
         'last_error',
     ];
 
@@ -31,6 +32,7 @@ class School extends Model
             'is_first_school' => 'boolean',
             'price' => 'decimal:2',
             'renewal_charge' => 'decimal:2',
+            'demo_settings' => 'array',
         ];
     }
 

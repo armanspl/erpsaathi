@@ -5,6 +5,7 @@ namespace App\Services\Tenancy;
 use App\Models\ErpUser;
 use App\Models\Master\School;
 use App\Models\Master\SchoolDomain;
+use App\Services\DefaultSchoolBranchService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -95,6 +96,7 @@ class SchoolProvisioner
             $this->createDatabase($dbName);
             $this->runTenantMigrations($dbName);
             $this->seedSchoolAdmin($dbName, $adminName, $adminEmail, $adminPassword);
+            $this->seedTenantDefaults($dbName, $name);
             $this->ensureStorage($storagePath);
 
             $school->update([
@@ -180,9 +182,13 @@ class SchoolProvisioner
         );
     }
 
-    protected function runTenantMigrations(string $dbName): void
+    /**
+     * Run pending tenant schema migrations on a school database.
+     * Used by provisioning and by `php artisan erp:deploy`.
+     */
+    public function runTenantMigrations(string $dbName, ?string $host = null): void
     {
-        $this->tenants->configureTemporaryConnection('tenant_provision', $dbName);
+        $this->tenants->configureTemporaryConnection('tenant_provision', $dbName, $host);
 
         Artisan::call('migrate', [
             '--database' => 'tenant_provision',
@@ -207,6 +213,25 @@ class SchoolProvisioner
         $user->role = 'admin';
         $user->is_active = true;
         $user->save();
+    }
+
+    /**
+     * Ensure school settings + a default branch exist so student branch filters work
+     * immediately after Super Admin creates a school (even before imports).
+     */
+    protected function seedTenantDefaults(string $dbName, string $schoolName): void
+    {
+        $this->tenants->configureTemporaryConnection('tenant_provision', $dbName);
+
+        $previous = config('database.default');
+        config(['database.default' => 'tenant_provision']);
+
+        try {
+            $branch = DefaultSchoolBranchService::ensureNamed($schoolName);
+            DefaultSchoolBranchService::assignUnassignedStudents($branch);
+        } finally {
+            config(['database.default' => $previous]);
+        }
     }
 
     protected function ensureStorage(string $path): void

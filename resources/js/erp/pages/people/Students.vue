@@ -597,7 +597,7 @@ const exporting = ref(false);
 const exportModalOpen = ref(false);
 
 function goImport() {
-    router.push({ path: '/import-export', query: { type: 'student-import' } });
+    router.push({ path: '/import-export', query: { type: 'global-workbook-import' } });
 }
 
 async function onStudentExport({ format, status, sessions, columns }) {

@@ -24,6 +24,7 @@ import Staff from '../pages/people/Staff.vue';
 import Drivers from '../pages/people/Drivers.vue';
 import VisitorRecords from '../pages/people/VisitorRecords.vue';
 import UdisePlus from '../pages/people/UdisePlus.vue';
+import UdisePlusS02 from '../pages/people/UdisePlusS02.vue';
 import EmployeeMasterImport from '../pages/people/EmployeeMasterImport.vue';
 import Admissions from '../pages/admissions/Admissions.vue';
 import Registration from '../pages/admissions/Registration.vue';
@@ -36,6 +37,7 @@ import FineRules from '../pages/fee-management/FineRules.vue';
 import PayFee from '../pages/fee-management/PayFee.vue';
 import FeeReceipts from '../pages/fee-management/FeeReceipts.vue';
 import FeeDue from '../pages/fee-management/FeeDue.vue';
+import FeePaid from '../pages/fee-management/FeePaid.vue';
 import FeeHistory from '../pages/fee-management/FeeHistory.vue';
 import FeeDueReceipt from '../pages/fee-management/FeeDueReceipt.vue';
 import DepositReceipt from '../pages/fee-management/DepositReceipt.vue';
@@ -151,6 +153,8 @@ const FLAGSHIP_ROUTES = {
     '/people/drivers': Drivers,
     '/people/visitor-records': VisitorRecords,
     '/people/udiseplus': UdisePlus,
+    '/people/udiseplus-s03': UdisePlus,
+    '/people/udiseplus-s02': UdisePlusS02,
     '/people/employee-master-import': EmployeeMasterImport,
     '/admissions/enquiry': Admissions,
     '/admissions/registration': Registration,
@@ -165,6 +169,7 @@ const FLAGSHIP_ROUTES = {
     '/fee-management/fee-receipt': FeeReceipts,
     '/fee-management/fee-refund': FeeReceipts,
     '/fee-management/fee-due': FeeDue,
+    '/fee-management/fee-paid': FeePaid,
     '/fee-management/fee-history': FeeHistory,
     '/fee-management/fee-due/receipt': { component: FeeDueReceipt, meta: { printPage: true } },
     '/fee-management/fee-receipt/print': { component: DepositReceipt, meta: { printPage: true } },
@@ -304,6 +309,15 @@ router.beforeEach(async (to) => {
 
     if (!erpStore.permissionsLoaded) {
         await loadPermissions();
+    }
+
+    if (
+        erpStore.isDemoSchool
+        && to.path === '/import-export'
+        && to.query?.type
+        && (erpStore.demoHiddenImportExport || []).includes(String(to.query.type))
+    ) {
+        return { path: '/' };
     }
 
     const { can } = usePermissions();

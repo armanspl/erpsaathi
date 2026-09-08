@@ -72,13 +72,22 @@ class SchoolController extends Controller
             'price' => ['nullable', 'numeric', 'min:0'],
             'renewal_charge' => ['nullable', 'numeric', 'min:0'],
             'billing_currency' => ['nullable', 'string', 'max:8'],
+            'demo_settings' => ['sometimes', 'nullable', 'array'],
+            'demo_settings.hidden_import_export' => ['sometimes', 'array'],
+            'demo_settings.hidden_import_export.*' => ['string', 'max:80'],
         ]);
 
         $school->fill(collect($data)->only([
-            'name', 'admin_email', 'notes', 'price', 'renewal_charge', 'billing_currency',
+            'name', 'admin_email', 'notes', 'price', 'renewal_charge', 'billing_currency', 'demo_settings',
         ])->all());
         if (isset($data['billing_currency'])) {
             $school->billing_currency = strtoupper(trim((string) $data['billing_currency'])) ?: 'INR';
+        }
+        if (array_key_exists('demo_settings', $data)) {
+            $hidden = array_values(array_unique(array_filter(
+                array_map('strval', $data['demo_settings']['hidden_import_export'] ?? [])
+            )));
+            $school->demo_settings = ['hidden_import_export' => $hidden];
         }
         $school->save();
 

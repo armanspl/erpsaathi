@@ -87,7 +87,7 @@ class FeePaymentController extends Controller
         if (! empty($data['branch_id']) || ! empty($data['school_class_id']) || ! empty($data['section_id']) || ! empty($data['search'])) {
             $query->whereHas('student', function ($q) use ($data) {
                 if (! empty($data['branch_id'])) {
-                    $q->where('branch_id', $data['branch_id']);
+                    $q->forBranch((int) $data['branch_id']);
                 }
                 if (! empty($data['school_class_id'])) {
                     $q->where('school_class_id', $data['school_class_id']);

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AcademicSession;
 use App\Models\Attendance;
+use App\Models\AttendanceMonthlySummary;
 use App\Models\CoScholasticGrade;
 use App\Models\Exam;
 use App\Models\GradeSystem;
@@ -363,10 +364,37 @@ class ReportCardPdfService
         return '<table class="co-grid">'.$thead.$bodyRows.'</table>';
     }
 
+    /**
+     * Prefer imported/manual monthly summaries for the session; fall back to daily marks
+     * when no monthly rows exist (schools that still mark day-by-day).
+     * Display: "38 / 84 (45.2%)" = days present / working days (percentage).
+     */
     private function attendanceSummary(int $studentId, ?AcademicSession $session): string
     {
         if ($studentId <= 0) {
             return '— / —';
+        }
+
+        $sessionStartYear = $session?->start_date
+            ? (int) $session->start_date->format('Y')
+            : null;
+
+        if ($sessionStartYear) {
+            $monthly = AttendanceMonthlySummary::query()
+                ->where('student_id', $studentId)
+                ->where('session_start_year', $sessionStartYear)
+                ->get(['working_days', 'days_present']);
+
+            if ($monthly->isNotEmpty()) {
+                $workingDays = (int) $monthly->sum('working_days');
+                $daysPresent = (int) $monthly->sum('days_present');
+                if ($workingDays <= 0 && $daysPresent <= 0) {
+                    return '— / —';
+                }
+                $pct = $workingDays > 0 ? round(($daysPresent / $workingDays) * 100, 1) : 0;
+
+                return $daysPresent.' / '.$workingDays.' ('.$pct.'%)';
+            }
         }
 
         $query = Attendance::query()
@@ -384,8 +412,9 @@ class ReportCardPdfService
         }
 
         $present = (clone $query)->whereIn('status', ['Present', 'Late', 'Half Day'])->count();
+        $pct = round(($present / $total) * 100, 1);
 
-        return $present.' / '.$total;
+        return $present.' / '.$total.' ('.$pct.'%)';
     }
 
     private function gradingSystemHtml(Collection $grades, callable $escape): string
