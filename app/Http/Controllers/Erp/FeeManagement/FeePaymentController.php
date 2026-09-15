@@ -17,6 +17,7 @@ use App\Services\DocumentRenderService;
 use App\Services\FeeBalanceService;
 use App\Services\FeeCalculator;
 use App\Services\FeeMonthAllocator;
+use App\Support\DashboardCache;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -516,6 +517,8 @@ class FeePaymentController extends Controller
             ]);
         }
 
+        DashboardCache::forget();
+
         return response()->json($payment->load(['student:id,name,admission_no', 'collectedBy:id,name']), 201);
     }
 
@@ -680,13 +683,14 @@ class FeePaymentController extends Controller
             'status' => $newRefundedTotal >= $payment->amount ? 'Refunded' : 'Partially Refunded',
         ]);
 
+        DashboardCache::forget();
+
         return response()->json($payment->load(['student:id,name,admission_no', 'collectedBy:id,name']));
     }
 
     /**
      * Correct a payment that was entered wrong (amount, date, fee head, months, mode, reference).
-     * Nothing is cached elsewhere — every due/balance figure is derived live from this row's
-     * items/amount, so updating it here is the recalculation.
+     * Dashboard fee snapshots are invalidated below so the next load recomputes from this row.
      */
     public function update(Request $request, FeePayment $payment)
     {
@@ -794,6 +798,8 @@ class FeePaymentController extends Controller
             ]);
         });
 
+        DashboardCache::forget();
+
         return response()->json($this->presentPayment(
             $payment->fresh(['student', 'collectedBy', 'editedBy', 'rolledBackBy'])
         ));
@@ -859,6 +865,8 @@ class FeePaymentController extends Controller
                 'performed_by_id' => Auth::guard('erp')->id(),
             ]);
         });
+
+        DashboardCache::forget();
 
         return response()->json($this->presentPayment(
             $payment->fresh(['student', 'collectedBy', 'editedBy', 'rolledBackBy'])

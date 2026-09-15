@@ -588,6 +588,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import Dropdown from '../../components/common/Dropdown.vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
@@ -1105,6 +1106,10 @@ async function exportDues(kind, format) {
 }
 
 async function boot() {
+    const route = useRoute();
+    const qSearch = typeof route.query.search === 'string' ? route.query.search.trim() : '';
+    if (qSearch) filters.search = qSearch;
+
     const [lookups, st, fee] = await Promise.all([
         fetchAcademicsLookups(),
         fetchFeeStudentsLite(),

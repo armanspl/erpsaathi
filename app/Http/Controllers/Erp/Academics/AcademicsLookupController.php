@@ -41,7 +41,7 @@ class AcademicsLookupController extends Controller
             return [
                 'branches' => Branch::query()
                     ->orderBy('name')
-                    ->get(['id', 'name', 'status']),
+                    ->get(['id', 'name', 'principal', 'status']),
                 'classes' => $classes->map(fn (SchoolClass $c) => [
                     'id' => $c->id,
                     'name' => $c->name,

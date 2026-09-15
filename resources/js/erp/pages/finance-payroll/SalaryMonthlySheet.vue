@@ -7,14 +7,26 @@
 
         <!-- Import -->
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Import salary workbook</h2>
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Unrelated sheets (Staff Details, Staff Detail Salary, ...) are skipped automatically. Every figure is recomputed from Present / CL / Basic Salary / Days in Month — nothing is copied blindly from the file.
-            </p>
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Select / Upload Excel File</h2>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Unrelated sheets (Staff Details, Staff Detail Salary, ...) are skipped automatically. Every figure is recomputed from Present / CL / Basic Salary / Days in Month — nothing is copied blindly from the file.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" class="btn-outline" :disabled="downloadingTemplate" @click="downloadTemplate">
+                        {{ downloadingTemplate ? 'Downloading...' : 'Download Template' }}
+                    </button>
+                    <button type="button" class="btn-primary" :disabled="!includedCount || importing" @click="runImport">
+                        {{ importing ? 'Importing...' : 'Import' }}
+                    </button>
+                </div>
+            </div>
 
             <div class="mt-4 flex flex-wrap items-end gap-3">
                 <div class="flex-1 min-w-[260px]">
-                    <label class="form-label">File</label>
+                    <label class="form-label">Excel file</label>
                     <input ref="fileInput" type="file" accept=".xlsx,.xls" class="form-input" @change="onFileSelected" />
                 </div>
                 <button type="button" class="btn-outline" :disabled="!selectedFile || scanning" @click="scan">
@@ -63,9 +75,6 @@
 
                 <div class="flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800">
                     <p class="text-xs text-slate-500 dark:text-slate-400">{{ includedCount }} sheet{{ includedCount === 1 ? '' : 's' }} will be imported.</p>
-                    <button type="button" class="btn-primary" :disabled="!includedCount || importing" @click="runImport">
-                        {{ importing ? 'Importing...' : 'Confirm & Import All' }}
-                    </button>
                 </div>
             </div>
 
@@ -143,6 +152,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import client from '../../api/client';
+import { downloadImportTemplate } from '../../utils/downloadExport';
 import { pushToast } from '../../utils/toast';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -155,8 +165,21 @@ const scanning = ref(false);
 const sheets = ref([]);
 const importing = ref(false);
 const importResults = ref(null);
+const downloadingTemplate = ref(false);
 
 const includedCount = computed(() => sheets.value.filter((s) => s.detected && s.include).length);
+
+async function downloadTemplate() {
+    downloadingTemplate.value = true;
+    try {
+        await downloadImportTemplate('salary-monthly');
+        pushToast('Template downloaded.', 'success');
+    } catch (err) {
+        pushToast(err?.response?.data?.message || 'Could not download template.', 'error');
+    } finally {
+        downloadingTemplate.value = false;
+    }
+}
 
 function onFileSelected(event) {
     selectedFile.value = event.target.files?.[0] || null;

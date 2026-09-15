@@ -54,6 +54,7 @@ use App\Http\Controllers\Erp\FeeManagement\ErpFeeStructureController;
 use App\Http\Controllers\Erp\FeeManagement\FeeDiscountController;
 use App\Http\Controllers\Erp\FeeManagement\FeeDueController;
 use App\Http\Controllers\Erp\FeeManagement\FeeHistoryController;
+use App\Http\Controllers\Erp\FeeManagement\MonthWiseFeeCollectionController;
 use App\Http\Controllers\Erp\FeeManagement\FeePaidController;
 use App\Http\Controllers\Erp\FeeManagement\FeeHeadController;
 use App\Http\Controllers\Erp\FeeManagement\FeeLookupController;
@@ -85,8 +86,13 @@ use App\Http\Controllers\Erp\ImportExport\StudentMasterImportController;
 use App\Http\Controllers\Erp\ImportExport\StudentPenImportController;
 use App\Http\Controllers\Erp\ImportExport\AttendanceImportController;
 use App\Http\Controllers\Erp\ImportExport\ClassTermMarksImportController;
+use App\Http\Controllers\Erp\ImportExport\ClassTermMarksExportController;
 use App\Http\Controllers\Erp\ImportExport\GlobalWorkbookImportController;
+use App\Http\Controllers\Erp\ImportExport\AcademicCalendarImportController;
+use App\Http\Controllers\Erp\ImportExport\AcademicCalendarExportController;
+use App\Http\Controllers\Erp\ImportExport\ImportTemplateController;
 use App\Http\Controllers\Erp\ImportExport\SalaryMonthlyImportController;
+use App\Http\Controllers\Erp\Academics\AcademicCalendarController;
 use App\Http\Controllers\Erp\ImportExport\EmployeeMasterImportController;
 use App\Http\Controllers\Erp\Inventory\InventoryReportController;
 use App\Http\Controllers\Erp\Inventory\LowStockAlertController;
@@ -195,6 +201,7 @@ Route::prefix('academics')->name('academics.')->group(function () {
     Route::get('subjects', [SubjectController::class, 'index'])->name('subjects.index');
     Route::get('homeworks', [HomeworkController::class, 'index'])->name('homeworks.index');
     Route::get('homework-items/{homeworkItem}/attachment', [HomeworkController::class, 'downloadAttachment'])->name('homework-items.attachment');
+    Route::get('academic-calendar', [AcademicCalendarController::class, 'index'])->name('academic-calendar.index');
 
     // Writes — page-level (legacy academics.manage still grants via PermissionResolver).
     Route::middleware('erp.permission:academics.branches.create')->post('branches', [BranchController::class, 'store'])->name('branches.store');
@@ -222,6 +229,10 @@ Route::prefix('academics')->name('academics.')->group(function () {
     Route::middleware('erp.permission:academics.homework.create')->post('homeworks', [HomeworkController::class, 'store'])->name('homeworks.store');
     Route::middleware('erp.permission:academics.homework.create')->post('homeworks/{homework}', [HomeworkController::class, 'update'])->name('homeworks.update');
     Route::middleware('erp.permission:academics.homework.delete')->delete('homeworks/{homework}', [HomeworkController::class, 'destroy'])->name('homeworks.destroy');
+
+    Route::middleware('erp.permission:academics.academic-calendar.create')->post('academic-calendar', [AcademicCalendarController::class, 'store'])->name('academic-calendar.store');
+    Route::middleware('erp.permission:academics.academic-calendar.edit')->put('academic-calendar/{academicCalendar}', [AcademicCalendarController::class, 'update'])->name('academic-calendar.update');
+    Route::middleware('erp.permission:academics.academic-calendar.delete')->delete('academic-calendar/{academicCalendar}', [AcademicCalendarController::class, 'destroy'])->name('academic-calendar.destroy');
 });
 
 Route::prefix('people')->name('people.')->group(function () {
@@ -341,6 +352,9 @@ Route::prefix('fee-management')->name('fee-management.')->group(function () {
     Route::get('fee-history/meta', [FeeHistoryController::class, 'meta'])->name('fee-history.meta');
     Route::get('fee-history', [FeeHistoryController::class, 'index'])->name('fee-history.index');
     Route::get('fee-history/export', [FeeHistoryController::class, 'export'])->name('fee-history.export');
+    Route::get('month-wise-collection/meta', [MonthWiseFeeCollectionController::class, 'meta'])->name('month-wise-collection.meta');
+    Route::get('month-wise-collection', [MonthWiseFeeCollectionController::class, 'index'])->name('month-wise-collection.index');
+    Route::get('month-wise-collection/export', [MonthWiseFeeCollectionController::class, 'export'])->name('month-wise-collection.export');
     Route::get('due/automatic/export', [FeeDueController::class, 'exportAutomatic'])->name('due.automatic.export');
     Route::get('due/manual/export', [FeeDueController::class, 'exportManual'])->name('due.manual.export');
     Route::get('due/manual', [FeeDueController::class, 'manualIndex'])->name('due.manual.index');
@@ -745,6 +759,8 @@ Route::prefix('documents')->name('documents.')->group(function () {
     Route::get('certificate-types', [CertificateTypeController::class, 'index'])->name('certificate-types.index');
     Route::get('certificates/recipients', [CertificateController::class, 'recipients'])->name('certificates.recipients');
     Route::get('certificates/{certificateType}/zip', [CertificateController::class, 'downloadZip'])->name('certificates.zip');
+    Route::get('certificates/{certificateType}/{student}/tc-checkout', [CertificateController::class, 'tcCheckout'])->name('certificates.tc-checkout');
+    Route::post('certificates/{certificateType}/{student}/tc-pay', [CertificateController::class, 'tcPay'])->name('certificates.tc-pay');
     Route::get('certificates/{certificateType}/{student}/pdf', [CertificateController::class, 'downloadStudentPdf'])->name('certificates.student-pdf');
     Route::get('certificates/{certificateType}/{student}/prepare', [CertificateController::class, 'prepareData'])->name('certificates.prepare');
     Route::get('id-cards', [IdCardController::class, 'index'])->name('id-cards.index');
@@ -842,7 +858,10 @@ Route::prefix('reports')->name('reports.')->middleware('erp.permission:reports.v
 
 Route::prefix('import-export')->name('import-export.')->middleware('demo.no_import')->group(function () {
     // Reads are available to any authenticated ERP user.
+    Route::get('export/academic-calendar', [AcademicCalendarExportController::class, 'download'])->name('export.academic-calendar');
+    Route::get('export/exam-marks', [ClassTermMarksExportController::class, 'download'])->name('export.exam-marks');
     Route::get('export/{entity}', [ExportController::class, 'download'])->name('export.download');
+    Route::get('templates/{type}', [ImportTemplateController::class, 'download'])->name('templates.download');
     Route::get('logs', [ImportExportLogController::class, 'index'])->name('logs.index');
     Route::get('logs/{importExportLog}/rows', [ImportExportLogController::class, 'rows'])->name('logs.rows');
     Route::get('failed-records', [FailedRecordController::class, 'index'])->name('failed-records.index');
@@ -857,6 +876,7 @@ Route::prefix('import-export')->name('import-export.')->middleware('demo.no_impo
         Route::post('import/global-workbook', [GlobalWorkbookImportController::class, 'store'])->name('import.global-workbook');
         Route::post('import/attendance', [AttendanceImportController::class, 'store'])->name('import.attendance');
         Route::post('import/class-term-marks', [ClassTermMarksImportController::class, 'store'])->name('import.class-term-marks');
+        Route::post('import/academic-calendar', [AcademicCalendarImportController::class, 'store'])->name('import.academic-calendar');
     });
 });
 

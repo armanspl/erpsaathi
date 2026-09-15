@@ -25,5 +25,6 @@ class PeopleCache
         Cache::forget(self::TEACHERS);
         Cache::forget(self::STAFF);
         Cache::forget(self::DRIVERS);
+        DashboardCache::forget();
     }
 }

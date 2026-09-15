@@ -1,0 +1,163 @@
+{
+    "label": "BEFORE",
+    "school": "future",
+    "db": "future_db",
+    "active_students": 291,
+    "session": "2026-2027",
+    "cold_ms": 7844.08,
+    "warm_ms": 4877.56,
+    "notifications_ms": 1.07,
+    "cold_query_count": 4349,
+    "warm_query_count": 4348,
+    "notifications_query_count": 0,
+    "duplicate_query_groups": 29,
+    "top_duplicate_queries": [
+        {
+            "count": 1164,
+            "sql": "select `items`, `amount`, `refunded_amount` from `fee_payments` where `student_id` = ? and `academic_session_id` = ? and (`status` is null or `status` not in (?, ?))"
+        },
+        {
+            "count": 1164,
+            "sql": "select * from `student_transports` where `student_id` = ? and `status` = ? limit 1"
+        },
+        {
+            "count": 680,
+            "sql": "select `id` from `fee_heads` where `name` = ? limit 1"
+        },
+        {
+            "count": 582,
+            "sql": "select `id`, `items`, `amount`, `refunded_amount`, `status` from `fee_payments` where `student_id` = ? and (`status` is null or `status` not in (?, ?)) and `academic_session_id` = "
+        },
+        {
+            "count": 140,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (3)"
+        },
+        {
+            "count": 68,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (30)"
+        },
+        {
+            "count": 60,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (19)"
+        },
+        {
+            "count": 56,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (4)"
+        },
+        {
+            "count": 48,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (8)"
+        },
+        {
+            "count": 36,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (2)"
+        },
+        {
+            "count": 36,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (16)"
+        },
+        {
+            "count": 32,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (1)"
+        },
+        {
+            "count": 24,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (15)"
+        },
+        {
+            "count": 20,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (9)"
+        },
+        {
+            "count": 16,
+            "sql": "select `id`, `fare` from `route_stops` where `route_stops`.`id` in (25)"
+        }
+    ],
+    "fingerprint": "abc866ae9c391a7d5c097ff5b2b8208937ee38b3b9fd62894ba30b7131de7d49",
+    "sample": {
+        "people_stats": {
+            "students": 291,
+            "teachers": 0,
+            "staff": 0,
+            "drivers": 0
+        },
+        "money_stats": {
+            "fee_collected": 3240685,
+            "fee_pending": 1630275,
+            "bank_balance": 1768860,
+            "expense": 2139589
+        },
+        "today_summary": {
+            "students": {
+                "present": 0,
+                "absent": 0
+            },
+            "staff": {
+                "present": 0,
+                "absent": 0
+            },
+            "fee": {
+                "received": 0,
+                "cash": 0,
+                "bank": 0,
+                "receipts": 0
+            }
+        },
+        "fee_collection_status_count": 11,
+        "fee_collection_status_top3": [
+            {
+                "class": 1,
+                "collected_amount": 352000,
+                "due_amount": 207400,
+                "collected": 63,
+                "due_pct": 37,
+                "pending": 38
+            },
+            {
+                "class": 6,
+                "collected_amount": 329050,
+                "due_amount": 183550,
+                "collected": 64,
+                "due_pct": 36,
+                "pending": 28
+            },
+            {
+                "class": 3,
+                "collected_amount": 319300,
+                "due_amount": 180500,
+                "collected": 64,
+                "due_pct": 36,
+                "pending": 33
+            }
+        ],
+        "class_strength_count": 11,
+        "pending_tasks": [
+            {
+                "label": "Fee Payments Pending",
+                "count": 279,
+                "to": "\/fee-management\/fee-due"
+            },
+            {
+                "label": "Leave Requests Pending",
+                "count": 0,
+                "to": "\/attendance\/leave-approval"
+            },
+            {
+                "label": "Admission Enquiries",
+                "count": 0,
+                "to": "\/admissions\/enquiry"
+            },
+            {
+                "label": "Salary Slips Pending",
+                "count": 0,
+                "to": "\/finance-and-payroll\/salary-slips"
+            },
+            {
+                "label": "Import Failed Records",
+                "count": 0,
+                "to": "\/import-export?type=failed-records"
+            }
+        ],
+        "notifications_total": 271
+    }
+}

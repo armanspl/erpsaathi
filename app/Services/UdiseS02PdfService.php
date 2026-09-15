@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AcademicSession;
+use App\Models\Branch;
 use App\Models\SchoolSetting;
 use App\Models\Student;
 use Carbon\Carbon;
@@ -75,10 +76,10 @@ class UdiseS02PdfService
 
         $reasons = is_array($options['reasons'] ?? null) ? $options['reasons'] : [];
         $principalName = trim((string) ($options['principal_name'] ?? ''));
+        if ($principalName === '') {
+            $principalName = $this->resolveBranchPrincipal($students, $options['branch_id'] ?? null);
+        }
         $principalDesignation = trim((string) ($options['principal_designation'] ?? 'Head of the School'));
-        $principalImg = ! empty($school['principal_signature_image'])
-            ? '<img class="sig-img" src="'.$school['principal_signature_image'].'" alt="" />'
-            : '<div class="sig-space"></div>';
 
         $e = fn ($v) => htmlspecialchars((string) ($v === '' || $v === null ? '' : $v), ENT_QUOTES, 'UTF-8');
 
@@ -221,7 +222,7 @@ body { font-family: DejaVu Sans, sans-serif; font-size: 8.5pt; color: #111; marg
     <tr>
       <td>
         <div class="ftitle">Head of the School Details</div>
-        <div class="fline">Signature: {$principalImg}</div>
+        <div class="fline">Signature:</div>
         <div class="fline">Name: {$e($principalName !== '' ? strtoupper($principalName) : '')}</div>
         <div class="fline">Designation: {$e($principalDesignation !== '' ? $principalDesignation : 'Head of the School')}</div>
         <div class="fline">Date: ____________________</div>
@@ -254,5 +255,30 @@ HTML;
         }
 
         return $sessionName;
+    }
+
+    /**
+     * Prefer Branches → Principal for Head of the School Name on FORM S02.
+     *
+     * @param  Collection<int, Student>|iterable<int, Student>  $students
+     */
+    private function resolveBranchPrincipal($students, mixed $branchId = null): string
+    {
+        $branchId = $branchId !== null && $branchId !== '' ? (int) $branchId : 0;
+        if ($branchId > 0) {
+            $name = trim((string) (Branch::query()->where('id', $branchId)->value('principal') ?? ''));
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        $collection = $students instanceof Collection ? $students : collect($students);
+        $first = $collection->first();
+        if (! $first instanceof Student) {
+            return '';
+        }
+        $first->loadMissing('branch:id,principal');
+
+        return trim((string) ($first->branch?->principal ?? ''));
     }
 }

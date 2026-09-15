@@ -828,9 +828,10 @@
 
         <ConfirmDialog
             v-model:open="confirmSubmitOpen"
-            title="Submit fee"
-            :message="confirmSubmitMessage"
-            confirm-label="Submit fee"
+            title="Confirm fee submission"
+            message="Review the summary below, then confirm to submit the fee and open the receipt."
+            :summary="confirmSubmitSummary"
+            confirm-label="Confirm & submit"
             :busy="collecting"
             busy-label="Submitting…"
             @confirm="submitFeeConfirmed"
@@ -890,7 +891,7 @@ const remarks = ref('');
 const feeHeads = ref([]);
 const collecting = ref(false);
 const confirmSubmitOpen = ref(false);
-const confirmSubmitMessage = ref('');
+const confirmSubmitSummary = ref([]);
 const receipt = ref(null);
 const transport = reactive({
     apply: false,
@@ -1884,9 +1885,45 @@ async function collect() {
         return;
     }
 
-    const who = student.value?.name || 'this student';
-    const amt = money(summary.value.payable);
-    confirmSubmitMessage.value = `Submit fee of ₹${amt} for ${who}?`;
+    const months = unpaidSelectedMonths();
+    const monthLabels = months.map((key) => {
+        for (const block of monthBlocks.value) {
+            const hit = (block.months || []).find((m) => m.key === key);
+            if (hit?.label) return hit.label;
+        }
+        return key;
+    });
+
+    const headLines = selectedHeadIds.value
+        .map((id) => {
+            const item = (due.value?.breakdown || []).find((row) => row.fee_head_id === id);
+            const paidAmt = Number(amounts[id]) || 0;
+            const discAmt = Number(discounts[id]) || 0;
+            if (!item || paidAmt <= 0) return null;
+            const disc = discAmt > 0 ? ` (disc ₹${money(discAmt)})` : '';
+            return `${item.fee_head_name || 'Fee'}: ₹${money(paidAmt)}${disc}`;
+        })
+        .filter(Boolean);
+
+    const transportPaid = transport.apply ? (Number(transport.fee) || 0) : 0;
+    const s = summary.value;
+
+    confirmSubmitSummary.value = [
+        { label: 'Student', value: student.value?.name || '—' },
+        { label: 'Admission No', value: student.value?.admission_no || '—' },
+        { label: 'Class', value: studentPlaceLabel.value },
+        { label: 'Months', value: monthLabels.join(', ') || '—' },
+        { label: 'Fee heads', value: headLines.length ? headLines.join(' · ') : '—' },
+        ...(transportPaid > 0 ? [{ label: 'Transport', value: `₹${money(transportPaid)}` }] : []),
+        { label: 'Base fee', value: `₹${money(s.base)}` },
+        ...(s.discount > 0 ? [{ label: 'Discount', value: `-₹${money(s.discount)}` }] : []),
+        { label: 'Payment mode', value: paymentMode.value },
+        { label: 'Payment date', value: paymentDate.value || '—' },
+        ...(referenceNo.value ? [{ label: 'Reference', value: referenceNo.value }] : []),
+        { label: 'Total payable', value: `₹${money(s.payable)}` },
+        { label: 'Submitting now', value: `₹${money(s.received)}`, emphasis: true },
+        { label: 'Due after payment', value: `₹${money(s.dueAfter)}` },
+    ];
     confirmSubmitOpen.value = true;
 }
 

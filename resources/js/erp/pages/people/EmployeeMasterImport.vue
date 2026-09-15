@@ -9,9 +9,20 @@
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Select / Upload Excel File</h2>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" class="btn-outline" :disabled="downloadingTemplate" @click="downloadTemplate">
+                        {{ downloadingTemplate ? 'Downloading...' : 'Download Template' }}
+                    </button>
+                    <button type="button" class="btn-primary" :disabled="!selectedFile || importing || !(preview?.create_count + preview?.update_count)" @click="runImport">
+                        {{ importing ? 'Importing...' : 'Import' }}
+                    </button>
+                </div>
+            </div>
             <div class="flex flex-wrap items-end gap-3">
                 <div class="flex-1 min-w-[260px]">
-                    <label class="form-label">File</label>
+                    <label class="form-label">Excel file</label>
                     <input ref="fileInput" type="file" accept=".xlsx,.xls" class="form-input" @change="onFileSelected" />
                 </div>
                 <button type="button" class="btn-outline" :disabled="!selectedFile || scanning" @click="scan">
@@ -69,9 +80,6 @@
                     <p class="text-xs text-slate-500 dark:text-slate-400">
                         {{ preview.create_count + preview.update_count }} row{{ preview.create_count + preview.update_count === 1 ? '' : 's' }} will be written; {{ preview.failed_count }} skipped for review.
                     </p>
-                    <button type="button" class="btn-primary" :disabled="importing || !(preview.create_count + preview.update_count)" @click="runImport">
-                        {{ importing ? 'Importing...' : 'Confirm & Import' }}
-                    </button>
                 </div>
             </div>
 
@@ -132,6 +140,7 @@
 <script setup>
 import { ref } from 'vue';
 import client from '../../api/client';
+import { downloadImportTemplate } from '../../utils/downloadExport';
 import { pushToast } from '../../utils/toast';
 
 const fileInput = ref(null);
@@ -140,6 +149,19 @@ const scanning = ref(false);
 const preview = ref(null);
 const importing = ref(false);
 const importResults = ref(null);
+const downloadingTemplate = ref(false);
+
+async function downloadTemplate() {
+    downloadingTemplate.value = true;
+    try {
+        await downloadImportTemplate('employee-master');
+        pushToast('Template downloaded.', 'success');
+    } catch (err) {
+        pushToast(err?.response?.data?.message || 'Could not download template.', 'error');
+    } finally {
+        downloadingTemplate.value = false;
+    }
+}
 
 function onFileSelected(event) {
     selectedFile.value = event.target.files?.[0] || null;

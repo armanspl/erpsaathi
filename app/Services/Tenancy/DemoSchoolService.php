@@ -49,6 +49,9 @@ class DemoSchoolService
             ['key' => 'attendance-import', 'label' => 'Attendance Import'],
             ['key' => 'attendance-export', 'label' => 'Attendance Export'],
             ['key' => 'exam-marks-import', 'label' => 'Exam Marks Import'],
+            ['key' => 'exam-marks-export', 'label' => 'Exam Marks Export'],
+            ['key' => 'academic-calendar-import', 'label' => 'Academic Calendar Import'],
+            ['key' => 'academic-calendar-export', 'label' => 'Academic Calendar Export'],
         ];
     }
 

@@ -30,9 +30,29 @@
                 </div>
             </div>
 
-            <div v-if="activeEntity === 'student-pen' || activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Upload — {{ uploadTitle }}</h3>
+            <div v-if="activeEntity === 'student-pen' || activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' || activeEntity === 'academic-calendar'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Upload — {{ uploadTitle }}</h3>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" class="btn-outline !py-1.5 !text-xs" :disabled="downloadingTemplate" @click="downloadTemplate">
+                            {{ downloadingTemplate ? 'Downloading...' : 'Download Template' }}
+                        </button>
+                        <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing" @click="submitImport">
+                            {{ importing ? 'Importing...' : 'Import' }}
+                        </button>
+                    </div>
+                </div>
                 <p v-if="activeEntity === 'student-pen'" class="mb-3 text-xs text-slate-400">Upload the UDISE portal's "Students Details" export as-is — run this after Global Workbook Import (Student Master sheet). Its title row (row 1) is skipped automatically. Matching is by ENRL # (same value as Master Record Adm No.); only the Student PEN column is imported, everything else (including the masked Aadhaar) is ignored.</p>
+                <div v-else-if="activeEntity === 'academic-calendar'" class="mb-3 space-y-2 text-xs text-slate-400">
+                    <p>Upload the school <strong class="text-slate-600 dark:text-slate-300">Academic Calendar … At A Glance</strong> workbook (.xlsx). Columns imported:</p>
+                    <ul class="list-disc space-y-1 pl-4">
+                        <li><strong class="text-slate-600 dark:text-slate-300">SCHOOL HOLIDAYS</strong> — Occasion / Month / Date</li>
+                        <li><strong class="text-slate-600 dark:text-slate-300">EXAMINATIONS</strong> — Test / Date</li>
+                        <li><strong class="text-slate-600 dark:text-slate-300">PROGRAMME</strong> — Events / Month / Date</li>
+                        <li><strong class="text-slate-600 dark:text-slate-300">DEADLINES</strong> block under holidays</li>
+                    </ul>
+                    <p>Import replaces existing calendar entries for the current session, then you can view/edit them under Academics → Academic Calendar.</p>
+                </div>
                 <div v-else-if="activeEntity === 'exam-marks'" class="mb-3 space-y-2 text-xs text-slate-400">
                     <p>Upload one <strong class="text-slate-600 dark:text-slate-300">CLASS_&lt;name&gt;_TERM-1_&lt;session&gt;.xlsx</strong> file. Every marks sheet is processed: <strong class="text-slate-600 dark:text-slate-300">PT-1, NB-1, SEA-1, UNIT TEST / UNIT 1, GRADE</strong>. ATTD is ignored (attendance summary, not marks).</p>
                     <ul class="list-disc space-y-1 pl-4">
@@ -52,14 +72,15 @@
                     </ul>
                 </div>
                 <div v-else class="mb-3 space-y-2 text-xs text-slate-400">
-                    <p>Upload the full school Excel workbook (.xlsx). Only <strong class="text-slate-600 dark:text-slate-300">INCOME</strong>, <strong class="text-slate-600 dark:text-slate-300">EXPENSES</strong>, <strong class="text-slate-600 dark:text-slate-300">TRANSPORT-*</strong>, and <strong class="text-slate-600 dark:text-slate-300">Student Master*</strong> sheets are imported.</p>
+                    <p>Upload the full school Excel workbook (.xlsx). Only <strong class="text-slate-600 dark:text-slate-300">INCOME</strong>, <strong class="text-slate-600 dark:text-slate-300">EXPENSES</strong>, <strong class="text-slate-600 dark:text-slate-300">TRANSPORT-*</strong>, <strong class="text-slate-600 dark:text-slate-300">Student Master*</strong>, and <strong class="text-slate-600 dark:text-slate-300">SALARY … Bank</strong> sheets are imported.</p>
                     <ul class="list-disc space-y-1 pl-4">
                         <li>Student Master* (e.g. "Student Master 22-26") → runs first so new admissions in this sheet exist before INCOME rows try to match them</li>
                         <li>INCOME with Adm No. → Fee Receipts (students must already exist)</li>
                         <li>INCOME without Adm No. → Finance Income</li>
                         <li>EXPENSES → Finance Expenses (Part-1 becomes category)</li>
                         <li>TRANSPORT-NN (S.NO / STOPPAGE / FARE only) → updates fare on the matching route stop (Fee Structure → Transport); creates a new route+stop only for a stoppage with no existing match</li>
-                        <li>Skipped sheets: SUMMARY, STUD_REC*, pivots, SALARY, BANK*, CHQ*, FUEL*, WORKING DAYS</li>
+                        <li>SALARY … Bank (NAME / DESIG / BASIC / APR–MAR) → auto-creates Teachers &amp; Staff from designation, writes monthly salary slips with inferred present/absent, so you can manage them under People</li>
+                        <li>Skipped sheets: SUMMARY, STUD_REC*, pivots, BANK* statements, CHQ*, FUEL*, WORKING DAYS</li>
                         <li>Skipped columns: numeric headers (pasted totals), TOT_INCOME, and #REF! / INCOME / BALANCE junk columns</li>
                     </ul>
                 </div>
@@ -71,15 +92,16 @@
                     @drop.prevent="onDrop"
                 >
                     <span class="text-3xl">📤</span>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-300">Drag an Excel or CSV file here or click to browse</p>
-                    <p class="text-xs text-slate-400">{{ activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' ? 'Supports .xlsx / .xls up to 40MB' : 'Supports .xlsx, .xls, .csv up to 10MB' }}</p>
-                    <input type="file" :accept="activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' ? '.xlsx,.xls' : '.xlsx,.xls,.csv'" class="hidden" @change="onFileSelect" />
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-300">Select / Upload Excel File</p>
+                    <p class="text-xs text-slate-400">Drag a file here or click to browse</p>
+                    <p class="text-xs text-slate-400">{{ activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' || activeEntity === 'academic-calendar' ? 'Supports .xlsx / .xls up to 40MB' : 'Supports .xlsx, .xls, .csv up to 10MB' }}</p>
+                    <input type="file" :accept="activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' || activeEntity === 'academic-calendar' ? '.xlsx,.xls' : '.xlsx,.xls,.csv'" class="hidden" @change="onFileSelect" />
                 </label>
 
                 <div v-if="selectedFile" class="mt-3 space-y-2">
                     <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
                         <span class="flex items-center gap-2"><span>📄</span><span class="font-medium text-slate-700 dark:text-slate-200">{{ selectedFile.name }}</span></span>
-                        <button type="button" class="btn-primary !py-1 !text-xs" :disabled="importing" @click="submitImport">{{ importing ? 'Importing...' : 'Import' }}</button>
+                        <button type="button" class="text-xs text-slate-400 hover:text-rose-500" :disabled="importing" @click="resetUpload">Clear</button>
                     </div>
 
                     <div v-if="importing" class="space-y-1">
@@ -167,12 +189,14 @@
             <div v-if="visibleOtherExportEntities.length" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Other Exports</h3>
                 <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                    <div v-for="m in visibleOtherExportEntities" :key="m.key" class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800" :class="m.key === 'global' && 'border-primary-200 bg-primary-50/40 dark:border-primary-500/30 dark:bg-primary-500/5'">
+                    <div v-for="m in visibleOtherExportEntities" :key="m.key" class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800" :class="(m.key === 'global' || m.key === 'academic-calendar' || m.key === 'exam-marks') && 'border-primary-200 bg-primary-50/40 dark:border-primary-500/30 dark:bg-primary-500/5'">
                         <div class="flex items-center gap-2.5">
                             <span class="text-lg">{{ m.icon }}</span>
                             <div>
                                 <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ m.label }}</p>
-                                <p v-if="m.key === 'global'" class="text-xs text-slate-400">All modules in one Excel file</p>
+                                <p v-if="m.key === 'global'" class="text-xs text-slate-400">Includes SALARY … Bank sheet (same layout as import)</p>
+                                <p v-else-if="m.key === 'exam-marks'" class="text-xs text-slate-400">CLASS_*_TERM workbooks (ZIP of all classes)</p>
+                                <p v-else-if="m.key === 'academic-calendar'" class="text-xs text-slate-400">Same At A Glance layout as import</p>
                             </div>
                         </div>
                         <button type="button" class="btn-outline !py-1.5 !text-xs" :disabled="exportingKey === m.key" @click="exportEntity(m)">{{ exportingKey === m.key ? 'Exporting...' : 'Export' }}</button>
@@ -269,18 +293,19 @@ import StudentUdiseExportPanel from '../components/export/StudentUdiseExportPane
 import client from '../api/client';
 import { erpStore } from '../store';
 import { pushToast } from '../utils/toast';
-import { downloadExport } from '../utils/downloadExport';
+import { downloadExport, downloadImportTemplate } from '../utils/downloadExport';
 
 const ENTITIES = [
     { key: 'global', label: 'Global Workbook', icon: '📊', slug: 'global-workbook' },
     { key: 'student', label: 'Students', icon: '🎓', slug: 'student' },
     { key: 'attendance', label: 'Attendance', icon: '📅', slug: 'attendance' },
+    { key: 'exam-marks', label: 'Exam Marks', icon: '📝', slug: 'exam-marks' },
+    { key: 'academic-calendar', label: 'Academic Calendar', icon: '🗓️', slug: 'academic-calendar' },
 ];
 
 // Import-only — no export counterpart, so kept out of ENTITIES (which also drives the Export tab).
 const EXTRA_IMPORT_ENTITIES = [
     { key: 'student-pen', label: 'Student PEN', icon: '🆔', slug: 'student-pen' },
-    { key: 'exam-marks', label: 'Exam Marks', icon: '📝', slug: 'exam-marks' },
 ];
 
 // Export-only entities (not shown on the Import tab entity picker).
@@ -301,11 +326,14 @@ const IMPORT_ENTITY_TO_MENU_KEY = {
     'student-pen': 'student-pen-import',
     attendance: 'attendance-import',
     'exam-marks': 'exam-marks-import',
+    'academic-calendar': 'academic-calendar-import',
 };
 
 const EXPORT_ENTITY_TO_MENU_KEY = {
     global: 'global-workbook-export',
     attendance: 'attendance-export',
+    'exam-marks': 'exam-marks-export',
+    'academic-calendar': 'academic-calendar-export',
 };
 
 function canUseIeKey(menuKey) {
@@ -351,6 +379,7 @@ const uploadTitle = computed(() => {
     if (activeEntity.value === 'global') return 'Global Workbook';
     if (activeEntity.value === 'attendance') return 'Attendance';
     if (activeEntity.value === 'exam-marks') return 'Exam Marks (Class Term)';
+    if (activeEntity.value === 'academic-calendar') return 'Academic Calendar';
     return activeEntityLabel.value;
 });
 
@@ -360,7 +389,35 @@ const IMPORT_ENDPOINTS = {
     global: '/import-export/import/global-workbook',
     attendance: '/import-export/import/attendance',
     'exam-marks': '/import-export/import/class-term-marks',
+    'academic-calendar': '/import-export/import/academic-calendar',
 };
+
+const TEMPLATE_TYPES = {
+    global: 'global-workbook',
+    'student-pen': 'student-pen',
+    attendance: 'attendance',
+    'exam-marks': 'exam-marks',
+    'academic-calendar': 'academic-calendar',
+};
+
+const downloadingTemplate = ref(false);
+
+async function downloadTemplate() {
+    const type = TEMPLATE_TYPES[activeEntity.value];
+    if (!type) {
+        pushToast('No template available for this import.', 'error');
+        return;
+    }
+    downloadingTemplate.value = true;
+    try {
+        await downloadImportTemplate(type);
+        pushToast('Template downloaded.', 'success');
+    } catch (e) {
+        pushToast(e?.response?.data?.message || 'Could not download template.', 'error');
+    } finally {
+        downloadingTemplate.value = false;
+    }
+}
 
 // Redirect legacy Student Import bookmark to Global Workbook Import.
 watch(
@@ -525,6 +582,7 @@ const ENTITY_LABELS = {
     'student-master': 'Students',
     'student-pen': 'Student PEN',
     'global-workbook': 'Global Workbook',
+    'academic-calendar': 'Academic Calendar',
     student: 'Students',
     'student-udise': 'Student UDISE',
     global: 'Global Workbook',

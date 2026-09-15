@@ -14,18 +14,18 @@
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h1M7 4h10a1 1 0 011 1v14a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>
                     Download template
                 </button>
-                <button type="button" class="btn-outline inline-flex items-center gap-1.5" @click="openImportModal">
+                <button type="button" class="btn-outline inline-flex items-center gap-1.5" @click="goExamMarksImport">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 3v12m0 0l-4-4m4 4l4-4"/></svg>
                     Import
+                </button>
+                <button type="button" class="btn-outline inline-flex items-center gap-1.5" @click="goExamMarksExport">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                    Export
                 </button>
                 <template v-if="sheet">
                     <button type="button" class="btn-outline inline-flex items-center gap-1.5 !text-rose-600" @click="deleteSheet">
                         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"/></svg>
                         Delete sheet
-                    </button>
-                    <button type="button" class="btn-outline inline-flex items-center gap-1.5" @click="exportSheet">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
-                        Export
                     </button>
                     <button type="button" class="btn-primary inline-flex items-center gap-1.5" :disabled="saving" @click="saveMarks">
                         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -292,11 +292,14 @@
                         </select>
                     </div>
                     <div class="col-span-2">
-                        <label class="form-label">File</label>
+                        <label class="form-label">Select / Upload Excel File</label>
                         <input ref="importFileInput" type="file" accept=".csv,.xlsx,.xls" class="form-input" />
                     </div>
                 </div>
-                <div class="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                <div class="mt-5 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                    <button type="button" class="btn-outline" :disabled="!contextComplete || downloadingTemplateInImport" @click="downloadTemplateFromImport">
+                        {{ downloadingTemplateInImport ? 'Downloading...' : 'Download Template' }}
+                    </button>
                     <button type="button" class="btn-outline" @click="importOpen = false">Cancel</button>
                     <button type="button" class="btn-primary" :disabled="!contextComplete || importing" @click="runImport">{{ importing ? 'Importing...' : 'Import' }}</button>
                 </div>
@@ -587,9 +590,30 @@ async function downloadTemplate(format) {
 const importOpen = ref(false);
 const importing = ref(false);
 const importFileInput = ref(null);
+const downloadingTemplateInImport = ref(false);
+function goExamMarksImport() {
+    router.push({ path: '/import-export', query: { type: 'exam-marks-import' } });
+}
+
+function goExamMarksExport() {
+    router.push({ path: '/import-export', query: { type: 'exam-marks-export' } });
+}
+
 function openImportModal() {
-    syncContextFromFilters();
-    importOpen.value = true;
+    goExamMarksImport();
+}
+
+async function downloadTemplateFromImport() {
+    if (!contextComplete.value) return;
+    downloadingTemplateInImport.value = true;
+    try {
+        await downloadTemplate('xlsx');
+        pushToast('Template downloaded.', 'success');
+    } catch (err) {
+        pushToast(err?.response?.data?.message || 'Could not download template.', 'error');
+    } finally {
+        downloadingTemplateInImport.value = false;
+    }
 }
 
 async function runImport() {

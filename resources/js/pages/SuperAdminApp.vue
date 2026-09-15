@@ -354,6 +354,8 @@ export default {
         { key: 'attendance-import', label: 'Attendance Import' },
         { key: 'attendance-export', label: 'Attendance Export' },
         { key: 'exam-marks-import', label: 'Exam Marks Import' },
+        { key: 'academic-calendar-import', label: 'Academic Calendar Import' },
+        { key: 'academic-calendar-export', label: 'Academic Calendar Export' },
       ],
       deleteTarget: null,
       deleteConfirmation: '',

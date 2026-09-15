@@ -39,6 +39,7 @@ import FeeReceipts from '../pages/fee-management/FeeReceipts.vue';
 import FeeDue from '../pages/fee-management/FeeDue.vue';
 import FeePaid from '../pages/fee-management/FeePaid.vue';
 import FeeHistory from '../pages/fee-management/FeeHistory.vue';
+import MonthWiseFeeCollection from '../pages/fee-management/MonthWiseFeeCollection.vue';
 import FeeDueReceipt from '../pages/fee-management/FeeDueReceipt.vue';
 import DepositReceipt from '../pages/fee-management/DepositReceipt.vue';
 import FeeCollectionReport from '../pages/fee-management/FeeCollectionReport.vue';
@@ -121,6 +122,7 @@ import FeeReports from '../pages/reports/FeeReports.vue';
 import FinanceReports from '../pages/reports/FinanceReports.vue';
 import GenericModule from '../pages/GenericModule.vue';
 import Homework from '../pages/academics/Homework.vue';
+import AcademicCalendar from '../pages/academics/AcademicCalendar.vue';
 import HelpAssistant from '../pages/help/HelpAssistant.vue';
 
 // Flagship, fully custom pages get an explicit route; every other sidebar leaf
@@ -146,6 +148,7 @@ const FLAGSHIP_ROUTES = {
     '/academics/classes-and-sections': ClassesSections,
     '/academics/subjects': Subjects,
     '/academics/homework': Homework,
+    '/academics/academic-calendar': AcademicCalendar,
     '/people/users': Users,
     '/people/parents': Parents,
     '/people/teachers': Teachers,
@@ -171,6 +174,7 @@ const FLAGSHIP_ROUTES = {
     '/fee-management/fee-due': FeeDue,
     '/fee-management/fee-paid': FeePaid,
     '/fee-management/fee-history': FeeHistory,
+    '/fee-management/month-wise-fee-collection': MonthWiseFeeCollection,
     '/fee-management/fee-due/receipt': { component: FeeDueReceipt, meta: { printPage: true } },
     '/fee-management/fee-receipt/print': { component: DepositReceipt, meta: { printPage: true } },
     '/fee-management/fee-settings': FeeSettings,

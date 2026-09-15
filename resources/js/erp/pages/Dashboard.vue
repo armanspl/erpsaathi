@@ -219,7 +219,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import DashCard from '../components/dashboard/DashCard.vue';
-import { erpStore } from '../store';
+import { erpStore, loadSessions } from '../store';
 import client from '../api/client';
 
 const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -241,6 +241,11 @@ const recentAdmissions = ref([]);
 const pendingTasks = ref([]);
 const upcomingEvents = ref([]);
 const recentActivities = ref([]);
+/** Session key used for the in-flight / last successful dashboard fetch — skips duplicate loads. */
+let loadedForSession = null;
+let loadSeq = 0;
+/** Ignore session watcher until the first mount load finishes (avoids double fetch during hydration). */
+let sessionWatchReady = false;
 
 function money(n) {
     return Number(n || 0).toLocaleString('en-IN');
@@ -270,11 +275,28 @@ function categoryHue(name) {
     return hash;
 }
 
+async function ensureSessionsReady() {
+    if (erpStore.sessionRecords.length) return;
+    try {
+        await loadSessions();
+    } catch {
+        // Header may still load sessions; proceed with localStorage session header.
+    }
+}
+
 async function load() {
+    const sessionKey = erpStore.currentSession || localStorage.getItem('erp_current_session') || '';
+    if (loadedForSession === sessionKey && peopleStats.value.length) {
+        return;
+    }
+
+    const seq = ++loadSeq;
     loading.value = true;
     error.value = '';
     try {
         const { data } = await client.get('/dashboard');
+        if (seq !== loadSeq) return;
+        loadedForSession = sessionKey;
         peopleStats.value = [
             { label: 'Students', value: data.people_stats.students },
             { label: 'Teachers', value: data.people_stats.teachers },
@@ -305,14 +327,28 @@ async function load() {
         upcomingEvents.value = data.upcoming_events || [];
         recentActivities.value = data.recent_activities || [];
     } catch (e) {
+        if (seq !== loadSeq) return;
         error.value = e.response?.data?.message || 'Could not load dashboard.';
     } finally {
-        loading.value = false;
+        if (seq === loadSeq) loading.value = false;
     }
 }
 
-onMounted(load);
-watch(() => erpStore.currentSession, load);
+onMounted(async () => {
+    await ensureSessionsReady();
+    await load();
+    sessionWatchReady = true;
+});
+
+watch(
+    () => erpStore.currentSession,
+    (next, prev) => {
+        if (!sessionWatchReady) return;
+        if (next === prev) return;
+        if (loadedForSession === next) return;
+        load();
+    },
+);
 
 const quickActions = [
     { label: 'Add student', to: '/people/students?add=1' },

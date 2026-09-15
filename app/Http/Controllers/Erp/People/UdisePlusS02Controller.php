@@ -69,6 +69,7 @@ class UdisePlusS02Controller extends Controller
             'udise_code' => 'nullable|string|max:50',
             'school_name' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:30',
+            'branch_id' => 'nullable|integer|exists:branches,id',
             'principal_name' => 'nullable|string|max:255',
             'principal_designation' => 'nullable|string|max:100',
         ]);
@@ -80,6 +81,7 @@ class UdisePlusS02Controller extends Controller
             'father:id,name',
             'mother:id,name',
             'udiseDetail',
+            'branch:id,principal',
         ])
             ->whereIn('id', $ids)
             ->whereDoesntHave('udiseDetail', fn ($q) => $q->where('is_in_udise', true))
@@ -103,6 +105,7 @@ class UdisePlusS02Controller extends Controller
             'udise_code' => $data['udise_code'] ?? null,
             'school_name' => $data['school_name'] ?? null,
             'phone' => $data['phone'] ?? null,
+            'branch_id' => $data['branch_id'] ?? null,
             'principal_name' => $data['principal_name'] ?? null,
             'principal_designation' => $data['principal_designation'] ?? null,
         ];

@@ -17,23 +17,26 @@ use App\Models\Student;
 use App\Models\StudentUdiseDetail;
 use App\Models\TransportRoute;
 use App\Services\ExcelDateParser;
+use App\Services\SalaryBankWorkbookService;
 use App\Services\SpreadsheetImportReader;
 use App\Services\StudentMasterImportService;
+use App\Support\DashboardCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Imports legacy school Excel workbooks (multi-sheet). INCOME, EXPENSES, any sheet whose name
- * starts with TRANSPORT (e.g. "TRANSPORT-26", "TRANSPORT-27" next year), and any sheet whose
- * name starts with "Student Master" (e.g. "Student Master 22-26", "Student Master 23-27") are
- * processed; pivots, bank statements, salary, fuel, student duplicates, and summary dashboards
- * are ignored. TRANSPORT runs before Student Master so stoppage routes exist when bus
- * numbers are attached — see the note at that block in store().
+ * starts with TRANSPORT (e.g. "TRANSPORT-26", "TRANSPORT-27" next year), any sheet whose
+ * name starts with "Student Master" (e.g. "Student Master 22-26"), and the yearly
+ * "SALARY … Bank" sheet (auto-creates Teachers/Staff/Drivers + monthly salary slips) are
+ * processed; pivots, bank statement sheets, fuel, CHQ, and summary dashboards are ignored.
+ * TRANSPORT runs before Student Master so stoppage routes exist when bus numbers are
+ * attached — see the note at that block in store().
  *
  * The Student Master sheet is processed by {@see StudentMasterImportService} — the exact same
  * pipeline erp/dashboard/import-export?type=student-import uses on its own, so the two never
- * drift out of sync.
+ * drift out of sync. SALARY Bank is processed by {@see SalaryBankWorkbookService}.
  *
  * Corrupted columns are skipped explicitly:
  * - Purely numeric headers (e.g. a pasted TOTAL INCOME figure used as a column title)
@@ -47,7 +50,7 @@ class GlobalWorkbookImportController extends Controller
     private const EXPENSE_SHEETS = ['expenses', 'expense'];
 
     /** Sheets we never import — listed in the response for transparency. */
-    private const IGNORED_SHEET_HINT = 'SUMMARY, STUD_REC*, pivots, SALARY, BANK*, CHQ*, FUEL*, WORKING DAYS';
+    private const IGNORED_SHEET_HINT = 'SUMMARY, STUD_REC*, pivots, BANK* statements, CHQ*, FUEL*, WORKING DAYS';
 
     private const MSG_BROKEN_FORMULA = 'Skipped — column contains a broken formula reference (#REF!/#N/A), not usable data.';
 
@@ -162,7 +165,9 @@ class GlobalWorkbookImportController extends Controller
         $expenseTitle = null;
         $transportTitle = null;
         $studentMasterTitle = null;
+        $salaryBankTitle = null;
         $toLoad = [];
+        $salaryBank = app(SalaryBankWorkbookService::class);
         foreach ($sheetNames as $title) {
             $lower = strtolower($title);
             if (in_array($lower, self::INCOME_SHEETS, true) && ! $incomeTitle) {
@@ -185,21 +190,27 @@ class GlobalWorkbookImportController extends Controller
                 $studentMasterTitle = $title;
                 $toLoad[] = $title;
             }
+            // "SALARY 26-27 Bank" — yearly payroll bank with NAME/DESIG/BASIC + APR–MAR.
+            if (! $salaryBankTitle && $salaryBank->isSalaryBankSheetTitle($title)) {
+                $salaryBankTitle = $title;
+                $toLoad[] = $title;
+            }
         }
 
         if ($toLoad === []) {
             return response()->json([
-                'message' => 'No INCOME, EXPENSES, TRANSPORT-*, or Student Master* sheet found. Present sheets: '.implode(', ', $sheetNames)
+                'message' => 'No INCOME, EXPENSES, TRANSPORT-*, Student Master*, or SALARY … Bank sheet found. Present sheets: '.implode(', ', $sheetNames)
                     .' — Only those are imported ('.self::IGNORED_SHEET_HINT.' are skipped).',
             ], 422);
         }
 
-        // Load ONLY ledger sheets — never pivots/bank/salary (those blow up formula calc time).
+        // Load ONLY matched sheets — never pivots / bank statements / fuel (formula-heavy).
         $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, $toLoad);
         $incomeSheet = null;
         $expenseSheet = null;
         $transportSheet = null;
         $studentMasterSheet = null;
+        $salaryBankSheet = null;
 
         foreach ($spreadsheet->getAllSheets() as $sheet) {
             $title = trim((string) $sheet->getTitle());
@@ -226,7 +237,16 @@ class GlobalWorkbookImportController extends Controller
                 $parsed['title'] = $title;
                 $studentMasterSheet = $parsed;
             }
+            if ($salaryBankTitle && strtolower($salaryBankTitle) === $lower) {
+                $salaryBankSheet = $sheet;
+            }
         }
+
+        $salaryBankResult = null;
+        if ($salaryBankSheet) {
+            $salaryBankResult = $salaryBank->importWorksheet($salaryBankSheet, $salaryBankTitle, Auth::guard('erp')->id());
+        }
+
         $spreadsheet->disconnectWorksheets();
         unset($spreadsheet);
 
@@ -234,7 +254,8 @@ class GlobalWorkbookImportController extends Controller
         foreach ($sheetNames as $name) {
             $lower = strtolower($name);
             if (in_array($lower, self::INCOME_SHEETS, true) || in_array($lower, self::EXPENSE_SHEETS, true)
-                || str_starts_with($lower, 'transport') || str_starts_with($lower, 'student master')) {
+                || str_starts_with($lower, 'transport') || str_starts_with($lower, 'student master')
+                || $salaryBank->isSalaryBankSheetTitle($name)) {
                 continue;
             }
             $ignoredSheets[] = $name;
@@ -481,6 +502,17 @@ class GlobalWorkbookImportController extends Controller
                 .($studentMasterResult['header_warnings'] !== [] ? ', '.count($studentMasterResult['header_warnings']).' header warning(s)' : '')
                 .'. See Import Log for details.';
         }
+        if ($salaryBankTitle && $salaryBankResult) {
+            $stats['salary_bank'] = $salaryBankResult;
+            $message .= ' | Salary Bank ('.$salaryBankTitle.'): '
+                .$salaryBankResult['employees_created'].' employee(s) created, '
+                .$salaryBankResult['employees_updated'].' updated, '
+                .$salaryBankResult['slips_written'].' salary slip(s) written'
+                .(count($salaryBankResult['failed']) > 0 ? ', '.count($salaryBankResult['failed']).' row(s) need review' : '')
+                .'.';
+        }
+
+        DashboardCache::forget();
 
         return response()->json([
             'log' => $log->fresh(),

@@ -25,6 +25,9 @@ class FeeSettingController extends Controller
                 'default_payment_mode' => $settings->default_payment_mode,
                 'receipt_paid_at' => $settings->receipt_paid_at,
                 'auto_select_current_month' => (bool) $settings->auto_select_current_month,
+                'tc_fee_enabled' => (bool) $settings->tc_fee_enabled,
+                'tc_fee_amount' => (float) $settings->tc_fee_amount,
+                'tc_allow_pending_fees' => (bool) $settings->tc_allow_pending_fees,
             ],
             'tally' => [
                 'company_name' => $settings->tally_company_name ?: SchoolSetting::current()->school_name,
@@ -43,6 +46,9 @@ class FeeSettingController extends Controller
             'default_payment_mode' => ['required', Rule::in(['Cash', 'UPI', 'Card', 'Bank Transfer', 'Cheque'])],
             'receipt_paid_at' => 'required|string|max:100',
             'auto_select_current_month' => 'required|boolean',
+            'tc_fee_enabled' => 'required|boolean',
+            'tc_fee_amount' => 'required|numeric|min:0|max:999999',
+            'tc_allow_pending_fees' => 'required|boolean',
         ]);
 
         $settings = ErpFeeSetting::current();
@@ -52,6 +58,9 @@ class FeeSettingController extends Controller
             'default_payment_mode' => $settings->default_payment_mode,
             'receipt_paid_at' => $settings->receipt_paid_at,
             'auto_select_current_month' => (bool) $settings->auto_select_current_month,
+            'tc_fee_enabled' => (bool) $settings->tc_fee_enabled,
+            'tc_fee_amount' => (float) $settings->tc_fee_amount,
+            'tc_allow_pending_fees' => (bool) $settings->tc_allow_pending_fees,
         ]]);
     }
 

@@ -182,12 +182,12 @@ class UdiseS03PdfService
         $undertakingSchool = filter_var($overrides['undertaking_school'] ?? true, FILTER_VALIDATE_BOOLEAN);
         $undertakingOfficer = filter_var($overrides['undertaking_officer'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-        $principal = $setting->findSignature('Principal');
         $principalName = trim((string) ($overrides['principal_name'] ?? ''));
+        if ($principalName === '') {
+            $student->loadMissing('branch:id,principal');
+            $principalName = trim((string) ($student->branch?->principal ?? ''));
+        }
         $principalDesignation = trim((string) ($overrides['principal_designation'] ?? 'PRINCIPAL'));
-        $principalImg = ! empty($school['principal_signature_image'])
-            ? '<img class="sig-img" src="'.$school['principal_signature_image'].'" alt="" />'
-            : '<div class="sig-space"></div>';
 
         $e = fn ($v) => htmlspecialchars((string) ($v === '' || $v === null ? '' : $v), ENT_QUOTES, 'UTF-8');
         $principalNameDisplay = $principalName !== '' ? strtoupper($principalName) : '';
@@ -332,7 +332,7 @@ class UdiseS03PdfService
                     <table class="signfields">
                         <tr><td class="f-lbl">Name:</td><td class="f-val">'.$nb($e($principalNameDisplay)).'</td></tr>
                         <tr><td class="f-lbl">Designation:</td><td class="f-val">'.$nb($e($principalDesignationDisplay)).'</td></tr>
-                        <tr><td class="f-lbl">Signature:</td><td style="padding:2pt;">'.$principalImg.'</td></tr>
+                        <tr><td class="f-lbl">Signature:</td><td>&nbsp;</td></tr>
                         <tr><td class="f-lbl">Seal:</td><td>&nbsp;</td></tr>
                     </table>
                 </td>

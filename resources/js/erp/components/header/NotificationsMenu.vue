@@ -62,22 +62,35 @@ const router = useRouter();
 const loading = ref(false);
 const notifications = ref([]);
 const totalCount = ref(0);
+let loadedForSession = null;
+let loadSeq = 0;
+let deferredTimer = null;
+let sessionWatchReady = false;
 
 const visibleNotifications = computed(() =>
     notifications.value.filter((n) => Number(n.count) > 0),
 );
 
-async function load() {
+async function load(force = false) {
+    const sessionKey = erpStore.currentSession || localStorage.getItem('erp_current_session') || '';
+    if (!force && loadedForSession === sessionKey && notifications.value.length) {
+        return;
+    }
+
+    const seq = ++loadSeq;
     loading.value = true;
     try {
         const { data } = await client.get('/notifications');
+        if (seq !== loadSeq) return;
+        loadedForSession = sessionKey;
         notifications.value = Array.isArray(data?.items) ? data.items : [];
         totalCount.value = Number(data?.total ?? notifications.value.reduce((s, n) => s + Number(n.count || 0), 0));
     } catch {
+        if (seq !== loadSeq) return;
         notifications.value = [];
         totalCount.value = 0;
     } finally {
-        loading.value = false;
+        if (seq === loadSeq) loading.value = false;
     }
 }
 
@@ -85,6 +98,26 @@ function go(n) {
     if (n?.path) router.push(n.path);
 }
 
-onMounted(load);
-watch(() => erpStore.currentSession, load);
+onMounted(() => {
+    // Let /dashboard populate the shared fee-report cache first when landing on the ERP shell.
+    deferredTimer = window.setTimeout(() => {
+        load().finally(() => {
+            sessionWatchReady = true;
+        });
+    }, 400);
+});
+
+watch(
+    () => erpStore.currentSession,
+    (next, prev) => {
+        if (!sessionWatchReady) return;
+        if (next === prev) return;
+        if (loadedForSession === next) return;
+        if (deferredTimer) {
+            window.clearTimeout(deferredTimer);
+            deferredTimer = null;
+        }
+        load(true);
+    },
+);
 </script>

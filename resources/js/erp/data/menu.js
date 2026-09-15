@@ -23,13 +23,14 @@ const rawMenu = [
         children: [
             'Global Workbook Import', 'Global Workbook Export', 'Student PEN Import', 'Student Export',
             'Student UDISE Export',
-            'Attendance Import', 'Attendance Export', 'Exam Marks Import',
+            'Attendance Import', 'Attendance Export', 'Exam Marks Import', 'Exam Marks Export',
+            'Academic Calendar Import', 'Academic Calendar Export',
         ],
     },
     {
         label: 'Academics',
         icon: '🎓',
-        children: ['Branches', 'Academic Sessions', 'Classes & Sections', 'Subjects', 'Homework'],
+        children: ['Branches', 'Academic Sessions', 'Classes & Sections', 'Subjects', 'Homework', 'Academic Calendar'],
     },
     {
         label: 'Admissions',
@@ -52,7 +53,7 @@ const rawMenu = [
     {
         label: 'Fee Management',
         icon: '💰',
-        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Pay Fee', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
+        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Month-wise Fee Collection', 'Pay Fee', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
     },
     {
         label: 'Finance & Payroll',

@@ -4,6 +4,8 @@ namespace App\Support;
 
 use Illuminate\Support\Facades\Cache;
 
+// DashboardCache bumped alongside fee lookup invalidation.
+
 class FeeCache
 {
     public const LOOKUPS = 'erp.fee.lookups.v1';
@@ -19,5 +21,6 @@ class FeeCache
         Cache::forget(self::LOOKUPS);
         Cache::forget(self::HEADS);
         Cache::forget(self::FINE_RULES);
+        DashboardCache::forget();
     }
 }

@@ -9,6 +9,7 @@ use App\Models\ErpFeeStructurePlan;
 use App\Models\ErpFeeStructurePlanItem;
 use App\Models\ErpFeeStructurePlanScope;
 use App\Models\TransportRoute;
+use App\Support\DashboardCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -73,6 +74,8 @@ class ErpFeeStructureController extends Controller
             return $plan->fresh($this->eager());
         });
 
+        DashboardCache::forget();
+
         return response()->json($this->present($plan), 201);
     }
 
@@ -92,12 +95,16 @@ class ErpFeeStructureController extends Controller
             return $plan->fresh($this->eager());
         });
 
+        DashboardCache::forget();
+
         return response()->json($this->present($plan));
     }
 
     public function destroy(ErpFeeStructurePlan $plan)
     {
         $plan->delete();
+
+        DashboardCache::forget();
 
         return response()->json(['success' => true]);
     }
@@ -131,6 +138,8 @@ class ErpFeeStructureController extends Controller
 
             return $newPlan->fresh($this->eager());
         });
+
+        DashboardCache::forget();
 
         return response()->json($this->present($copy), 201);
     }

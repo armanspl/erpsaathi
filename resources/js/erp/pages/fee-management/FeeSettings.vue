@@ -153,6 +153,35 @@
                     </button>
                 </div>
             </div>
+
+            <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">Other / Service Charges</h2>
+                <p class="mt-1 text-sm text-slate-500">
+                    Transfer Certificate Fee is not part of regular class fee structures. It is created only when a TC is processed.
+                </p>
+                <label class="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                    <input v-model="prefs.tc_fee_enabled" type="checkbox" class="rounded border-slate-300 text-primary-600" />
+                    Enable Transfer Certificate Fee
+                </label>
+                <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="form-label">Transfer Certificate Fee (₹)</label>
+                        <input v-model.number="prefs.tc_fee_amount" type="number" min="0" step="0.01" class="form-input" :disabled="!prefs.tc_fee_enabled" />
+                    </div>
+                </div>
+                <label class="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                    <input v-model="prefs.tc_allow_pending_fees" type="checkbox" class="rounded border-slate-300 text-primary-600" />
+                    Allow TC issuance even when fees are pending
+                </label>
+                <p class="mt-2 text-xs text-slate-500">
+                    When off (recommended), TC download is blocked until previous outstanding and TC Fee are cleared.
+                </p>
+                <div class="mt-5 flex justify-end">
+                    <button type="button" class="btn-primary" :disabled="savingPrefs" @click="savePrefs">
+                        {{ savingPrefs ? 'Saving...' : 'Save service charges' }}
+                    </button>
+                </div>
+            </div>
             <div class="rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 text-sm text-slate-600 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-slate-300">
                 Tally company name and ledger mappings live under
                 <router-link class="font-semibold text-primary-700 underline" to="/fee-management/tally-accounting">Tally Accounting</router-link>.
@@ -274,6 +303,9 @@ const prefs = reactive({
     default_payment_mode: 'Cash',
     receipt_paid_at: 'SCHOOL',
     auto_select_current_month: true,
+    tc_fee_enabled: true,
+    tc_fee_amount: 500,
+    tc_allow_pending_fees: false,
 });
 
 const headOpen = ref(false);

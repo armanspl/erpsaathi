@@ -238,6 +238,11 @@ function openForm(list) {
     list.forEach((r) => {
         if (reasons[r.id] === undefined) reasons[r.id] = '';
     });
+    if (!principalName.value.trim()) {
+        const branchId = filterValues.branch_id || list[0]?.branch_id;
+        const branch = branches.value.find((b) => b.id === branchId);
+        if (branch?.principal) principalName.value = branch.principal;
+    }
     drawerOpen.value = true;
 }
 
@@ -256,6 +261,7 @@ async function downloadForm(ids, reasonMap = {}) {
             {
                 student_ids: ids,
                 reasons: reasonMap,
+                branch_id: filterValues.branch_id || undefined,
                 principal_name: principalName.value || undefined,
                 principal_designation: principalDesignation.value || undefined,
             },

@@ -461,6 +461,7 @@ async function load() {
 function openForm(row) {
     active.value = row;
     const snap = detailSnapshot(row);
+    const branch = branches.value.find((b) => b.id === row.branch_id);
     Object.assign(form, {
         student_pen: row.student_pen || '',
         for_name: row.name || '',
@@ -469,7 +470,7 @@ function openForm(row) {
         attach_birth_certificate: false,
         undertaking_school: true,
         undertaking_officer: false,
-        principal_name: form.principal_name,
+        principal_name: form.principal_name || branch?.principal || '',
         principal_designation: form.principal_designation || 'PRINCIPAL',
     });
     applySnapshotTo('existing', snap);

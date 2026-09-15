@@ -67,3 +67,14 @@ export async function downloadStudentDocument(studentId, type, fallbackFilename)
 
     triggerBlobDownload(response, fallbackFilename);
 }
+
+/**
+ * Download a blank import Excel template with required columns + sample rows.
+ * @param {string} type  global-workbook | student-pen | attendance | exam-marks | academic-calendar | employee-master | salary-monthly | exam-schedule
+ */
+export async function downloadImportTemplate(type) {
+    const response = await client.get(`/import-export/templates/${type}`, {
+        responseType: 'blob',
+    });
+    triggerBlobDownload(response, `import-template-${type}.xlsx`);
+}

@@ -7,12 +7,17 @@ use App\Models\AcademicSession;
 use App\Models\AttendanceMonthlySummary;
 use App\Models\BankTransaction;
 use App\Models\Expense;
+use App\Models\FeeHead;
 use App\Models\FeePayment;
 use App\Models\ImportExportLog;
+use App\Models\Income;
 use App\Models\SalarySlip;
 use App\Models\Student;
 use App\Models\StudentSessionHistory;
+use App\Models\StudentTransport;
 use App\Models\TransportRoute;
+use App\Services\FeeCalculator;
+use App\Services\SalaryBankWorkbookService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Dompdf\Dompdf;
@@ -29,12 +34,16 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ExportController extends Controller
 {
-    private const ENTITIES = ['student', 'student-udise', 'fee', 'expense', 'salary', 'bank', 'route', 'attendance', 'global'];
+    private const ENTITIES = ['student', 'student-udise', 'stud-rec-sum', 'fee', 'expense', 'salary', 'bank', 'route', 'attendance', 'global'];
+
+    /** Sheet order for Global Workbook export (Stud_Rec_Sum sits after Student Master, matching GAS INC_EXP). */
+    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fee', 'expense', 'salary', 'bank', 'route', 'attendance'];
 
     /** Header/tab accent per sheet — gives the multi-sheet Global Workbook a distinct color per data type. */
     private const SHEET_ACCENTS = [
         'student' => '4F46E5',
         'student-udise' => '0F766E',
+        'stud-rec-sum' => 'CA8A04',
         'fee' => '059669',
         'expense' => 'DC2626',
         'salary' => '7C3AED',
@@ -209,6 +218,12 @@ class ExportController extends Controller
             throw new NotFoundHttpException("Unknown export entity [{$entity}].");
         }
 
+        // Global workbook builds many sheets — avoid PHP's default 120s kill on large schools.
+        if ($entity === 'global' || $entity === 'stud-rec-sum' || $entity === 'student') {
+            @set_time_limit(300);
+            @ini_set('memory_limit', '512M');
+        }
+
         $format = strtolower((string) $request->query('format', 'xlsx'));
         if (! in_array($format, ['xlsx', 'csv', 'pdf'], true)) {
             $format = 'xlsx';
@@ -219,7 +234,7 @@ class ExportController extends Controller
         }
 
         $sections = $entity === 'global'
-            ? collect(array_diff(self::ENTITIES, ['global', 'student-udise']))->map(fn ($e) => [$e, $this->buildSection($e, $request)])
+            ? collect(self::GLOBAL_SHEETS)->map(fn ($e) => [$e, $this->buildSection($e, $request)])
             : collect([[$entity, $this->buildSection($entity, $request)]]);
 
         $rowCount = $sections->sum(fn ($pair) => count($pair[1][1]));
@@ -265,9 +280,11 @@ class ExportController extends Controller
 
         foreach ($sections as [$name, $section]) {
             [$header, $rows] = $section;
+            $customTitle = $section[2] ?? null;
 
             $sheet = $sheetIndex === 0 ? $spreadsheet->getActiveSheet() : $spreadsheet->createSheet();
-            $sheet->setTitle(self::sheetTitle($name));
+            $title = $customTitle ?: self::sheetTitle($name);
+            $sheet->setTitle(mb_substr($title, 0, 31));
             $sheet->fromArray($header, null, 'A1');
             if ($rows) {
                 $sheet->fromArray($rows, null, 'A2');
@@ -297,17 +314,18 @@ class ExportController extends Controller
      *
      * @param  array<int, string>  $headers
      */
-    private function styleDataSheet(Worksheet $sheet, array $headers, int $rowCount, string $accentHex, bool $richLayout = false): void
+    private function styleDataSheet(Worksheet $sheet, array $headers, int $rowCount, string $accentHex, bool $richLayout = false, int $headerRow = 1): void
     {
         $colCount = count($headers);
-        if ($colCount < 1) {
+        if ($colCount < 1 || $headerRow < 1) {
             return;
         }
 
         $lastCol = Coordinate::stringFromColumnIndex($colCount);
-        $lastRow = $rowCount + 1;
+        $firstDataRow = $headerRow + 1;
+        $lastRow = $rowCount > 0 ? ($headerRow + $rowCount) : $headerRow;
 
-        $headerRange = "A1:{$lastCol}1";
+        $headerRange = "A{$headerRow}:{$lastCol}{$headerRow}";
         $sheet->getStyle($headerRange)->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => $richLayout ? 10 : 11],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $accentHex]],
@@ -318,8 +336,8 @@ class ExportController extends Controller
             ],
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $accentHex]]],
         ]);
-        $sheet->getRowDimension(1)->setRowHeight($richLayout ? 32 : 22);
-        $sheet->freezePane('B2');
+        $sheet->getRowDimension($headerRow)->setRowHeight($richLayout ? 32 : 22);
+        $sheet->freezePane('B'.$firstDataRow);
         $sheet->setAutoFilter($headerRange);
         $sheet->getTabColor()->setRGB($accentHex);
 
@@ -336,7 +354,7 @@ class ExportController extends Controller
 
             if ($richLayout && isset(self::STUDENT_COLUMN_GROUPS[$label])) {
                 $groupHex = self::STUDENT_GROUP_ACCENTS[self::STUDENT_COLUMN_GROUPS[$label]];
-                $headerCell = $sheet->getStyle("{$col}1");
+                $headerCell = $sheet->getStyle("{$col}{$headerRow}");
                 $headerCell->getFill()->getStartColor()->setRGB($groupHex);
                 $headerCell->getBorders()->getAllBorders()->getColor()->setRGB($groupHex);
             }
@@ -346,7 +364,7 @@ class ExportController extends Controller
             return;
         }
 
-        $dataRange = "A2:{$lastCol}{$lastRow}";
+        $dataRange = "A{$firstDataRow}:{$lastCol}{$lastRow}";
         $sheet->getStyle($dataRange)->applyFromArray([
             'font' => ['size' => 10, 'color' => ['rgb' => '1F2937']],
             'alignment' => [
@@ -356,8 +374,10 @@ class ExportController extends Controller
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E5E7EB']]],
         ]);
 
-        for ($row = 2; $row <= $lastRow; $row++) {
-            $sheet->getRowDimension($row)->setRowHeight($richLayout ? 20 : 18);
+        if ($rowCount <= 500) {
+            for ($row = $firstDataRow; $row <= $lastRow; $row++) {
+                $sheet->getRowDimension($row)->setRowHeight($richLayout ? 20 : 18);
+            }
         }
 
         if ($richLayout) {
@@ -366,14 +386,14 @@ class ExportController extends Controller
                     continue;
                 }
                 $col = Coordinate::stringFromColumnIndex($i + 1);
-                $sheet->getStyle("{$col}2:{$col}{$lastRow}")->getAlignment()
+                $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$lastRow}")->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_LEFT)
                     ->setWrapText(true);
             }
         }
 
-        if ($rowCount <= 3000) {
-            for ($row = 3; $row <= $lastRow; $row += 2) {
+        if ($rowCount <= 500) {
+            for ($row = $firstDataRow + 1; $row <= $lastRow; $row += 2) {
                 $sheet->getStyle("A{$row}:{$lastCol}{$row}")->getFill()
                     ->setFillType(Fill::FILL_SOLID)
                     ->getStartColor()->setRGB('F8FAFC');
@@ -534,9 +554,10 @@ class ExportController extends Controller
     private function sectionMoneyTotal(string $entity, array $header, array $rows): array
     {
         $columnHints = match ($entity) {
-            'fee' => ['Amount', 'Total fee collected'],
+            'fee' => ['FEE', 'Total fee collected'],
+            'stud-rec-sum' => ['TOT_PMNT', 'Total student payments'],
             'expense' => ['Amount', 'Total expenses'],
-            'salary' => ['Net Salary', 'Total net salary'],
+            'salary' => ['TOTAL', 'Total salary paid (Bank sheet)'],
             'bank' => ['Amount', 'Total bank movements'],
             default => null,
         };
@@ -563,6 +584,9 @@ class ExportController extends Controller
     {
         return match ($entity) {
             'student-udise' => 'Student UDISE',
+            'stud-rec-sum' => 'Stud_Rec_Sum',
+            'fee' => 'INCOME',
+            'expense' => 'EXPENSES',
             default => ucfirst($entity),
         };
     }
@@ -577,32 +601,15 @@ class ExportController extends Controller
         return match ($entity) {
             'student' => $this->buildStudentMasterExport($request),
             'student-udise' => $this->buildStudentUdiseExport($request),
-            'fee' => [
-                ['SESSION', 'Receipt No', 'Student', 'Admission No', 'Amount', 'Discount', 'Fine', 'Mode', 'Date', 'Status'],
-                FeePayment::with(['student:id,name,admission_no', 'academicSession:id,name'])
-                    ->when(! $allSessions && $session, fn ($q) => $q->where('academic_session_id', $session->id))
-                    ->orderByDesc('payment_date')->get()->map(fn (FeePayment $p) => [
-                        $p->academicSession->name ?? '',
-                        $p->receipt_no, $p->student->name ?? '', $p->student->admission_no ?? '', (float) $p->amount,
-                        (float) $p->discount_amount, (float) $p->fine_amount, $p->payment_mode, $p->payment_date->toDateString(), $p->status,
-                    ])->all(),
-            ],
+            'stud-rec-sum' => $this->buildStudRecSumExport($request),
+            'fee' => $this->buildIncomeExport($request),
             'expense' => [
                 ['Voucher No', 'Category', 'Title', 'Amount', 'Date', 'Mode'],
                 $byDate(Expense::with('expenseCategory:id,name'))->orderByDesc('date')->get()->map(fn (Expense $e) => [
                     $e->voucher_no, $e->expenseCategory->name ?? '', $e->title, (float) $e->amount, $e->date->toDateString(), $e->payment_mode,
                 ])->all(),
             ],
-            'salary' => [
-                ['Employee Type', 'Employee', 'Period', 'Basic', 'Allowances', 'Deductions', 'Net Salary', 'Status'],
-                SalarySlip::with('employee')
-                    ->when(! $allSessions && $session && $session->start_date && $session->end_date,
-                        fn ($q) => $q->whereBetween('period', [$session->start_date->format('Y-m'), $session->end_date->format('Y-m')]))
-                    ->orderByDesc('period')->get()->map(fn (SalarySlip $s) => [
-                        $s->employee_type, $s->employee->name ?? '', $s->period, (float) $s->basic_salary,
-                        (float) $s->allowances, (float) $s->deductions, (float) $s->net_salary, $s->status,
-                    ])->all(),
-            ],
+            'salary' => $this->buildSalaryBankExport($request),
             'bank' => [
                 ['Account', 'Type', 'Amount', 'Date', 'Reference No'],
                 $byDate(BankTransaction::with('bankAccount:id,account_name'))->orderByDesc('date')->get()->map(fn (BankTransaction $t) => [
@@ -619,6 +626,465 @@ class ExportController extends Controller
             'attendance' => $this->buildAttendanceExport($request),
             default => [[], []],
         };
+    }
+
+    /**
+     * Fee / income export in the same column layout as Global Workbook INCOME import:
+     * YEAR | MONTH | DATE | ADM NO | NAME | ADDRESS | CLASS | HEAD | FEE | SESSION | RECEIPT | REMARKS | PMNT MODE
+     * One Excel row per fee-head line (and FINE), matching how the school maintains GAS INC_EXP workbooks.
+     *
+     * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
+     */
+    private function buildIncomeExport(?Request $request = null): array
+    {
+        [$session, $allSessions] = $this->resolveHeaderSession($request);
+
+        $headers = [
+            'YEAR', 'MONTH', 'DATE', 'ADM NO', 'NAME', 'ADDRESS', 'CLASS',
+            'HEAD', 'FEE', 'SESSION', 'RECEIPT', 'REMARKS', 'PMNT MODE',
+        ];
+
+        $payments = FeePayment::query()
+            ->with([
+                'student:id,name,admission_no,address,address_line_2,school_class_id',
+                'student.schoolClass:id,name',
+                'academicSession:id,name',
+            ])
+            ->when(! $allSessions && $session, fn ($q) => $q->where('academic_session_id', $session->id))
+            ->where('status', '!=', 'Rolled Back')
+            ->orderBy('payment_date')
+            ->orderBy('id')
+            ->get();
+
+        $receiptNos = $payments->pluck('receipt_no')->filter()->unique()->values()->all();
+        $modeByReceipt = [];
+        if ($receiptNos !== []) {
+            $txs = BankTransaction::query()
+                ->with('bankAccount:id,account_name')
+                ->whereIn('reference_no', $receiptNos)
+                ->where('type', 'Deposit')
+                ->orderByDesc('id')
+                ->get();
+            foreach ($txs as $tx) {
+                $ref = (string) $tx->reference_no;
+                if ($ref === '' || isset($modeByReceipt[$ref])) {
+                    continue;
+                }
+                $account = trim((string) ($tx->bankAccount->account_name ?? ''));
+                if ($account !== '') {
+                    $modeByReceipt[$ref] = $account;
+                }
+            }
+        }
+
+        $rows = [];
+        foreach ($payments as $payment) {
+            $student = $payment->student;
+            $paymentDate = $payment->payment_date?->toDateString() ?? '';
+            $monthStart = $payment->payment_date?->copy()->startOfMonth()->toDateString() ?? '';
+            $yearLabel = $payment->payment_date ? $this->fiscalYearLabel($payment->payment_date) : '';
+            $sessionLabel = $payment->academicSession->name ?? '';
+            $admNo = $student->admission_no ?? '';
+            $name = $student->name ?? '';
+            $address = trim(implode(' ', array_filter([
+                $student->address ?? null,
+                $student->address_line_2 ?? null,
+            ])));
+            $class = $student->schoolClass->name ?? '';
+            $receipt = $payment->receipt_no ?? '';
+            $mode = $modeByReceipt[$receipt]
+                ?? ($payment->payment_mode ?: 'Cash');
+
+            $items = is_array($payment->items) ? $payment->items : [];
+            if ($items === [] && (float) $payment->amount > 0 && (float) $payment->fine_amount <= 0) {
+                $items[] = [
+                    'fee_head_name' => 'Fee',
+                    'amount' => (float) $payment->amount,
+                    'months' => [],
+                ];
+            }
+
+            foreach ($items as $item) {
+                $headName = trim((string) ($item['fee_head_name'] ?? 'Fee')) ?: 'Fee';
+                $amount = (float) ($item['amount'] ?? 0);
+                if ($amount == 0.0) {
+                    continue;
+                }
+                $rows[] = [
+                    $yearLabel,
+                    $monthStart,
+                    $paymentDate,
+                    $admNo,
+                    $name,
+                    $address,
+                    $class,
+                    $this->incomeHeadCode($headName),
+                    round($amount, 2),
+                    $sessionLabel,
+                    $receipt,
+                    $this->incomeRemarksForItem($item, $payment->remarks),
+                    $mode,
+                ];
+            }
+
+            $fine = (float) $payment->fine_amount;
+            if ($fine > 0) {
+                $rows[] = [
+                    $yearLabel,
+                    $monthStart,
+                    $paymentDate,
+                    $admNo,
+                    $name,
+                    $address,
+                    $class,
+                    'FINE',
+                    round($fine, 2),
+                    $sessionLabel,
+                    $receipt !== '' ? $receipt.'-FINE' : '',
+                    'FINE',
+                    $mode,
+                ];
+            }
+        }
+
+        // Misc income rows (no admission no) — same INCOME columns so re-import stays compatible.
+        $incomes = Income::query()
+            ->with('bankAccount:id,account_name')
+            ->when(! $allSessions && $session && $session->start_date && $session->end_date,
+                fn ($q) => $q->whereBetween('date', [$session->start_date, $session->end_date]))
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($incomes as $income) {
+            $date = $income->date?->toDateString() ?? '';
+            $monthStart = $income->date?->copy()->startOfMonth()->toDateString() ?? '';
+            $mode = trim((string) ($income->bankAccount->account_name ?? ''))
+                ?: ($income->payment_mode ?: 'Cash');
+            $rows[] = [
+                $income->date ? $this->fiscalYearLabel($income->date) : '',
+                $monthStart,
+                $date,
+                '',
+                '',
+                '',
+                '',
+                $this->incomeHeadCode((string) ($income->source ?: 'Income')),
+                round((float) $income->amount, 2),
+                (! $allSessions && $session) ? ($session->name ?? '') : '',
+                preg_replace('/^INC-/', '', (string) $income->voucher_no) ?: $income->voucher_no,
+                $income->remarks,
+                $mode,
+            ];
+        }
+
+        return [$headers, $rows];
+    }
+
+    /**
+     * Stud_Rec_Sum — per-student fee ledger matching GAS INC_EXP columns:
+     * ADM NO. | NAME | FATHER | ADDRESS | MOBILE | CLASS | VEHICLE |
+     * TOT_PMNT | REG | ADM | ANN_PMNT | ANN_DUES | TUI_PMNT | TUI CALC | TUI_DUES |
+     * TRA_PMNT | TRA CALC | TRA_DUES | DUES
+     *
+     * Payments mirror INCOME sheet SUMIFS; CALC/DUES use fee structure + transport fare
+     * (Excel style: DUES columns = paid − expected).
+     *
+     * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
+     */
+    private function buildStudRecSumExport(?Request $request = null): array
+    {
+        [$session, $allSessions] = $this->resolveHeaderSession($request);
+        if ($allSessions || ! $session) {
+            $session = AcademicSession::where('is_current', true)->first()
+                ?? AcademicSession::query()->orderByDesc('start_date')->first();
+        }
+
+        $headers = [
+            'ADM NO.', 'NAME OF STUDENT', 'FATHER NAME', 'ADDRESS', 'MOBILE', 'CLASS', 'VEHICLE',
+            'TOT_PMNT', 'REG', 'ADM', 'ANN_PMNT', 'ANN_DUES', 'TUI_PMNT', 'TUI CALC', 'TUI_DUES',
+            'TRA_PMNT', 'TRA CALC', 'TRA_DUES', 'DUES',
+        ];
+
+        if (! $session) {
+            return [$headers, []];
+        }
+
+        $students = Student::query()
+            ->with([
+                'father:id,name',
+                'schoolClass:id,name',
+                'udiseDetail:id,student_id,vehicle,stoppage',
+            ])
+            ->orderBy('admission_no')
+            ->get();
+
+        if ($students->isEmpty()) {
+            return [$headers, []];
+        }
+
+        $studentIds = $students->pluck('id')->all();
+
+        $vehicleByStudent = StudentTransport::query()
+            ->whereIn('student_id', $studentIds)
+            ->where('status', 'Active')
+            ->with(['route:id,vehicle_id', 'route.vehicle:id,vehicle_no', 'routeStop:id,fare'])
+            ->orderByDesc('id')
+            ->get()
+            ->unique('student_id')
+            ->keyBy('student_id');
+
+        $headCodeById = FeeHead::query()->get(['id', 'name'])
+            ->mapWithKeys(fn (FeeHead $h) => [(string) $h->id => $this->incomeHeadCode((string) $h->name)])
+            ->all();
+
+        $paidByStudent = [];
+        foreach ($studentIds as $id) {
+            $paidByStudent[$id] = [
+                'TOT' => 0.0, 'REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0,
+            ];
+        }
+
+        $payments = FeePayment::query()
+            ->whereIn('student_id', $studentIds)
+            ->where('academic_session_id', $session->id)
+            ->where(function ($q) {
+                $q->whereNull('status')->orWhereNotIn('status', ['Refunded', 'Rolled Back']);
+            })
+            ->orderBy('id')
+            ->get(['id', 'student_id', 'items', 'amount', 'refunded_amount', 'fine_amount', 'status']);
+
+        foreach ($payments as $payment) {
+            $sid = (int) $payment->student_id;
+            if (! isset($paidByStudent[$sid])) {
+                continue;
+            }
+
+            $gross = (float) $payment->amount;
+            $net = $gross - (float) $payment->refunded_amount;
+            if ($net <= 0 || $gross <= 0) {
+                continue;
+            }
+            $scale = $net / $gross;
+
+            $items = is_array($payment->items) ? $payment->items : [];
+            if ($items === [] && $net > 0 && (float) $payment->fine_amount <= 0) {
+                $items[] = ['fee_head_name' => 'Fee', 'amount' => $gross];
+            }
+
+            foreach ($items as $item) {
+                $amount = (float) ($item['amount'] ?? 0) * $scale;
+                if ($amount == 0.0) {
+                    continue;
+                }
+                $code = '';
+                $feeHeadId = (int) ($item['fee_head_id'] ?? 0);
+                if ($feeHeadId && isset($headCodeById[(string) $feeHeadId])) {
+                    $code = $headCodeById[(string) $feeHeadId];
+                } else {
+                    $code = $this->incomeHeadCode(trim((string) ($item['fee_head_name'] ?? 'Fee')) ?: 'Fee');
+                }
+                $paidByStudent[$sid]['TOT'] += $amount;
+                if (isset($paidByStudent[$sid][$code])) {
+                    $paidByStudent[$sid][$code] += $amount;
+                }
+            }
+
+            $fine = (float) $payment->fine_amount * $scale;
+            if ($fine > 0) {
+                $paidByStudent[$sid]['TOT'] += $fine;
+            }
+        }
+
+        FeeCalculator::flushRuntimeCache();
+        FeeCalculator::warmForStudents($students, $session);
+
+        $monthKeys = collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all();
+        if ($monthKeys === [] && $session->start_date && $session->end_date) {
+            $cursor = $session->start_date->copy()->startOfMonth();
+            $end = $session->end_date->copy()->startOfMonth();
+            while ($cursor->lte($end)) {
+                $monthKeys[] = $cursor->format('Y-m');
+                $cursor->addMonth();
+            }
+        }
+        $monthCount = count($monthKeys);
+
+        $rows = [];
+        foreach ($students as $student) {
+            $paid = $paidByStudent[$student->id] ?? [
+                'TOT' => 0.0, 'REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0,
+            ];
+
+            // Structure charges only — no per-student payment re-query (was the 120s bottleneck).
+            $charge = $this->studRecSumCharges($student, $session, $monthKeys, $monthCount, $vehicleByStudent->get($student->id));
+
+            $annPmnt = round($paid['ANN'], 2);
+            $tuiPmnt = round($paid['TUI'], 2);
+            $traPmnt = round($paid['TRA'], 2);
+            $annCalc = round($charge['ANN'], 2);
+            $tuiCalc = round($charge['TUI'], 2);
+            $traCalc = round($charge['TRA'], 2);
+            $annDues = round($annPmnt - $annCalc, 2);
+            $tuiDues = round($tuiPmnt - $tuiCalc, 2);
+            $traDues = round($traPmnt - $traCalc, 2);
+
+            $vehicle = trim((string) ($student->udiseDetail?->vehicle ?? ''));
+            if ($vehicle === '') {
+                $vehicle = trim((string) ($vehicleByStudent->get($student->id)?->route?->vehicle?->vehicle_no ?? ''));
+            }
+            if ($vehicle === '') {
+                $vehicle = 'None';
+            }
+
+            $address = trim(implode(' ', array_filter([
+                $student->address ?? null,
+                $student->address_line_2 ?? null,
+            ])));
+
+            $rows[] = [
+                $student->admission_no ?? '',
+                $student->name ?? '',
+                $student->father?->name ?? '',
+                $address,
+                $student->mobile ?? '',
+                $student->schoolClass->name ?? '',
+                $vehicle,
+                round($paid['TOT'], 2),
+                round($paid['REG'], 2),
+                round($paid['ADM'], 2),
+                $annPmnt,
+                $annDues,
+                $tuiPmnt,
+                $tuiCalc,
+                $tuiDues,
+                $traPmnt,
+                $traCalc,
+                $traDues,
+                round($annDues + $tuiDues + $traDues, 2),
+            ];
+        }
+
+        return [$headers, $rows];
+    }
+
+    /**
+     * Expected REG/ADM/ANN/TUI/TRA charges for Stud_Rec_Sum (no DB hits beyond FeeCalculator cache).
+     *
+     * @param  list<string>  $monthKeys
+     * @return array{REG: float, ADM: float, ANN: float, TUI: float, TRA: float}
+     */
+    private function studRecSumCharges(Student $student, AcademicSession $session, array $monthKeys, int $monthCount, ?StudentTransport $transport): array
+    {
+        $charge = ['REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0];
+
+        foreach (FeeCalculator::breakdownOnly($student, $session) as $plan) {
+            $code = $this->incomeHeadCode((string) ($plan['fee_head_name'] ?? ''));
+            if (! isset($charge[$code])) {
+                continue;
+            }
+            $unit = (float) ($plan['amount'] ?? 0);
+            if ($unit <= 0) {
+                continue;
+            }
+            $freq = strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'one_time')));
+            if (in_array($freq, ['annual', 'one_time'], true)) {
+                $charge[$code] += $unit;
+            } elseif ($freq === 'quarterly') {
+                $n = 0;
+                foreach ($monthKeys as $monthKey) {
+                    $monthNum = (int) substr((string) $monthKey, 5, 2);
+                    if (in_array($monthNum, [4, 7, 10, 1], true)) {
+                        $n++;
+                    }
+                }
+                $charge[$code] += $unit * $n;
+            } else {
+                $charge[$code] += $unit * $monthCount;
+            }
+        }
+
+        $fare = (float) ($transport?->routeStop?->fare ?? 0);
+        if ($fare > 0 && $monthCount > 0) {
+            $feeStart = $transport?->feeStartMonthKey();
+            $billable = 0;
+            foreach ($monthKeys as $monthKey) {
+                if ($feeStart && (string) $monthKey < (string) $feeStart) {
+                    continue;
+                }
+                $billable++;
+            }
+            $charge['TRA'] += $fare * $billable;
+        }
+
+        return $charge;
+    }
+
+    /** Reverse of GlobalWorkbookImportController::INCOME_HEAD_CANONICAL_MAP. */
+    private function incomeHeadCode(string $headName): string
+    {
+        $map = [
+            'registration fee' => 'REG',
+            'admission fee' => 'ADM',
+            'session fee' => 'ANN',
+            'tution fee' => 'TUI',
+            'tuition fee' => 'TUI',
+            'transport' => 'TRA',
+            'fine' => 'FINE',
+        ];
+
+        $key = strtolower(trim($headName));
+
+        return $map[$key] ?? (strlen($headName) <= 12 ? strtoupper($headName) : $headName);
+    }
+
+    /**
+     * Prefer coverage month tokens (e.g. DEC) from fee line items — matches school REMARKS style.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    private function incomeRemarksForItem(array $item, ?string $paymentRemarks): string
+    {
+        $months = $item['months'] ?? [];
+        if (! is_array($months) || $months === []) {
+            $single = $item['month'] ?? null;
+            $months = $single ? [$single] : [];
+        }
+
+        $labels = [];
+        foreach ($months as $ym) {
+            $ym = trim((string) $ym);
+            if (preg_match('/^(\d{4})-(\d{2})$/', $ym, $m)) {
+                $labels[] = strtoupper(\Carbon\Carbon::createFromDate((int) $m[1], (int) $m[2], 1)->format('M'));
+            } elseif ($ym !== '') {
+                $labels[] = strtoupper($ym);
+            }
+        }
+        $labels = array_values(array_unique($labels));
+        if ($labels !== []) {
+            return implode('-', $labels);
+        }
+
+        $remarks = trim((string) $paymentRemarks);
+        if ($remarks === '') {
+            return $this->incomeHeadCode((string) ($item['fee_head_name'] ?? 'Fee'));
+        }
+
+        // Imported remarks often look like "REG | Class: NUR | Name: …" — keep the first segment.
+        $first = trim(explode('|', $remarks)[0]);
+
+        return $first !== '' ? $first : $remarks;
+    }
+
+    private function fiscalYearLabel(\Carbon\CarbonInterface $date): string
+    {
+        $year = (int) $date->format('Y');
+        $month = (int) $date->format('n');
+        if ($month >= 4) {
+            return sprintf('%d-%02d', $year, ($year + 1) % 100);
+        }
+
+        return sprintf('%d-%02d', $year - 1, $year % 100);
     }
 
     /**
@@ -1040,6 +1506,22 @@ class ExportController extends Controller
 
         // Fall back to full sheet if nothing matched (bad/stale column names).
         return $indexes === [] ? null : $indexes;
+    }
+
+    /**
+     * Global / salary export in the school's "SALARY 26-27 Bank" layout:
+     * SL NO | NAME | DESIG | BASIC SALARY | APR…MAR | TOTAL
+     *
+     * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>, 2: string}
+     */
+    private function buildSalaryBankExport(?Request $request = null): array
+    {
+        [$session] = $this->resolveHeaderSession($request);
+        $startYear = $session?->start_date
+            ? (int) $session->start_date->format('Y')
+            : (int) now()->year;
+
+        return app(SalaryBankWorkbookService::class)->buildExport($startYear);
     }
 
     /**

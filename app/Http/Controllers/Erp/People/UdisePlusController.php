@@ -24,7 +24,7 @@ class UdisePlusController extends Controller
                 'father:id,name',
                 'mother:id,name',
                 'udiseDetail',
-                'branch:id,name',
+                'branch:id,name,principal',
             ]);
 
         if ($request->filled('status')) {
@@ -64,7 +64,7 @@ class UdisePlusController extends Controller
             'father:id,name',
             'mother:id,name',
             'udiseDetail',
-            'branch:id,name',
+            'branch:id,name,principal',
         ]);
 
         return response()->json($this->present($student));
@@ -91,6 +91,7 @@ class UdisePlusController extends Controller
             'father:id,name',
             'mother:id,name',
             'udiseDetail',
+            'branch:id,principal',
         ])->whereIn('id', $data['student_ids'])->get();
 
         abort_if($students->isEmpty(), 404, 'No students found.');

@@ -19,5 +19,6 @@ class AdmissionsCache
         Cache::forget(self::CUSTOM_FIELDS);
         Cache::forget(self::CUSTOM_FIELDS_ACTIVE);
         Cache::forget(self::PIPELINE_COUNTS);
+        DashboardCache::forget();
     }
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Erp\Communication;
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
 use App\Models\Event;
+use App\Support\DashboardCache;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -24,6 +25,8 @@ class EventController extends Controller
 
         $event = Event::create($data);
 
+        DashboardCache::forget();
+
         return response()->json($event, 201);
     }
 
@@ -33,12 +36,16 @@ class EventController extends Controller
 
         $event->update($data);
 
+        DashboardCache::forget();
+
         return response()->json($event);
     }
 
     public function destroy(Event $event)
     {
         $event->delete();
+
+        DashboardCache::forget();
 
         return response()->json(['success' => true]);
     }

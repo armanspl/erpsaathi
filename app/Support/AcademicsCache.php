@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Cache;
  */
 class AcademicsCache
 {
-    public const LOOKUPS = 'erp.academics.lookups.v1';
+    public const LOOKUPS = 'erp.academics.lookups.v2';
 
     public const CLASSES_COMPACT = 'erp.academics.classes.compact.v1';
 

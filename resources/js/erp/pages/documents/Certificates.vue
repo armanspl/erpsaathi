@@ -414,6 +414,123 @@
                 </button>
             </template>
         </SlideOver>
+
+        <!-- Transfer Certificate fee checkout -->
+        <SlideOver :open="tcOpen" title="Transfer Certificate — Fee Check" @close="tcOpen = false">
+            <div v-if="tcLoading" class="py-10 text-center text-sm text-slate-400">Checking dues...</div>
+            <template v-else-if="tcStatus">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">{{ tcStatus.student?.name }}</p>
+                    <p class="mt-0.5 text-xs text-slate-500">Adm {{ tcStatus.student?.admission_no }} · {{ tcStatus.session?.name }}</p>
+                </div>
+
+                <div class="mt-4 space-y-2 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Fee Due (same as Fee Management → Fee Due)</p>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-slate-500">Fee Due — Charged</span>
+                        <span>₹{{ money(tcStatus.fee_due?.automatic_charge) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-slate-500">Fee Due — Paid</span>
+                        <span>₹{{ money(tcStatus.fee_due?.automatic_paid) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-slate-500">Fee Due — Due</span>
+                        <span class="font-semibold" :class="(tcStatus.fee_due?.automatic_due || 0) > 0 ? 'text-amber-600' : 'text-emerald-600'">
+                            ₹{{ money(tcStatus.fee_due?.automatic_due) }}
+                        </span>
+                    </div>
+                    <div v-if="(tcStatus.fee_due?.manual_due || 0) > 0" class="flex items-center justify-between gap-3">
+                        <span class="text-slate-500">Other Manual Dues</span>
+                        <span class="font-semibold text-amber-600">₹{{ money(tcStatus.fee_due?.manual_due) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 dark:border-slate-800">
+                        <span class="font-medium text-slate-700 dark:text-slate-200">Student Fee Due Total</span>
+                        <span class="font-bold" :class="(tcStatus.academic_outstanding || 0) > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-600'">
+                            ₹{{ money(tcStatus.academic_outstanding) }}
+                        </span>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 dark:border-slate-800">
+                        <span class="text-slate-500">TC Fee</span>
+                        <span class="font-semibold text-slate-800 dark:text-slate-100">₹{{ money(tcStatus.tc_fee?.amount) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-slate-500">TC Paid</span>
+                        <span>₹{{ money(tcStatus.tc_fee?.paid) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-slate-500">TC Due</span>
+                        <span class="font-semibold" :class="tcStatus.tc_fee?.due > 0 ? 'text-amber-600' : 'text-emerald-600'">
+                            ₹{{ money(tcStatus.tc_fee?.due) }} · {{ tcStatus.tc_fee?.status }}
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 dark:border-slate-800">
+                        <span class="font-medium text-slate-700 dark:text-slate-200">Total Amount to Collect</span>
+                        <span class="font-bold text-slate-900 dark:text-slate-50">₹{{ money(tcStatus.total_to_collect) }}</span>
+                    </div>
+                </div>
+
+                <p v-if="tcStatus.block_reason" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    {{ tcStatus.block_reason }}
+                </p>
+
+                <div v-if="tcStatus.tc_fee?.enabled && tcStatus.tc_fee?.due > 0" class="mt-4 space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Collect TC Fee</p>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label">Amount (₹)</label>
+                            <input v-model.number="tcPayForm.amount" type="number" min="0.01" step="0.01" class="form-input" />
+                        </div>
+                        <div>
+                            <label class="form-label">Payment mode</label>
+                            <select v-model="tcPayForm.payment_mode" class="form-input">
+                                <option>Cash</option>
+                                <option>UPI</option>
+                                <option>Card</option>
+                                <option>Bank Transfer</option>
+                                <option>Cheque</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-primary w-full" :disabled="tcPaying" @click="payTcFee">
+                        {{ tcPaying ? 'Collecting...' : `Collect TC Fee ₹${money(tcPayForm.amount)}` }}
+                    </button>
+                </div>
+
+                <div v-if="(tcStatus.academic_outstanding || 0) > 0" class="mt-4 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Student Fee Due</p>
+                    <p class="mt-2 text-slate-600 dark:text-slate-300">
+                        Clear academic Fee Due (₹{{ money(tcStatus.academic_outstanding) }}) from Fee Due / Pay Fee. TC Fee stays separate above.
+                    </p>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        <router-link
+                            class="btn-outline inline-flex items-center"
+                            :to="{ path: '/fee-management/fee-due', query: { search: tcStatus.student?.admission_no || tcStatus.student?.name || '' } }"
+                        >
+                            Open Fee Due
+                        </router-link>
+                        <router-link
+                            class="btn-outline inline-flex items-center"
+                            :to="{ path: '/fee-management/pay-fee', query: { search: tcStatus.student?.admission_no || tcStatus.student?.name || '' } }"
+                        >
+                            Open Pay Fee
+                        </router-link>
+                    </div>
+                </div>
+            </template>
+            <template #footer>
+                <button type="button" class="btn-outline" @click="tcOpen = false">Cancel</button>
+                <button
+                    type="button"
+                    class="btn-primary"
+                    :disabled="!tcStatus?.can_issue || tcDownloading"
+                    @click="downloadAfterTcCheck"
+                >
+                    {{ tcDownloading ? 'Downloading...' : 'Download Transfer Certificate' }}
+                </button>
+            </template>
+        </SlideOver>
     </div>
 </template>
 
@@ -514,6 +631,10 @@ function toggleOne(id, checked) {
 }
 
 async function downloadStudentPdf(row, overrides = {}) {
+    if (isTransferCertificateType()) {
+        await openTcCheckout(row, overrides);
+        return;
+    }
     downloadingId.value = row.student_id;
     try {
         await downloadPdf(
@@ -521,13 +642,112 @@ async function downloadStudentPdf(row, overrides = {}) {
             `certificate-${row.admission_no}.pdf`,
             overrides,
         );
+    } catch (e) {
+        pushToast(e?.response?.data?.message || e?.response?.data?.errors?.tc_fee?.[0] || 'Could not download certificate.', 'error');
     } finally {
+        downloadingId.value = null;
+    }
+}
+
+function isTransferCertificateType() {
+    const t = types.value.find((x) => x.id === filters.certificate_type_id);
+    if (!t) return false;
+    const label = String(t.label || '').toLowerCase();
+    const prefix = String(t.prefix || '').toUpperCase();
+    return prefix === 'TC' || label.includes('transfer certificate') || (label.includes('transfer') && label.includes('cert'));
+}
+
+function money(v) {
+    return Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const tcOpen = ref(false);
+const tcLoading = ref(false);
+const tcPaying = ref(false);
+const tcDownloading = ref(false);
+const tcRow = ref(null);
+const tcOverrides = ref({});
+const tcStatus = ref(null);
+const tcPayForm = reactive({ amount: 0, payment_mode: 'Cash' });
+
+async function openTcCheckout(row, overrides = {}) {
+    tcRow.value = row;
+    tcOverrides.value = overrides || {};
+    tcStatus.value = null;
+    tcOpen.value = true;
+    tcLoading.value = true;
+    try {
+        const { data } = await client.get(`/documents/certificates/${filters.certificate_type_id}/${row.student_id}/tc-checkout`);
+        tcStatus.value = data;
+        tcPayForm.amount = Number(data.tc_fee?.due || 0);
+        tcPayForm.payment_mode = 'Cash';
+    } catch (e) {
+        tcOpen.value = false;
+        pushToast(e?.response?.data?.message || 'Could not start TC fee checkout.', 'error');
+    } finally {
+        tcLoading.value = false;
+    }
+}
+
+async function payTcFee() {
+    if (!tcRow.value || !tcStatus.value) return;
+    tcPaying.value = true;
+    try {
+        const { data } = await client.post(
+            `/documents/certificates/${filters.certificate_type_id}/${tcRow.value.student_id}/tc-pay`,
+            {
+                amount: tcPayForm.amount,
+                payment_mode: tcPayForm.payment_mode,
+            },
+        );
+        tcStatus.value = data.checkout;
+        tcPayForm.amount = Number(data.checkout?.tc_fee?.due || 0);
+        pushToast(`TC Fee collected. Receipt ${data.payment?.receipt_no || ''}.`.trim(), 'success');
+    } catch (e) {
+        const msg = e?.response?.data?.errors?.amount?.[0]
+            || e?.response?.data?.message
+            || 'Could not collect TC Fee.';
+        pushToast(msg, 'error');
+    } finally {
+        tcPaying.value = false;
+    }
+}
+
+async function downloadAfterTcCheck() {
+    if (!tcRow.value || !tcStatus.value?.can_issue) return;
+    tcDownloading.value = true;
+    downloadingId.value = tcRow.value.student_id;
+    try {
+        await downloadPdf(
+            `/documents/certificates/${filters.certificate_type_id}/${tcRow.value.student_id}/pdf`,
+            `certificate-${tcRow.value.admission_no}.pdf`,
+            tcOverrides.value,
+        );
+        tcOpen.value = false;
+        prepareOpen.value = false;
+    } catch (e) {
+        const msg = e?.response?.data?.errors?.tc_fee?.[0]
+            || e?.response?.data?.message
+            || 'Could not download Transfer Certificate.';
+        pushToast(msg, 'error');
+        // Refresh status in case dues changed
+        try {
+            const { data } = await client.get(`/documents/certificates/${filters.certificate_type_id}/${tcRow.value.student_id}/tc-checkout`);
+            tcStatus.value = data;
+            tcPayForm.amount = Number(data.tc_fee?.due || 0);
+        } catch (_) { /* ignore */ }
+    } finally {
+        tcDownloading.value = false;
         downloadingId.value = null;
     }
 }
 
 async function downloadZip(scope) {
     if (!filters.certificate_type_id) return;
+    if (isTransferCertificateType()) {
+        pushToast('For Transfer Certificates, download one student at a time so TC Fee can be checked and collected.', 'error');
+        return;
+    }
     zipScope.value = scope;
     try {
         const params = { role: filters.role };

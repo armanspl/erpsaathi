@@ -173,6 +173,21 @@ class PermissionCatalog
                         'path' => '/import-export',
                         'actions' => ['view' => 'View', 'import' => 'Import', 'upload' => 'Upload'],
                     ],
+                    'exam-marks-export' => [
+                        'label' => 'Exam Marks Export',
+                        'path' => '/import-export',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
+                    'academic-calendar-import' => [
+                        'label' => 'Academic Calendar Import',
+                        'path' => '/import-export',
+                        'actions' => ['view' => 'View', 'import' => 'Import', 'upload' => 'Upload'],
+                    ],
+                    'academic-calendar-export' => [
+                        'label' => 'Academic Calendar Export',
+                        'path' => '/import-export',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
                 ],
             ],
             'academics' => [
@@ -214,6 +229,11 @@ class PermissionCatalog
                             'upload' => 'Upload Attachment',
                             'download' => 'Download Attachment',
                         ],
+                    ],
+                    'academic-calendar' => [
+                        'label' => 'Academic Calendar',
+                        'path' => '/academics/academic-calendar',
+                        'actions' => ['view' => 'View', 'create' => 'Create', 'edit' => 'Edit', 'delete' => 'Delete'],
                     ],
                 ],
             ],
@@ -393,6 +413,11 @@ class PermissionCatalog
                     'fee-history' => [
                         'label' => 'Fee History',
                         'path' => '/fee-management/fee-history',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
+                    'month-wise-fee-collection' => [
+                        'label' => 'Month-wise Fee Collection',
+                        'path' => '/fee-management/month-wise-fee-collection',
                         'actions' => ['view' => 'View', 'export' => 'Export'],
                     ],
                     'pay-fee' => [

@@ -1,0 +1,107 @@
+{
+    "label": "AFTER",
+    "school": "future",
+    "db": "future_db",
+    "active_students": 291,
+    "session": "2026-2027",
+    "cold_ms": 578.89,
+    "warm_ms": 7.81,
+    "notifications_ms": 7.42,
+    "cold_query_count": 63,
+    "warm_query_count": 0,
+    "notifications_query_count": 4,
+    "duplicate_query_groups": 1,
+    "top_duplicate_queries": [
+        {
+            "count": 11,
+            "sql": "select * from `erp_fee_structure_plans` where `academic_session_id` = ? and `status` = ? and exists (select * from `erp_fee_structure_plan_scopes` where `erp_fee_structure_plans`.`"
+        }
+    ],
+    "fingerprint": "276eaba71b66a39014b293c1c721f0bd4db1c378b4c776ab542b259ebe6e7057",
+    "sample": {
+        "people_stats": {
+            "students": 291,
+            "teachers": 0,
+            "staff": 0,
+            "drivers": 0
+        },
+        "money_stats": {
+            "fee_collected": 3240685,
+            "fee_pending": 1630275,
+            "bank_balance": 1768860,
+            "expense": 2139589
+        },
+        "today_summary": {
+            "students": {
+                "present": 0,
+                "absent": 0
+            },
+            "staff": {
+                "present": 0,
+                "absent": 0
+            },
+            "fee": {
+                "received": 0,
+                "cash": 0,
+                "bank": 0,
+                "receipts": 0
+            }
+        },
+        "fee_collection_status_count": 11,
+        "fee_collection_status_top3": [
+            {
+                "class": "1",
+                "collected_amount": 352000,
+                "due_amount": 207400,
+                "collected": 63,
+                "due_pct": 37,
+                "pending": 38
+            },
+            {
+                "class": "6",
+                "collected_amount": 329050,
+                "due_amount": 183550,
+                "collected": 64,
+                "due_pct": 36,
+                "pending": 28
+            },
+            {
+                "class": "3",
+                "collected_amount": 319300,
+                "due_amount": 180500,
+                "collected": 64,
+                "due_pct": 36,
+                "pending": 33
+            }
+        ],
+        "class_strength_count": 11,
+        "pending_tasks": [
+            {
+                "label": "Fee Payments Pending",
+                "count": 279,
+                "to": "\/fee-management\/fee-due"
+            },
+            {
+                "label": "Leave Requests Pending",
+                "count": 0,
+                "to": "\/attendance\/leave-approval"
+            },
+            {
+                "label": "Admission Enquiries",
+                "count": 0,
+                "to": "\/admissions\/enquiry"
+            },
+            {
+                "label": "Salary Slips Pending",
+                "count": 0,
+                "to": "\/finance-and-payroll\/salary-slips"
+            },
+            {
+                "label": "Import Failed Records",
+                "count": 0,
+                "to": "\/import-export?type=failed-records"
+            }
+        ],
+        "notifications_total": 280
+    }
+}

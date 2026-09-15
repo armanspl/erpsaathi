@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
 use App\Models\RouteStop;
 use App\Models\StudentTransport;
+use App\Support\DashboardCache;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -73,6 +74,8 @@ class StudentTransportController extends Controller
 
         $assignment = StudentTransport::create($data);
 
+        DashboardCache::forget();
+
         return response()->json($assignment->load(['student:id,name,admission_no', 'route:id,name', 'routeStop:id,stop_name,fare']), 201);
     }
 
@@ -93,12 +96,16 @@ class StudentTransportController extends Controller
 
         $studentTransport->update($data);
 
+        DashboardCache::forget();
+
         return response()->json($studentTransport->load(['student:id,name,admission_no', 'route:id,name', 'routeStop:id,stop_name,fare']));
     }
 
     public function destroy(StudentTransport $studentTransport)
     {
         $studentTransport->delete();
+
+        DashboardCache::forget();
 
         return response()->json(['success' => true]);
     }

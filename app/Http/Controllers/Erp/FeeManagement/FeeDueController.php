@@ -13,6 +13,7 @@ use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
 use App\Services\FeeBalanceService;
 use App\Services\FeeCalculator;
+use App\Support\DashboardCache;
 use Carbon\Carbon;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -899,6 +900,8 @@ class FeeDueController extends Controller
                 'status' => 'Paid',
             ]);
         });
+
+        DashboardCache::forget();
 
         return response()->json($payment->load(['student:id,name,admission_no']), 201);
     }

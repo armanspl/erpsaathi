@@ -305,16 +305,19 @@
                     </div>
                 </div>
                 <div class="mt-4">
-                    <label class="form-label">File</label>
+                    <label class="form-label">Select / Upload Excel File</label>
                     <input ref="importFileInput" type="file" accept=".xlsx,.xls" class="form-input" @change="onImportFileSelected" />
                 </div>
 
                 <p v-if="importError" class="mt-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">{{ importError }}</p>
 
-                <div class="mt-5 flex gap-2">
+                <div class="mt-5 flex flex-wrap gap-2">
+                    <button type="button" class="btn-outline" :disabled="downloadingTemplate" @click="downloadScheduleTemplate">
+                        {{ downloadingTemplate ? 'Downloading...' : 'Download Template' }}
+                    </button>
                     <button type="button" class="btn-outline flex-1" :disabled="importing" @click="closeImportModal">Cancel</button>
                     <button type="button" class="btn-primary flex-1" :disabled="!canRunImport || importing" @click="runImport">
-                        {{ importing ? 'Parsing...' : 'Parse & Pre-fill' }}
+                        {{ importing ? 'Parsing...' : 'Import' }}
                     </button>
                 </div>
             </div>
@@ -329,6 +332,7 @@ import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
 import { erpStore } from '../../store';
 import { downloadPdf } from '../../utils/documentPdf';
+import { downloadImportTemplate } from '../../utils/downloadExport';
 import { pushToast } from '../../utils/toast';
 import ExamPdfColorPicker from '../../components/ExamPdfColorPicker.vue';
 
@@ -371,13 +375,26 @@ const currentSessionName = ref('');
 // Excel import: parses server-side and pre-fills sheetForm.dates for review — it never saves on
 // its own, saving still goes through the normal saveSheet() flow below.
 const importModalOpen = ref(false);
-const importForm = reactive({ exam_id: null, branch_id: null });
-const importFile = ref(null);
 const importFileInput = ref(null);
+const importFile = ref(null);
 const importing = ref(false);
+const downloadingTemplate = ref(false);
+const importForm = reactive({ exam_id: null, branch_id: null });
 const importError = ref('');
 const importWarnings = ref(null);
 const canRunImport = computed(() => !!(importForm.exam_id && importForm.branch_id && importFile.value));
+
+async function downloadScheduleTemplate() {
+    downloadingTemplate.value = true;
+    try {
+        await downloadImportTemplate('exam-schedule');
+        pushToast('Template downloaded.', 'success');
+    } catch (err) {
+        pushToast(err?.response?.data?.message || 'Could not download template.', 'error');
+    } finally {
+        downloadingTemplate.value = false;
+    }
+}
 
 const selectedFilterExam = computed(() => exams.value.find((e) => e.id === scheduleFilters.exam_id) || null);
 function onExamColorUpdate(updated) {

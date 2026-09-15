@@ -10,6 +10,7 @@ use App\Models\SchoolSetting;
 use App\Models\Student;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
+use App\Services\TcFeeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -31,6 +32,7 @@ class CertificateController extends Controller
     public function __construct(
         private DocumentRenderService $renderer,
         private DocumentDataBuilder $dataBuilder,
+        private TcFeeService $tcFees,
     ) {}
 
     /** Every field the PDF can show for this student + certificate type, pre-computed — powers the "Prepare" drawer. */
@@ -39,6 +41,40 @@ class CertificateController extends Controller
         $certificate = $this->certificateFor($certificateType, $student);
 
         return response()->json($this->dataBuilder->certificate($certificateType, $certificate, $student));
+    }
+
+    /** Start TC process: create one-time TC fee if enabled and return dues breakdown. */
+    public function tcCheckout(CertificateType $certificateType, Student $student)
+    {
+        abort_unless($this->tcFees->isTransferCertificate($certificateType), 422, 'Not a Transfer Certificate type.');
+
+        return response()->json($this->tcFees->checkout($student, true));
+    }
+
+    /** Collect TC Fee payment for this student (creates receipt + marks manual due paid). */
+    public function tcPay(Request $request, CertificateType $certificateType, Student $student)
+    {
+        abort_unless($this->tcFees->isTransferCertificate($certificateType), 422, 'Not a Transfer Certificate type.');
+
+        $data = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'payment_mode' => 'required|string|max:50',
+            'payment_date' => 'nullable|date',
+            'remarks' => 'nullable|string|max:255',
+        ]);
+
+        $payment = $this->tcFees->pay(
+            $student,
+            (float) $data['amount'],
+            (string) $data['payment_mode'],
+            $data['payment_date'] ?? null,
+            $data['remarks'] ?? null,
+        );
+
+        return response()->json([
+            'payment' => $payment->load(['student:id,name,admission_no']),
+            'checkout' => $this->tcFees->checkout($student, false),
+        ], 201);
     }
 
     /** Recipient roster for a role. Only "student" has a wired-up roster in this release. */
@@ -53,6 +89,10 @@ class CertificateController extends Controller
 
     public function downloadStudentPdf(Request $request, CertificateType $certificateType, Student $student): StreamedResponse
     {
+        if ($this->tcFees->isTransferCertificate($certificateType)) {
+            $this->tcFees->assertCanIssue($student);
+        }
+
         $certificate = $this->certificateFor($certificateType, $student);
         $overrides = $request->only(self::OVERRIDABLE_FIELDS);
         $data = $this->dataBuilder->certificate($certificateType, $certificate, $student, $overrides);
@@ -73,6 +113,12 @@ class CertificateController extends Controller
         }
 
         abort_if($students->isEmpty(), 404, 'No recipients found for this selection.');
+
+        if ($this->tcFees->isTransferCertificate($certificateType)) {
+            foreach ($students as $student) {
+                $this->tcFees->assertCanIssue($student);
+            }
+        }
 
         $zipPath = tempnam(sys_get_temp_dir(), 'certificates-zip-');
 

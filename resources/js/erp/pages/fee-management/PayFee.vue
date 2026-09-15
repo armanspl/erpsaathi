@@ -237,9 +237,10 @@
 
         <ConfirmDialog
             v-model:open="confirmCollectOpen"
-            title="Collect fee"
-            :message="confirmCollectMessage"
-            confirm-label="Collect & open receipt"
+            title="Confirm fee collection"
+            message="Review the summary below, then confirm to collect and open the receipt."
+            :summary="confirmCollectSummary"
+            confirm-label="Confirm & collect"
             :busy="collecting"
             busy-label="Collecting…"
             @confirm="collectConfirmed"
@@ -249,6 +250,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
 import { fetchFeeStudentsLite } from '../../api/feeManagement';
@@ -285,7 +287,7 @@ const bankAccountId = ref(null);
 const remarks = ref('');
 const collecting = ref(false);
 const confirmCollectOpen = ref(false);
-const confirmCollectMessage = ref('');
+const confirmCollectSummary = ref([]);
 const transportRoutes = ref([]);
 const transportStops = ref([]);
 const transportHeadId = ref(null);
@@ -532,6 +534,9 @@ function hideResultsSoon() {
 }
 
 async function boot() {
+    const route = useRoute();
+    const qSearch = typeof route.query.search === 'string' ? route.query.search.trim() : '';
+
     const [lookups, meta] = await Promise.all([
         fetchAcademicsLookups(),
         client.get('/fee-management/due/meta').then((r) => r.data).catch(() => null),
@@ -545,6 +550,16 @@ async function boot() {
     fetchFeeStudentsLite()
         .then((st) => {
             students.value = Array.isArray(st) ? st : [];
+            if (qSearch && students.value.length) {
+                const q = qSearch.toLowerCase();
+                const match = students.value.find((s) =>
+                    String(s.admission_no || '').toLowerCase() === q
+                    || String(s.name || '').toLowerCase().includes(q)
+                    || String(s.admission_no || '').toLowerCase().includes(q)
+                );
+                if (match) selectStudent(match);
+                else search.value = qSearch;
+            }
         })
         .catch(() => {});
 }
@@ -753,9 +768,43 @@ async function collect() {
         pushToast(unpaidSelectedMonths().length ? 'Enter at least one paid amount.' : 'Select unpaid months to collect.', 'error');
         return;
     }
-    const who = student.value?.name || 'this student';
-    const amt = money(collectingTotal.value);
-    confirmCollectMessage.value = `Collect ₹${amt} for ${who} and open the receipt?`;
+
+    const months = unpaidSelectedMonths();
+    const monthLabels = months.map((key) => {
+        for (const block of monthBlocks.value) {
+            const hit = (block.months || []).find((m) => m.key === key);
+            if (hit?.label) return hit.label;
+        }
+        return key;
+    });
+
+    const headLines = selectedHeadIds.value
+        .map((id) => {
+            const item = (due.value?.breakdown || []).find((row) => row.fee_head_id === id);
+            const paidAmt = Number(amounts[id]) || 0;
+            if (!item || paidAmt <= 0) return null;
+            return `${item.fee_head_name || 'Fee'}: ₹${money(paidAmt)}`;
+        })
+        .filter(Boolean);
+
+    const transportPaid = transport.apply ? (Number(transport.fee) || 0) : 0;
+    const fine = Number(fineAmount.value) || 0;
+    const after = Math.max(0, selectedRemainingDue.value - collectingTotal.value);
+
+    confirmCollectSummary.value = [
+        { label: 'Student', value: student.value?.name || '—' },
+        { label: 'Admission No', value: student.value?.admission_no || '—' },
+        { label: 'Class', value: studentPlaceLabel.value },
+        { label: 'Months', value: monthLabels.join(', ') || '—' },
+        { label: 'Fee heads', value: headLines.length ? headLines.join(' · ') : '—' },
+        ...(transportPaid > 0 ? [{ label: 'Transport', value: `₹${money(transportPaid)}` }] : []),
+        ...(fine > 0 ? [{ label: 'Fine', value: `₹${money(fine)}` }] : []),
+        { label: 'Payment mode', value: paymentMode.value },
+        { label: 'Payment date', value: paymentDate.value || '—' },
+        { label: 'Remaining before', value: `₹${money(selectedRemainingDue.value)}` },
+        { label: 'Collecting now', value: `₹${money(collectingTotal.value)}`, emphasis: true },
+        { label: 'Remaining after', value: `₹${money(after)}` },
+    ];
     confirmCollectOpen.value = true;
 }
 

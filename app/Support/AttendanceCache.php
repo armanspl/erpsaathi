@@ -19,5 +19,6 @@ class AttendanceCache
         Cache::forget(self::LOOKUPS);
         Cache::forget(self::HOLIDAYS);
         Cache::forget(self::WORKING_DAYS);
+        DashboardCache::forget();
     }
 }

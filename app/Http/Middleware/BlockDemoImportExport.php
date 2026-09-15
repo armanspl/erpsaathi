@@ -46,12 +46,17 @@ class BlockDemoImportExport
         if (preg_match('#import-export/import/class-term-marks$#', $path)) {
             return 'exam-marks-import';
         }
+        if (preg_match('#import-export/import/academic-calendar$#', $path)) {
+            return 'academic-calendar-import';
+        }
         if (preg_match('#import-export/export/([^/]+)$#', $path, $m)) {
             return match ($m[1]) {
                 'global' => 'global-workbook-export',
                 'student' => 'student-export',
                 'student-udise' => 'student-udise-export',
                 'attendance' => 'attendance-export',
+                'academic-calendar' => 'academic-calendar-export',
+                'exam-marks' => 'exam-marks-export',
                 default => null,
             };
         }
