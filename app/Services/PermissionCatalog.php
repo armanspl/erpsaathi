@@ -658,6 +658,11 @@ class PermissionCatalog
                         'path' => '/settings/database-backup',
                         'actions' => ['view' => 'View', 'create' => 'Create Backup', 'download' => 'Download', 'delete' => 'Delete'],
                     ],
+                    'student-portal' => [
+                        'label' => 'Student Portal',
+                        'path' => '/settings/student-portal',
+                        'actions' => ['view' => 'View', 'edit' => 'Edit'],
+                    ],
                 ],
             ],
             'account' => [

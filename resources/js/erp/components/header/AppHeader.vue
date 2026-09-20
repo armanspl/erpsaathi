@@ -2,7 +2,7 @@
     <header class="erp-topbar sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b px-3 backdrop-blur sm:px-5 print:hidden">
         <!-- Left -->
         <div class="flex min-w-0 items-center gap-3">
-            <button type="button" class="header-icon-btn" title="Toggle sidebar" @click="onToggleSidebar">
+            <button type="button" class="header-icon-btn lg:hidden" title="Open menu" @click="onToggleSidebar">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
 
@@ -42,7 +42,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { erpStore, toggleSidebar, schoolInitials } from '../../store';
+import { erpStore, schoolInitials } from '../../store';
 import GlobalSearch from './GlobalSearch.vue';
 import PillSelect from './PillSelect.vue';
 import ImportExportMenu from './ImportExportMenu.vue';
@@ -54,8 +54,8 @@ const emit = defineEmits(['toggle-mobile-sidebar']);
 const schoolMark = computed(() => schoolInitials());
 
 function onToggleSidebar() {
-    if (window.innerWidth < 1024) emit('toggle-mobile-sidebar');
-    else toggleSidebar();
+    // Desktop uses hover-expand rail; hamburger only opens the mobile drawer.
+    emit('toggle-mobile-sidebar');
 }
 </script>
 

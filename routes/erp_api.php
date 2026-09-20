@@ -164,10 +164,12 @@ Route::prefix('settings')->name('settings.')->group(function () {
     Route::get('departments', [ErpDepartmentController::class, 'index'])->name('departments.index');
     Route::get('departments/suggestions', [ErpDepartmentController::class, 'suggestions'])->name('departments.suggestions');
     Route::get('database-backups', [DatabaseBackupController::class, 'index'])->name('database-backups.index');
+    Route::get('student-portal', [SchoolSettingController::class, 'studentPortalSettings'])->name('student-portal.show');
 
     // Writes — page-level keys (legacy settings.manage still grants via PermissionResolver).
     Route::middleware('erp.permission:settings.school-settings.edit')->put('/school', [SchoolSettingController::class, 'update'])->name('school.update');
     Route::middleware('erp.permission:settings.school-settings.upload')->post('/school/upload', [SchoolSettingController::class, 'upload'])->name('school.upload');
+    Route::middleware('erp.permission:settings.student-portal.edit')->put('student-portal', [SchoolSettingController::class, 'updateStudentPortalSettings'])->name('student-portal.update');
 
     Route::middleware('erp.permission:settings.academic-sessions.create')->post('academic-sessions', [AcademicSessionController::class, 'store'])->name('academic-sessions.store');
     Route::middleware('erp.permission:settings.academic-sessions.edit')->put('academic-sessions/{academicSession}', [AcademicSessionController::class, 'update'])->name('academic-sessions.update');

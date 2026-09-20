@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Expense extends Model
 {
     protected $fillable = [
-        'voucher_no', 'expense_category_id', 'title', 'paid_to', 'amount', 'date', 'status',
+        'voucher_no', 'expense_category_id', 'part2', 'part3', 'title', 'paid_to', 'amount', 'date', 'status',
         'payment_mode', 'bank_account_id', 'remarks', 'notes', 'paid_by_id',
     ];
 

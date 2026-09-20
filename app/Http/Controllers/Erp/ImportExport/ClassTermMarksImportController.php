@@ -21,10 +21,17 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Imports CLASS_*_TERM-1 / TERM-2 client workbooks (one class per file).
+ * Imports exam-marks workbooks in two shapes:
  *
- * Term-1 sheets: PT-1, NB-1, SEA-1, HY (Half Yearly), GRADE (co-scholastic)
- * Term-2 sheets: PT-2, NB-2, SEA-2, ANNU (Annual), GRADE (co-scholastic)
+ * 1. Current client format — a single "MARKLIST" workbook covering every class at once,
+ *    with a per-subject block of PT1/NB1/SEA1/TOT(20)/HY or ANNU(80)/TOT(100) columns
+ *    (e.g. sheet "NUR-8 (2)"). Class is read per-row from a "Class" column; PT1/NB1/SEA1/
+ *    HY(or ANNU) each become their own exam, matching the same kinds as the legacy format
+ *    below. Sibling summary sheets in the same workbook (plain Oral/Written/Total layouts,
+ *    or a non-subject-wise PT1+NB1+SEA1 totals sheet) are duplicate views and are ignored.
+ * 2. Legacy CLASS_*_TERM-1 / TERM-2 workbooks (one class per file, one sheet per exam:
+ *    PT-1, NB-1, SEA-1, HY (Half Yearly) / PT-2, NB-2, SEA-2, ANNU (Annual)) — still
+ *    supported for any workbook that doesn't contain the new wide-format sheet.
  *
  * GRADE is never stored as an exam. TEST-1/TEST-2 are calculated later (PT+NB+SEA).
  * "Ab" cells are stored as absent (not zero). Blank cells are skipped.
@@ -53,6 +60,9 @@ class ClassTermMarksImportController extends Controller
         'hindi' => ['HINDI', 'Hindi'],
         'hin' => ['HINDI', 'Hindi'],
         'urdu' => ['URDU', 'Urdu'],
+        'arab-deeniyat' => ['Deeniyat', 'Deeniayat', 'Islamic Studies'],
+        'gk-comp' => ['GK/COM', 'GK/EVS', 'GK'],
+        's st' => ['S.ST', 'SST', 'Social Studies', 'Social Science'],
         'maths' => ['MATH', 'Maths', 'Mathematics', 'Math'],
         'math' => ['MATH', 'Maths', 'Mathematics', 'Math'],
         'mathematics' => ['MATH', 'Maths', 'Mathematics', 'Math'],
@@ -84,6 +94,7 @@ class ClassTermMarksImportController extends Controller
         'roll no', 'roll no.', 'rollno', 'roll',
         'adm no', 'adm. no', 'adm. no.', 'admission no', 'admission no.', 'admission number', 'enrl', 'enrol',
         'name', 'student name', 'student',
+        'class', 'class name',
         'm.o', 'm.o.', 'mo', 'marks obtained', 'obtained',
         'm.m', 'm.m.', 'mm', 'marks max', 'max marks', 'maximum',
         'term 1', 'term 2', 'term-1', 'term-2', 'overall',
@@ -119,39 +130,93 @@ class ClassTermMarksImportController extends Controller
         $path = $file->getRealPath();
         $filename = $file->getClientOriginalName();
         $sheetNames = SpreadsheetImportReader::listSheetNames($path);
+        $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, $sheetNames);
 
-        [$dataSheets, $ignoredSheets] = $this->partitionSheets($sheetNames);
-        if ($dataSheets === []) {
-            return response()->json([
-                'message' => 'No marks sheets found (expected PT-1/2, NB-1/2, SEA-1/2, HY, ANNU, or GRADE). '
-                    .'Present sheets: '.implode(', ', $sheetNames),
-            ], 422);
-        }
-
-        $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, $dataSheets);
-
-        $class = null;
-        $session = null;
-        foreach ($dataSheets as $title) {
+        // New client format: one workbook, every class, a wide per-subject block of
+        // PT1/NB1/SEA1/TOT(20)/HY-or-ANNU(80)/TOT(100) columns. Detected from actual header
+        // content (not sheet title), since these sheets are titled e.g. "NUR-8 (2)".
+        $wideSheetInfo = [];
+        foreach ($sheetNames as $title) {
+            if ($this->sheetKind($title)['kind'] === 'grade') {
+                continue;
+            }
             $sheet = $spreadsheet->getSheetByName($title);
             if (! $sheet) {
                 continue;
             }
-            $meta = $this->readSheetMeta($sheet, $filename, $title);
-            $class ??= $this->resolveClass($meta['class_token']);
-            $session ??= $this->resolveSession($meta['session_label']);
-            if ($class && $session) {
-                break;
+            $headerRow = $this->findHeaderRow($sheet);
+            if ($headerRow === null) {
+                continue;
+            }
+            $subjectRow = $this->readHeaderRow($sheet, $headerRow);
+            $componentRow = $this->readHeaderRow($sheet, $headerRow + 1);
+            $blocks = $this->buildWideSubjectBlocks($subjectRow, $componentRow);
+            if ($blocks === []) {
+                continue;
+            }
+            $admCol = $this->findColumn($subjectRow, ['adm. no', 'adm. no.', 'adm no', 'admission no', 'admission no.', 'enrl', 'enrol', 'adm']);
+            $classCol = $this->findColumn($subjectRow, ['class']);
+            if ($admCol === null || $classCol === null) {
+                continue;
+            }
+            $wideSheetInfo[$title] = [
+                'header_row' => $headerRow,
+                'blocks' => $blocks,
+                'adm_col' => $admCol,
+                'class_col' => $classCol,
+            ];
+        }
+        $hasWideSheets = $wideSheetInfo !== [];
+
+        if ($hasWideSheets) {
+            $gradeSheetTitles = array_values(array_filter($sheetNames, fn ($t) => $this->sheetKind($t)['kind'] === 'grade'));
+            $dataSheets = array_values(array_unique(array_merge(array_keys($wideSheetInfo), $gradeSheetTitles)));
+            $ignoredSheets = array_values(array_diff($sheetNames, $dataSheets));
+        } else {
+            [$dataSheets, $ignoredSheets] = $this->partitionSheets($sheetNames);
+            if ($dataSheets === []) {
+                $spreadsheet->disconnectWorksheets();
+
+                return response()->json([
+                    'message' => 'No marks sheets found (expected PT-1/2, NB-1/2, SEA-1/2, HY, ANNU, GRADE, or a per-subject '
+                        .'PT1/NB1/SEA1/HY marksheet). Present sheets: '.implode(', ', $sheetNames),
+                ], 422);
             }
         }
 
-        if (! $class) {
-            $spreadsheet->disconnectWorksheets();
+        $class = null;
+        $session = null;
 
-            return response()->json([
-                'message' => 'Could not resolve class from filename/sheet (expected NUR, LKG, UKG, 1st–8th).',
-            ], 422);
+        if ($hasWideSheets) {
+            // Class is read per-row inside each wide sheet; only the session needs resolving here.
+            $sessionLabel = '';
+            if (preg_match('/(\d{4})\s*[-–]\s*(\d{2,4})/', pathinfo($filename, PATHINFO_FILENAME), $m)) {
+                $sessionLabel = $m[0];
+            }
+            $session = $this->resolveSession($sessionLabel);
+        } else {
+            foreach ($dataSheets as $title) {
+                $sheet = $spreadsheet->getSheetByName($title);
+                if (! $sheet) {
+                    continue;
+                }
+                $meta = $this->readSheetMeta($sheet, $filename, $title);
+                $class ??= $this->resolveClass($meta['class_token']);
+                $session ??= $this->resolveSession($meta['session_label']);
+                if ($class && $session) {
+                    break;
+                }
+            }
+
+            if (! $class) {
+                $spreadsheet->disconnectWorksheets();
+
+                return response()->json([
+                    'message' => 'Could not resolve class from filename/sheet (expected NUR, LKG, UKG, 1st–8th).',
+                ], 422);
+            }
         }
+
         if (! $session) {
             $spreadsheet->disconnectWorksheets();
 
@@ -204,6 +269,7 @@ class ClassTermMarksImportController extends Controller
 
         DB::transaction(function () use (
             $spreadsheet, $dataSheets, $filename, $class, $session, $term, $workbookTerm, $fallbackMax, $studentsByAdm,
+            $wideSheetInfo, $hasWideSheets,
             &$total, &$success, &$failed, &$marksWritten, &$gradesWritten, &$failedRowsResponse, &$failedRowsBuffer,
             &$failedLogsBuffer, &$marksBuffer, &$sheetStats, &$examsTouched, $log, $now
         ) {
@@ -236,6 +302,25 @@ class ClassTermMarksImportController extends Controller
                         $total, $success, $failed, $gradesWritten, $failedRowsResponse, $failedRowsBuffer, $failedLogsBuffer
                     );
                     $sheetStats[] = $stats;
+                    continue;
+                }
+
+                if (isset($wideSheetInfo[$title])) {
+                    $stats = $this->importWideSubjectSheet(
+                        $sheet, $title, $wideSheetInfo[$title], $session, $fallbackMax, $studentsByAdm,
+                        $total, $success, $failed, $marksWritten, $failedRowsResponse, $failedRowsBuffer,
+                        $failedLogsBuffer, $marksBuffer, $examsTouched, $log, $now
+                    );
+                    $sheetStats[] = $stats;
+                    continue;
+                }
+
+                if ($hasWideSheets) {
+                    // New-format workbook: any non-wide, non-grade sheet is a duplicate summary view — skip it.
+                    $sheetStats[] = [
+                        'sheet' => $title,
+                        'skipped' => 'ignored — new-format workbook; only the detailed PT1/NB1/SEA1/HY-or-ANNU sheet is imported',
+                    ];
                     continue;
                 }
 
@@ -448,7 +533,7 @@ class ClassTermMarksImportController extends Controller
         $message = implode(' | ', array_filter([
             'Session: '.$session->name,
             'Term: '.$term->name,
-            'Class: '.$class->name,
+            'Class: '.($class?->name ?? 'All classes (from sheet rows)'),
             'Sheets processed: '.count($sheetStats),
             'Student-rows seen: '.$total,
             'Marks cells written: '.$marksWritten,
@@ -463,7 +548,7 @@ class ClassTermMarksImportController extends Controller
             'stats' => [
                 'session' => $session->name,
                 'term' => $term->name,
-                'class' => $class->name,
+                'class' => $class?->name ?? 'All classes (from sheet rows)',
                 'sheets' => $sheetStats,
                 'sheets_ignored' => $ignoredSheets,
                 'exams' => array_values(array_unique(array_merge(
@@ -493,6 +578,351 @@ class ClassTermMarksImportController extends Controller
             );
         }
         $buffer = [];
+    }
+
+    /**
+     * Detects/parses the new client "wide" marksheet layout: a header row with subject
+     * names (row N) followed immediately by a component row (row N+1) of PT1/NB1/SEA1/
+     * TOT(20)/HY-or-ANNU(80)/TOT(100) per subject. TOT columns are computed sums and are
+     * intentionally skipped — only PT1/NB1/SEA1/HY(or ANNU) carry real marks.
+     *
+     * @param  array<int, string>  $subjectRow
+     * @param  array<int, string>  $componentRow
+     * @return list<array{subject: Subject, pt_col: ?int, pt_term: ?int, nb_col: ?int, nb_term: ?int, sea_col: ?int, sea_term: ?int, board_col: ?int, board_kind: ?string, board_term: ?int}>
+     */
+    private function buildWideSubjectBlocks(array $subjectRow, array $componentRow): array
+    {
+        $allSubjects = Subject::query()->get(['id', 'name']);
+        $byLower = [];
+        foreach ($allSubjects as $subject) {
+            $byLower[mb_strtolower(trim($subject->name))] = $subject;
+        }
+
+        $maxCol = max(array_keys($subjectRow + $componentRow) ?: [1]);
+        $blocks = [];
+        $current = null;
+
+        for ($c = 1; $c <= $maxCol; $c++) {
+            $top = $subjectRow[$c] ?? '';
+            $sub = $this->stripHeaderNoise($componentRow[$c] ?? '');
+
+            $isIdentity = $top !== '' && (
+                in_array($top, self::SKIP_HEADER_KEYS, true)
+                || $top === 'class'
+                || str_starts_with($top, 'roll')
+                || str_starts_with($top, 'adm')
+            );
+            if ($isIdentity) {
+                continue;
+            }
+
+            if ($top !== '') {
+                $subject = $this->matchSubject($top, $byLower);
+                if ($subject) {
+                    if ($current) {
+                        $blocks[] = $current;
+                    }
+                    $current = [
+                        'subject' => $subject,
+                        'pt_col' => null, 'pt_term' => null,
+                        'nb_col' => null, 'nb_term' => null,
+                        'sea_col' => null, 'sea_term' => null,
+                        'board_col' => null, 'board_kind' => null, 'board_term' => null,
+                    ];
+                }
+            }
+
+            if (! $current) {
+                continue;
+            }
+
+            if ($sub === 'pt1') {
+                $current['pt_col'] = $c;
+                $current['pt_term'] = 1;
+            } elseif ($sub === 'pt2') {
+                $current['pt_col'] = $c;
+                $current['pt_term'] = 2;
+            } elseif ($sub === 'nb1') {
+                $current['nb_col'] = $c;
+                $current['nb_term'] = 1;
+            } elseif ($sub === 'nb2') {
+                $current['nb_col'] = $c;
+                $current['nb_term'] = 2;
+            } elseif ($sub === 'sea1') {
+                $current['sea_col'] = $c;
+                $current['sea_term'] = 1;
+            } elseif ($sub === 'sea2') {
+                $current['sea_col'] = $c;
+                $current['sea_term'] = 2;
+            } elseif ($sub === 'hy') {
+                $current['board_col'] = $c;
+                $current['board_kind'] = 'hy';
+                $current['board_term'] = 1;
+            } elseif (str_starts_with($sub, 'annu')) {
+                $current['board_col'] = $c;
+                $current['board_kind'] = 'annual';
+                $current['board_term'] = 2;
+            }
+            // 'tot' columns (TOT(20)/TOT(100)) are computed sums — intentionally not matched above.
+        }
+        if ($current) {
+            $blocks[] = $current;
+        }
+
+        $subjectCount = count($blocks);
+        $hasBoard = false;
+        foreach ($blocks as $b) {
+            if ($b['board_col']) {
+                $hasBoard = true;
+                break;
+            }
+        }
+
+        return ($subjectCount >= 2 && $hasBoard) ? $blocks : [];
+    }
+
+    /** Strips "(10)"/"(05)" style noise and whitespace from an already-normalized header label. */
+    private function stripHeaderNoise(string $normalized): string
+    {
+        $s = preg_replace('/\(.*?\)/', '', $normalized) ?? $normalized;
+        $s = preg_replace('/\s+/', '', $s) ?? $s;
+
+        return trim($s);
+    }
+
+    /**
+     * Imports one "wide" marksheet (see buildWideSubjectBlocks docblock): PT1/NB1/SEA1 and
+     * HY-or-ANNU each become their own exam; class is read per-row so one sheet can cover
+     * every class in the school.
+     *
+     * @param  array{header_row: int, blocks: array, adm_col: int, class_col: int}  $info
+     * @param  array<string, int>  $studentsByAdm
+     * @param  list<array<string, mixed>>  $failedRowsResponse
+     * @param  list<array<string, mixed>>  $failedRowsBuffer
+     * @param  list<array<string, mixed>>  $failedLogsBuffer
+     * @param  list<array<string, mixed>>  $marksBuffer
+     * @param  array<int, string>  $examsTouched
+     * @return array<string, mixed>
+     */
+    private function importWideSubjectSheet(
+        Worksheet $sheet,
+        string $title,
+        array $info,
+        AcademicSession $session,
+        float $fallbackMax,
+        array $studentsByAdm,
+        int &$total,
+        int &$success,
+        int &$failed,
+        int &$marksWritten,
+        array &$failedRowsResponse,
+        array &$failedRowsBuffer,
+        array &$failedLogsBuffer,
+        array &$marksBuffer,
+        array &$examsTouched,
+        ImportExportLog $log,
+        string $now
+    ): array {
+        $headerRow = $info['header_row'];
+        $blocks = $info['blocks'];
+        $admCol = $info['adm_col'];
+        $classCol = $info['class_col'];
+
+        $kindTerms = [];
+        foreach ($blocks as $b) {
+            if ($b['pt_col']) {
+                $kindTerms['pt'] = $b['pt_term'];
+            }
+            if ($b['nb_col']) {
+                $kindTerms['nb'] = $b['nb_term'];
+            }
+            if ($b['sea_col']) {
+                $kindTerms['sea'] = $b['sea_term'];
+            }
+            if ($b['board_col']) {
+                $kindTerms[$b['board_kind']] = $b['board_term'];
+            }
+        }
+
+        $exams = [];
+        foreach ($kindTerms as $kind => $termNo) {
+            $sheetTerm = $this->ensureTerm($session, $termNo);
+            $examName = $this->canonicalExamName($kind, $termNo, '');
+            $defaultMax = $this->defaultMaxForKind($kind, $fallbackMax);
+            $exam = $this->resolveOrCreateExam($session, $kind, $termNo, $examName, $defaultMax);
+            $this->attachExamToTerm($exam, $sheetTerm, $kind);
+            $examsTouched[$exam->id] = $exam->name;
+            $exams[$kind] = ['exam' => $exam, 'default_max' => $defaultMax];
+        }
+
+        $scheduleCache = [];
+        $sheetMarks = 0;
+        $sheetStudents = 0;
+        $highestRow = (int) $sheet->getHighestDataRow();
+        $admLetter = Coordinate::stringFromColumnIndex($admCol);
+        $classLetter = Coordinate::stringFromColumnIndex($classCol);
+
+        for ($r = $headerRow + 2; $r <= $highestRow; $r++) {
+            $enrol = trim((string) $sheet->getCell($admLetter.$r)->getCalculatedValue());
+            if ($enrol === '') {
+                $any = false;
+                for ($c = 1; $c <= 4; $c++) {
+                    $letter = Coordinate::stringFromColumnIndex($c);
+                    if (trim((string) $sheet->getCell($letter.$r)->getCalculatedValue()) !== '') {
+                        $any = true;
+                        break;
+                    }
+                }
+                if (! $any) {
+                    break;
+                }
+                continue;
+            }
+            if (is_numeric($enrol) && str_contains($enrol, '.')) {
+                $enrol = (string) (int) round((float) $enrol);
+            }
+
+            $total++;
+            $sheetStudents++;
+            $studentId = $studentsByAdm[$enrol] ?? null;
+            if (! $studentId) {
+                $failed++;
+                $this->pushStudentNotFound(
+                    $log, $now, $title, $r, $enrol, '', 'Marksheet',
+                    $failedRowsBuffer, $failedLogsBuffer, $failedRowsResponse
+                );
+                continue;
+            }
+
+            $classRaw = trim((string) $sheet->getCell($classLetter.$r)->getCalculatedValue());
+            if (is_numeric($classRaw) && str_contains($classRaw, '.')) {
+                $classRaw = (string) (int) round((float) $classRaw);
+            }
+            $class = $this->resolveClass($this->normalizeClassToken($classRaw));
+            if (! $class) {
+                $failed++;
+                $this->pushRowError(
+                    $log, $now, $title, $r, $enrol, "Unrecognized class '{$classRaw}' for admission no. {$enrol}.",
+                    $failedRowsBuffer, $failedLogsBuffer, $failedRowsResponse
+                );
+                continue;
+            }
+
+            foreach ($blocks as $block) {
+                $subject = $block['subject'];
+                $cols = [
+                    'pt' => $block['pt_col'],
+                    'nb' => $block['nb_col'],
+                    'sea' => $block['sea_col'],
+                ];
+                if ($block['board_col']) {
+                    $cols[$block['board_kind']] = $block['board_col'];
+                }
+
+                foreach ($cols as $kind => $col) {
+                    if (! $col || ! isset($exams[$kind])) {
+                        continue;
+                    }
+                    $examInfo = $exams[$kind];
+                    $cacheKey = $examInfo['exam']->id.'-'.$class->id.'-'.$subject->id;
+                    if (! isset($scheduleCache[$cacheKey])) {
+                        $schedule = ExamSchedule::query()->firstOrNew([
+                            'exam_id' => $examInfo['exam']->id,
+                            'school_class_id' => $class->id,
+                            'subject_id' => $subject->id,
+                        ]);
+                        $schedule->max_marks = $examInfo['default_max'];
+                        if (! $schedule->exists) {
+                            $schedule->date = now()->toDateString();
+                        }
+                        $schedule->save();
+                        $scheduleCache[$cacheKey] = $schedule;
+                    }
+                    /** @var ExamSchedule $schedule */
+                    $schedule = $scheduleCache[$cacheKey];
+
+                    $parsedMark = $this->parseMarkCell($sheet, $col, $r);
+                    if ($parsedMark['skip']) {
+                        continue;
+                    }
+                    if (! $parsedMark['absent'] && $parsedMark['value'] !== null && $parsedMark['value'] > (float) $schedule->max_marks) {
+                        $schedule->max_marks = max((float) $schedule->max_marks, $parsedMark['value'], $examInfo['default_max']);
+                        $schedule->save();
+                    }
+
+                    $marksBuffer[] = [
+                        'exam_schedule_id' => $schedule->id,
+                        'student_id' => $studentId,
+                        'marks_obtained' => $parsedMark['absent'] ? null : $parsedMark['value'],
+                        'is_absent' => $parsedMark['absent'] ? 1 : 0,
+                        'remarks' => $parsedMark['absent']
+                            ? 'Absent (Ab) — imported from '.$title
+                            : 'Imported from class term workbook ('.$title.')',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                    $sheetMarks++;
+                    $marksWritten++;
+                }
+            }
+
+            $success++;
+
+            if (count($marksBuffer) >= 400) {
+                $this->flushMarks($marksBuffer);
+            }
+        }
+
+        return [
+            'sheet' => $title,
+            'kind' => 'marksheet',
+            'exams' => array_values(array_map(fn ($e) => $e['exam']->name, $exams)),
+            'subjects' => array_values(array_unique(array_map(fn ($b) => $b['subject']->name, $blocks))),
+            'students' => $sheetStudents,
+            'marks_written' => $sheetMarks,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $failedRowsBuffer
+     * @param  list<array<string, mixed>>  $failedLogsBuffer
+     * @param  list<array<string, mixed>>  $failedRowsResponse
+     */
+    private function pushRowError(
+        ImportExportLog $log,
+        string $now,
+        string $title,
+        int $row,
+        string $identifier,
+        string $msg,
+        array &$failedRowsBuffer,
+        array &$failedLogsBuffer,
+        array &$failedRowsResponse
+    ): void {
+        $failedRowsBuffer[] = [
+            'import_export_log_id' => $log->id,
+            'row_number' => $row,
+            'row_data' => json_encode(['adm' => $identifier, 'sheet' => $title], JSON_THROW_ON_ERROR),
+            'error_message' => $msg,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+        $failedLogsBuffer[] = [
+            'import_export_log_id' => $log->id,
+            'row_number' => $row,
+            'status' => 'Failed',
+            'identifier' => $identifier,
+            'summary' => json_encode(['sheet' => $title], JSON_THROW_ON_ERROR),
+            'error_message' => $msg,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+        $failedRowsResponse[] = [
+            'id' => $title.'-'.$row,
+            'sheet' => $title,
+            'row_number' => $row,
+            'error_message' => $msg,
+        ];
     }
 
     /**

@@ -51,6 +51,11 @@ return [
             'provider' => 'erp_users',
         ],
 
+        'student' => [
+            'driver' => 'session',
+            'provider' => 'students',
+        ],
+
         'super_admin' => [
             'driver' => 'session',
             'provider' => 'super_admins',
@@ -88,6 +93,11 @@ return [
         'erp_users' => [
             'driver' => 'eloquent',
             'model' => App\Models\ErpUser::class,
+        ],
+
+        'students' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Student::class,
         ],
 
         'super_admins' => [

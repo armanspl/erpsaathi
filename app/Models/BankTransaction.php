@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BankTransaction extends Model
 {
-    protected $fillable = ['bank_account_id', 'type', 'amount', 'date', 'reference_no', 'remarks'];
+    protected $fillable = ['bank_account_id', 'type', 'amount', 'date', 'reference_no', 'item', 'category', 'remarks'];
 
     protected function casts(): array
     {

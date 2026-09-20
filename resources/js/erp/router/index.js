@@ -11,6 +11,7 @@ import SupportTickets from '../pages/account/SupportTickets.vue';
 import Notifications from '../pages/account/Notifications.vue';
 // ApiTokens.vue is intentionally not routed — see the note in data/menu.js.
 import SchoolSettings from '../pages/settings/SchoolSettings.vue';
+import StudentPortalSettings from '../pages/settings/StudentPortal.vue';
 import AcademicSessions from '../pages/settings/AcademicSessions.vue';
 import Roles from '../pages/settings/Roles.vue';
 import DatabaseBackup from '../pages/settings/DatabaseBackup.vue';
@@ -140,6 +141,7 @@ const FLAGSHIP_ROUTES = {
     '/account/support-tickets': SupportTickets,
     '/account/notifications': Notifications,
     '/settings/school-settings': SchoolSettings,
+    '/settings/student-portal': StudentPortalSettings,
     '/settings/academic-sessions': AcademicSessions,
     '/academics/academic-sessions': AcademicSessions,
     '/settings/roles-and-permissions': Roles,

@@ -3,15 +3,23 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasAttendance;
+use Illuminate\Auth\Authenticatable;
+use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-class Student extends Model
+/**
+ * Implements Authenticatable so the `student` guard (config/auth.php) can log a
+ * Student in directly. Login is admission_no + dob, not password-based — see
+ * StudentAuthController — so the inherited password/remember-token machinery is
+ * never actually exercised, it's only present to satisfy the guard contract.
+ */
+class Student extends Model implements AuthenticatableContract
 {
-    use HasAttendance;
+    use Authenticatable, HasAttendance;
 
     protected $fillable = [
         'admission_no',

@@ -171,31 +171,57 @@ class ImportTemplateService
         return $ss;
     }
 
+    /**
+     * One workbook covering every class: Adm. No./Name/Class/Roll No + a per-subject block
+     * of PT1/NB1/SEA1/TOT(20)/HY(80)/TOT(100) columns — the client's current marksheet shape.
+     * TOT columns are computed sums and are ignored on import; only PT1/NB1/SEA1/HY are read.
+     */
     private function examMarks(): Spreadsheet
     {
         $ss = new Spreadsheet();
-        $subjects = ['ENG', 'HIN', 'MATH', 'EVS'];
-        $headers = array_merge(['Adm. No.', 'Roll', 'Name'], $subjects);
-        $sheets = [
-            'PT-1' => ['hint' => 'Max marks: PT=10', 'marks' => [8, 9, 7, 8]],
-            'NB-1' => ['hint' => 'Max marks: NB=5', 'marks' => [4, 5, 4, 5]],
-            'SEA-1' => ['hint' => 'Max marks: SEA=5', 'marks' => [4, 5, 4, 5]],
-            'UNIT TEST' => ['hint' => 'Max marks: Unit Test=100', 'marks' => [78, 82, 75, 80]],
-            'GRADE' => ['hint' => 'Co-scholastic grades (A/B/C)', 'marks' => ['A', 'A', 'B', 'A']],
-        ];
+        $sheet = $ss->getActiveSheet();
+        $sheet->setTitle('MARKSHEET');
 
-        $first = true;
-        foreach ($sheets as $title => $meta) {
-            $sheet = $first ? $ss->getActiveSheet() : $ss->createSheet();
-            $first = false;
-            $sheet->setTitle($title);
-            $sheet->setCellValue('A1', 'CLASS_NUR_TERM-1_2026-27');
-            $sheet->setCellValue('A2', $meta['hint']);
-            $sheet->setCellValue('A3', 'Session: 2026-27');
-            $sheet->fromArray($headers, null, 'A4');
-            $this->styleHeaderRow($sheet, 'A4:G4');
-            $sheet->fromArray(array_merge(['16701', '1', 'SAMPLE STUDENT'], $meta['marks']), null, 'A5');
+        $subjects = ['ENG', 'HINDI', 'MATHS', 'EVS'];
+        $components = ['PT1 (10)', 'NB1 (05)', 'SEA1 (05)', 'TOT (20)', 'HY (80)', 'TOT (100)'];
+
+        $sheet->setCellValue('A1', 'Adm. No.');
+        $sheet->setCellValue('B1', 'Name');
+        $sheet->setCellValue('C1', 'Class');
+        $sheet->setCellValue('D1', 'Roll No');
+
+        $col = 5; // E
+        foreach ($subjects as $subject) {
+            $startLetter = Coordinate::stringFromColumnIndex($col);
+            $endLetter = Coordinate::stringFromColumnIndex($col + count($components) - 1);
+            $sheet->setCellValue($startLetter.'1', $subject);
+            $sheet->mergeCells("{$startLetter}1:{$endLetter}1");
+            $c = $col;
+            foreach ($components as $label) {
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($c).'2', $label);
+                $c++;
+            }
+            $col += count($components);
         }
+        $lastCol = Coordinate::stringFromColumnIndex($col - 1);
+        $sheet->mergeCells('A1:A2');
+        $sheet->mergeCells('B1:B2');
+        $sheet->mergeCells('C1:C2');
+        $sheet->mergeCells('D1:D2');
+        $this->styleHeaderRow($sheet, "A1:{$lastCol}2");
+
+        $samples = [
+            ['16701', 'SAMPLE STUDENT ONE', 'Nursery', 1],
+            ['16702', 'SAMPLE STUDENT TWO', '1', 1],
+        ];
+        $row = 3;
+        foreach ($samples as $s) {
+            $sheet->fromArray($s, null, 'A'.$row);
+            $row++;
+        }
+
+        $sheet->setCellValue('A'.($row + 1), 'Fill PT1 / NB1 / SEA1 / HY per subject for every class — TOT columns are calculated and ignored on import.');
+        $sheet->setCellValue('A'.($row + 2), 'Term-2 workbooks use the same layout with ANNU (80) in place of HY (80).');
 
         return $ss;
     }

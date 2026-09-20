@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Models\SchoolSetting;
+use App\Services\StudentPortalCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -158,6 +159,38 @@ class SchoolSettingController extends Controller
         }
 
         return response()->json($this->present($setting->fresh()));
+    }
+
+    /** Admin toggles for which sections the student self-service portal shows. */
+    public function studentPortalSettings()
+    {
+        return response()->json([
+            'modules' => StudentPortalCatalog::MODULES,
+            'visibility' => StudentPortalCatalog::resolve(),
+        ]);
+    }
+
+    public function updateStudentPortalSettings(Request $request)
+    {
+        $keys = array_keys(StudentPortalCatalog::MODULES);
+        $data = $request->validate([
+            'visibility' => 'required|array',
+            ...array_fill_keys(array_map(fn ($k) => "visibility.{$k}", $keys), 'nullable|boolean'),
+        ]);
+
+        $setting = SchoolSetting::current();
+        $merged = StudentPortalCatalog::resolve($setting);
+        foreach ($data['visibility'] as $key => $value) {
+            if (array_key_exists($key, $merged)) {
+                $merged[$key] = (bool) $value;
+            }
+        }
+        $setting->update(['student_portal_visibility' => $merged]);
+
+        return response()->json([
+            'modules' => StudentPortalCatalog::MODULES,
+            'visibility' => $merged,
+        ]);
     }
 
     public function asset(string $filename)

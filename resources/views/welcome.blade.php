@@ -18,6 +18,18 @@
     @endif
     <meta name="twitter:card" content="summary_large_image">
 
+    <script type="application/ld+json">
+        {!! json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'SoftwareApplication',
+            'name' => $welcome['schoolName'] . ' — School ERP',
+            'applicationCategory' => 'BusinessApplication',
+            'operatingSystem' => 'Web',
+            'description' => 'School ERP covering academics, admissions, attendance, fees, examinations, finance & payroll, transport, library and UDISE+ compliance in one centralized platform.',
+            'url' => url('/'),
+        ], JSON_UNESCAPED_SLASHES) !!}
+    </script>
+
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @if (!empty($welcome['logoUrl']))
         <link rel="icon" href="{{ $welcome['logoUrl'] }}">
@@ -42,7 +54,7 @@
     @vite(['resources/css/app.css', 'resources/js/welcome.js'])
 
     <style>
-        html, body { margin: 0; min-height: 100vh; background: #07080c; }
+        html, body { margin: 0; min-height: 100vh; background: #07080c; overflow-x: hidden; }
         #erp-welcome-app { min-height: 100vh; }
     </style>
 </head>

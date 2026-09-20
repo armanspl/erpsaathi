@@ -54,12 +54,13 @@
                     <p>Import replaces existing calendar entries for the current session, then you can view/edit them under Academics → Academic Calendar.</p>
                 </div>
                 <div v-else-if="activeEntity === 'exam-marks'" class="mb-3 space-y-2 text-xs text-slate-400">
-                    <p>Upload one <strong class="text-slate-600 dark:text-slate-300">CLASS_&lt;name&gt;_TERM-1_&lt;session&gt;.xlsx</strong> file. Every marks sheet is processed: <strong class="text-slate-600 dark:text-slate-300">PT-1, NB-1, SEA-1, UNIT TEST / UNIT 1, GRADE</strong>. ATTD is ignored (attendance summary, not marks).</p>
+                    <p>Upload the school's marksheet workbook — one sheet covering <strong class="text-slate-600 dark:text-slate-300">every class</strong>, with <strong class="text-slate-600 dark:text-slate-300">Adm. No. / Name / Class / Roll No</strong> plus a per-subject block of <strong class="text-slate-600 dark:text-slate-300">PT1 / NB1 / SEA1 / TOT(20) / HY-or-ANNU(80) / TOT(100)</strong> columns (matched by header content, whatever the sheet is titled). Other sheets in the same file (e.g. a plain Oral/Written/Total view, or a non-subject-wise totals sheet) are duplicate views and are ignored automatically.</p>
                     <ul class="list-disc space-y-1 pl-4">
-                        <li>Students matched by Adm. No. — must already exist</li>
-                        <li>Blank / empty subject cells are skipped (no empty marks rows). When the client later fills PT/NB/SEA, re-import to save them — no code change needed</li>
-                        <li>Each sheet becomes its own exam (PT-1, NB-1, SEA-1, UNIT TEST 1, GRADE). Default max: PT=10, NB=5, SEA=5, Unit Test=100</li>
-                        <li>Re-import overwrites the same exam+subject+student marks</li>
+                        <li>Students matched by Adm. No. — must already exist. Class is read per-row, so one file covers Nursery through Class 8</li>
+                        <li>Blank cells are skipped (no empty marks rows); TOT columns are computed sums and are never read — only PT1/NB1/SEA1/HY(or ANNU) are imported</li>
+                        <li>PT1, NB1, SEA1 and HY(or ANNU) each become their own exam. Default max: PT=10, NB=5, SEA=5, HY/ANNU=80</li>
+                        <li>Session/term are read from the filename (e.g. "…HY 2026-27.xlsx" → Half Yearly, Term-1); "…ANNU…" → Annual, Term-2</li>
+                        <li>Re-import overwrites the same exam+subject+student marks. Older CLASS_&lt;name&gt;_TERM-1_&lt;session&gt;.xlsx per-class files (PT-1/NB-1/SEA-1/HY/GRADE sheets) are still supported</li>
                     </ul>
                 </div>
                 <div v-else-if="activeEntity === 'attendance'" class="mb-3 space-y-2 text-xs text-slate-400">
@@ -195,7 +196,7 @@
                             <div>
                                 <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ m.label }}</p>
                                 <p v-if="m.key === 'global'" class="text-xs text-slate-400">Includes SALARY … Bank sheet (same layout as import)</p>
-                                <p v-else-if="m.key === 'exam-marks'" class="text-xs text-slate-400">CLASS_*_TERM workbooks (ZIP of all classes)</p>
+                                <p v-else-if="m.key === 'exam-marks'" class="text-xs text-slate-400">One MARKSHEET workbook, every class (same layout as import)</p>
                                 <p v-else-if="m.key === 'academic-calendar'" class="text-xs text-slate-400">Same At A Glance layout as import</p>
                             </div>
                         </div>

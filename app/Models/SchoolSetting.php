@@ -40,6 +40,7 @@ class SchoolSetting extends Model
         'stamps',
         'established_year',
         'current_branch',
+        'student_portal_visibility',
     ];
 
     protected $appends = [
@@ -56,6 +57,7 @@ class SchoolSetting extends Model
             'compact_sidebar' => 'boolean',
             'signatures' => 'array',
             'stamps' => 'array',
+            'student_portal_visibility' => 'array',
         ];
     }
 

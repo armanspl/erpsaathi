@@ -30,6 +30,14 @@ Route::get('/', function () {
     return view('welcome', ['welcome' => $welcome]);
 })->name('home');
 
+// Public legal pages (footer links)
+Route::get('/privacy-policy', function () {
+    return view('legal.privacy-policy', ['updated' => 'September 2026']);
+})->name('legal.privacy-policy');
+Route::get('/terms', function () {
+    return view('legal.terms', ['updated' => 'September 2026']);
+})->name('legal.terms');
+
 // Public Try Demo — provisions Demo school + sample data, then opens ERP dashboard.
 Route::get('/erp/demo', App\Http\Controllers\DemoEnterController::class)->name('erp.demo');
 
@@ -52,6 +60,26 @@ Route::middleware('erp.auth')->group(function () {
 Route::get('/erp/login', function () {
     return view('erp.login');
 })->name('erp.login');
+
+// Student Self-Service Portal Auth
+Route::post('/student/authenticate', [App\Http\Controllers\StudentAuthController::class, 'login'])->name('student.authenticate');
+Route::middleware('student.auth')->group(function () {
+    // Catch-all so the Vue Router SPA can own any /student/dashboard/* sub-path on refresh/deep-link.
+    Route::get('/student/dashboard/{any?}', [App\Http\Controllers\StudentAuthController::class, 'dashboard'])
+        ->where('any', '.*')
+        ->name('student.dashboard');
+    Route::post('/student/logout', [App\Http\Controllers\StudentAuthController::class, 'logout'])->name('student.logout');
+
+    // JSON API consumed by the Vue Student SPA.
+    Route::prefix('student/api')->name('student.api.')->group(function () {
+        require base_path('routes/student_api.php');
+    });
+});
+
+// Student Login (guest)
+Route::get('/student/login', function () {
+    return view('student.login');
+})->name('student.login');
 
 // ERP Forgot / Reset Password
 Route::post('/erp/send-reset-link', [App\Http\Controllers\ErpAuthController::class, 'sendResetLink'])->name('erp.send-reset-link');

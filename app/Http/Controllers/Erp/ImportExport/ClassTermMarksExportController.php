@@ -14,6 +14,7 @@ use App\Models\SchoolClass;
 use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -21,8 +22,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use ZipArchive;
 
 /**
- * Exports marks in the same CLASS_*_TERM-* workbook shape that ClassTermMarksImportController imports:
- * sheets PT-n / NB-n / SEA-n / HY|ANNU / GRADE with Adm. No. + subject columns.
+ * Exports marks in the same "wide" marksheet shape that ClassTermMarksImportController's
+ * new-format import reads: one MARKSHEET sheet covering every class, with Adm. No./Name/
+ * Class/Roll No + a per-subject block of PT1/NB1/SEA1/TOT(20)/HY-or-ANNU(80)/TOT(100)
+ * columns, plus a GRADE sheet for co-scholastic grades.
  */
 class ClassTermMarksExportController extends Controller
 {
@@ -64,25 +67,27 @@ class ClassTermMarksExportController extends Controller
 
         $classes = isset($data['school_class_id'])
             ? SchoolClass::query()->where('id', $data['school_class_id'])->get()
-            : SchoolClass::query()->orderBy('id')->get();
+            : SchoolClass::query()->orderBy('sort_order')->orderBy('id')->get();
+
+        if ($classes->isEmpty()) {
+            abort(422, 'No classes found to export.');
+        }
 
         $terms = isset($data['term']) ? [(int) $data['term']] : [1, 2];
+        $sessionLabel = $this->sessionShortLabel($session);
+        $classToken = isset($data['school_class_id']) ? $this->classToken($classes->first()->name) : 'ALL-CLASSES';
 
         $files = [];
-        foreach ($classes as $class) {
-            foreach ($terms as $termNo) {
-                $spreadsheet = $this->buildClassTermWorkbook($session, $class, $termNo);
-                if ($spreadsheet === null) {
-                    continue;
-                }
-                $token = $this->classToken($class->name);
-                $sessionLabel = $this->sessionShortLabel($session);
-                $filename = sprintf('CLASS_%s_TERM-%d_%s.xlsx', $token, $termNo, $sessionLabel);
-                $tmp = tempnam(sys_get_temp_dir(), 'marks_exp_');
-                (new Xlsx($spreadsheet))->save($tmp);
-                $spreadsheet->disconnectWorksheets();
-                $files[$filename] = $tmp;
+        foreach ($terms as $termNo) {
+            $spreadsheet = $this->buildWideMarksheetWorkbook($session, $classes, $termNo, $classToken);
+            if ($spreadsheet === null) {
+                continue;
             }
+            $filename = sprintf('MARKSHEET_%s_TERM-%d_%s.xlsx', $classToken, $termNo, $sessionLabel);
+            $tmp = tempnam(sys_get_temp_dir(), 'marks_exp_');
+            (new Xlsx($spreadsheet))->save($tmp);
+            $spreadsheet->disconnectWorksheets();
+            $files[$filename] = $tmp;
         }
 
         if ($files === []) {
@@ -142,33 +147,130 @@ class ClassTermMarksExportController extends Controller
         ]);
     }
 
-    private function buildClassTermWorkbook(AcademicSession $session, SchoolClass $class, int $termNo): ?Spreadsheet
+    /**
+     * @param  \Illuminate\Support\Collection<int, SchoolClass>  $classes
+     */
+    private function buildWideMarksheetWorkbook(AcademicSession $session, $classes, int $termNo, string $classToken): ?Spreadsheet
     {
-        $sheetSpecs = $termNo === 2
-            ? [
-                ['kind' => 'pt', 'title' => 'PT-2', 'max' => 10.0],
-                ['kind' => 'nb', 'title' => 'NB-2', 'max' => 5.0],
-                ['kind' => 'sea', 'title' => 'SEA-2', 'max' => 5.0],
-                ['kind' => 'annual', 'title' => 'ANNU', 'max' => 80.0],
-                ['kind' => 'grade', 'title' => 'GRADE', 'max' => null],
-            ]
-            : [
-                ['kind' => 'pt', 'title' => 'PT-1', 'max' => 10.0],
-                ['kind' => 'nb', 'title' => 'NB-1', 'max' => 5.0],
-                ['kind' => 'sea', 'title' => 'SEA-1', 'max' => 5.0],
-                ['kind' => 'hy', 'title' => 'HY', 'max' => 80.0],
-                ['kind' => 'grade', 'title' => 'GRADE', 'max' => null],
-            ];
+        $boardKind = $termNo === 2 ? 'annual' : 'hy';
+        $boardLabel = $termNo === 2 ? 'ANNU' : 'HY';
+
+        $pt = $this->findExam($session, 'pt', $termNo, 'PT-'.$termNo);
+        $nb = $this->findExam($session, 'nb', $termNo, 'NB-'.$termNo);
+        $sea = $this->findExam($session, 'sea', $termNo, 'SEA-'.$termNo);
+        $board = $this->findExam($session, $boardKind, $termNo, $boardLabel);
+
+        $examIds = array_values(array_filter([$pt?->id, $nb?->id, $sea?->id, $board?->id]));
+        $classIds = $classes->pluck('id')->all();
+
+        $subjects = collect();
+        $scheduleIndex = [];
+        if ($examIds !== []) {
+            $schedules = ExamSchedule::query()
+                ->with('subject:id,name')
+                ->whereIn('exam_id', $examIds)
+                ->whereIn('school_class_id', $classIds)
+                ->get();
+
+            $subjects = $schedules->pluck('subject')->filter()->unique('id')->sortBy('id')->values();
+            foreach ($schedules as $sc) {
+                $scheduleIndex[$sc->exam_id][$sc->school_class_id][$sc->subject_id] = $sc->id;
+            }
+        }
 
         $students = Student::query()
-            ->where('school_class_id', $class->id)
-            ->orderByRaw('CASE WHEN roll_no IS NULL OR roll_no = "" THEN 1 ELSE 0 END')
-            ->orderBy('roll_no')
-            ->orderBy('name')
-            ->get(['id', 'admission_no', 'roll_no', 'name']);
+            ->whereIn('school_class_id', $classIds)
+            ->with('schoolClass:id,name,sort_order')
+            ->get(['id', 'admission_no', 'roll_no', 'name', 'school_class_id']);
 
         if ($students->isEmpty()) {
             return null;
+        }
+
+        // Collection::sortBy is stable, so chaining from least- to most-significant key
+        // (rather than passing an array of key-extractor closures, which sortBy() does not
+        // support the way one might expect) yields a correct class → roll no → name ordering.
+        $students = $students
+            ->sortBy(fn ($s) => $s->name)
+            ->sortBy(fn ($s) => is_numeric($s->roll_no) ? (int) $s->roll_no : PHP_INT_MAX)
+            ->sortBy(fn ($s) => $s->schoolClass?->sort_order ?? PHP_INT_MAX)
+            ->values();
+
+        $marksByStudent = [];
+        if ($subjects->isNotEmpty()) {
+            $scheduleIds = [];
+            foreach ($scheduleIndex as $byClass) {
+                foreach ($byClass as $bySubject) {
+                    $scheduleIds = array_merge($scheduleIds, array_values($bySubject));
+                }
+            }
+            if ($scheduleIds !== []) {
+                $rows = Mark::query()
+                    ->whereIn('exam_schedule_id', array_unique($scheduleIds))
+                    ->whereIn('student_id', $students->pluck('id'))
+                    ->get(['exam_schedule_id', 'student_id', 'marks_obtained', 'is_absent']);
+                foreach ($rows as $mark) {
+                    $marksByStudent[$mark->student_id][$mark->exam_schedule_id] = $mark;
+                }
+            }
+        }
+
+        $sessionLabel = $this->sessionShortLabel($session);
+        $banner = sprintf('MARKSHEET_%s_TERM-%d_%s', $classToken, $termNo, $sessionLabel);
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('MARKSHEET');
+
+        $ptLabel = $termNo === 2 ? 'PT2' : 'PT1';
+        $nbLabel = $termNo === 2 ? 'NB2' : 'NB1';
+        $seaLabel = $termNo === 2 ? 'SEA2' : 'SEA1';
+        $components = ["{$ptLabel} (10)", "{$nbLabel} (05)", "{$seaLabel} (05)", 'TOT (20)', "{$boardLabel} (80)", 'TOT (100)'];
+
+        $sheet->setCellValue('A1', 'Adm. No.');
+        $sheet->setCellValue('B1', 'Name');
+        $sheet->setCellValue('C1', 'Class');
+        $sheet->setCellValue('D1', 'Roll No');
+        $sheet->mergeCells('A1:A2');
+        $sheet->mergeCells('B1:B2');
+        $sheet->mergeCells('C1:C2');
+        $sheet->mergeCells('D1:D2');
+
+        $col = 5;
+        foreach ($subjects as $subject) {
+            $startLetter = Coordinate::stringFromColumnIndex($col);
+            $endLetter = Coordinate::stringFromColumnIndex($col + count($components) - 1);
+            $sheet->setCellValue($startLetter.'1', $subject->name);
+            $sheet->mergeCells("{$startLetter}1:{$endLetter}1");
+            $c = $col;
+            foreach ($components as $label) {
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($c).'2', $label);
+                $c++;
+            }
+            $col += count($components);
+        }
+        $lastCol = Coordinate::stringFromColumnIndex(max($col - 1, 4));
+        $sheet->getStyle("A1:{$lastCol}2")->getFont()->setBold(true);
+        $sheet->getStyle("A1:{$lastCol}2")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E2E8F0');
+
+        $row = 3;
+        foreach ($students as $student) {
+            $values = [$student->admission_no, $student->name, $student->schoolClass?->name, $student->roll_no];
+
+            foreach ($subjects as $subject) {
+                $ptVal = $this->markCellValue($marksByStudent, $student->id, $scheduleIndex[$pt?->id][$student->school_class_id][$subject->id] ?? null);
+                $nbVal = $this->markCellValue($marksByStudent, $student->id, $scheduleIndex[$nb?->id][$student->school_class_id][$subject->id] ?? null);
+                $seaVal = $this->markCellValue($marksByStudent, $student->id, $scheduleIndex[$sea?->id][$student->school_class_id][$subject->id] ?? null);
+                $boardVal = $this->markCellValue($marksByStudent, $student->id, $scheduleIndex[$board?->id][$student->school_class_id][$subject->id] ?? null);
+
+                $tot20 = $this->sumNumeric([$ptVal, $nbVal, $seaVal]);
+                $tot100 = $this->sumNumeric([$tot20, $boardVal]);
+
+                array_push($values, $ptVal, $nbVal, $seaVal, $tot20, $boardVal, $tot100);
+            }
+
+            $sheet->fromArray($values, null, "A{$row}");
+            $row++;
         }
 
         $term = AcademicTerm::query()
@@ -181,121 +283,45 @@ class ClassTermMarksExportController extends Controller
             ->orderBy('id')
             ->first();
 
-        $spreadsheet = new Spreadsheet();
-        $spreadsheet->removeSheetByIndex(0);
-        $wroteAny = false;
-        $token = $this->classToken($class->name);
-        $sessionLabel = $this->sessionShortLabel($session);
-        $banner = sprintf('CLASS_%s_TERM-%d_%s', $token, $termNo, $sessionLabel);
-
-        foreach ($sheetSpecs as $spec) {
-            if ($spec['kind'] === 'grade') {
-                $sheet = $spreadsheet->createSheet();
-                $sheet->setTitle($spec['title']);
-                $this->writeGradeSheet($sheet, $banner, $sessionLabel, $students, $term);
-                $wroteAny = true;
-
-                continue;
-            }
-
-            $exam = $this->findExam($session, $spec['kind'], $termNo, $spec['title']);
-            if (! $exam) {
-                // Still emit an empty template sheet so the workbook stays import-compatible.
-                $sheet = $spreadsheet->createSheet();
-                $sheet->setTitle($spec['title']);
-                $this->writeMarksSheet($sheet, $banner, $sessionLabel, $spec, $students, [], []);
-                $wroteAny = true;
-
-                continue;
-            }
-
-            $schedules = ExamSchedule::query()
-                ->with('subject:id,name,code')
-                ->where('exam_id', $exam->id)
-                ->where('school_class_id', $class->id)
-                ->orderBy('id')
-                ->get();
-
-            $subjects = [];
-            foreach ($schedules as $schedule) {
-                $label = $schedule->subject?->code ?: $schedule->subject?->name;
-                if ($label) {
-                    $subjects[$schedule->id] = $label;
-                }
-            }
-
-            $marksByStudent = [];
-            if ($schedules->isNotEmpty()) {
-                $rows = Mark::query()
-                    ->whereIn('exam_schedule_id', $schedules->pluck('id'))
-                    ->whereIn('student_id', $students->pluck('id'))
-                    ->get(['exam_schedule_id', 'student_id', 'marks_obtained', 'is_absent']);
-                foreach ($rows as $mark) {
-                    $marksByStudent[$mark->student_id][$mark->exam_schedule_id] = $mark;
-                }
-            }
-
-            $sheet = $spreadsheet->createSheet();
-            $sheet->setTitle($spec['title']);
-            $this->writeMarksSheet($sheet, $banner, $sessionLabel, $spec, $students, $subjects, $marksByStudent);
-            $wroteAny = true;
-        }
-
-        if (! $wroteAny) {
-            return null;
-        }
+        $gradeSheet = $spreadsheet->createSheet();
+        $gradeSheet->setTitle('GRADE');
+        $this->writeGradeSheet($gradeSheet, $banner, $sessionLabel, $students, $term);
 
         $spreadsheet->setActiveSheetIndex(0);
 
         return $spreadsheet;
     }
 
-    /**
-     * @param  list<array{kind:string,title:string,max:?float}>  $spec
-     * @param  \Illuminate\Support\Collection<int, Student>  $students
-     * @param  array<int, string>  $subjects schedule_id => column label
-     * @param  array<int, array<int, Mark>>  $marksByStudent
-     */
-    private function writeMarksSheet(
-        $sheet,
-        string $banner,
-        string $sessionLabel,
-        array $spec,
-        $students,
-        array $subjects,
-        array $marksByStudent
-    ): void {
-        $sheet->setCellValue('A1', $banner);
-        $sheet->setCellValue('A2', $spec['max'] !== null ? 'Max marks: '.$spec['max'] : $spec['title']);
-        $sheet->setCellValue('A3', 'Session: '.$sessionLabel);
-
-        $headers = array_merge(['Adm. No.', 'Roll', 'Name'], array_values($subjects));
-        $sheet->fromArray($headers, null, 'A4');
-        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
-        $sheet->getStyle("A4:{$lastCol}4")->getFont()->setBold(true);
-        $sheet->getStyle("A4:{$lastCol}4")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E2E8F0');
-
-        $scheduleIds = array_keys($subjects);
-        $row = 5;
-        foreach ($students as $student) {
-            $values = [
-                $student->admission_no,
-                $student->roll_no,
-                $student->name,
-            ];
-            foreach ($scheduleIds as $scheduleId) {
-                $mark = $marksByStudent[$student->id][$scheduleId] ?? null;
-                if (! $mark) {
-                    $values[] = null;
-                } elseif ($mark->is_absent) {
-                    $values[] = 'Ab';
-                } else {
-                    $values[] = $mark->marks_obtained !== null ? (float) $mark->marks_obtained : null;
-                }
-            }
-            $sheet->fromArray($values, null, "A{$row}");
-            $row++;
+    /** @return float|string|null */
+    private function markCellValue(array $marksByStudent, int $studentId, ?int $scheduleId)
+    {
+        if (! $scheduleId) {
+            return null;
         }
+        $mark = $marksByStudent[$studentId][$scheduleId] ?? null;
+        if (! $mark) {
+            return null;
+        }
+        if ($mark->is_absent) {
+            return 'Ab';
+        }
+
+        return $mark->marks_obtained !== null ? (float) $mark->marks_obtained : null;
+    }
+
+    /** @param  list<float|string|null>  $values */
+    private function sumNumeric(array $values): ?float
+    {
+        $sum = 0.0;
+        $any = false;
+        foreach ($values as $v) {
+            if (is_numeric($v)) {
+                $sum += (float) $v;
+                $any = true;
+            }
+        }
+
+        return $any ? round($sum, 2) : null;
     }
 
     /**

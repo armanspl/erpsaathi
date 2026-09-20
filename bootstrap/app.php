@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'erp.auth' => App\Http\Middleware\RedirectErp::class,
             'erp.permission' => App\Http\Middleware\CheckErpPermission::class,
+            'student.auth' => App\Http\Middleware\RedirectStudent::class,
             'tenant' => App\Http\Middleware\IdentifyTenant::class,
             'central' => App\Http\Middleware\EnsureCentralDomain::class,
             'super_admin.auth' => App\Http\Middleware\RedirectSuperAdmin::class,

@@ -29,7 +29,7 @@
                 <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
                     <div>
                         <label class="form-label">Search</label>
-                        <input v-model="filters.search" type="search" class="form-input" placeholder="Paid to, notes, expense #" />
+                        <input v-model="filters.search" type="search" class="form-input" placeholder="Paid to, description, remarks, expense #" />
                     </div>
                     <div>
                         <label class="form-label">Category</label>
@@ -79,11 +79,12 @@
             <div v-else-if="!paged.length" class="px-6 py-20 text-center text-sm text-slate-400">No expenses match your filters.</div>
 
             <div v-else class="overflow-x-auto">
-                <table v-if="viewMode === 'table'" class="w-full min-w-[880px] text-left text-sm">
+                <table v-if="viewMode === 'table'" class="w-full min-w-[980px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('voucher_no')">Expense # {{ sortArrow('voucher_no') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('category')">Category {{ sortArrow('category') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('title')">Description {{ sortArrow('title') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('amount')">Amount {{ sortArrow('amount') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('date')">Date {{ sortArrow('date') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('paid_to')">Paid to {{ sortArrow('paid_to') }}</th>
@@ -95,6 +96,7 @@
                         <tr v-for="e in paged" :key="e.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ e.voucher_no }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ e.expense_category?.name || '—' }}</td>
+                            <td class="px-4 py-3 text-slate-700 dark:text-slate-200">{{ e.title || '—' }}</td>
                             <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{{ inr(e.amount) }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ e.date }}</td>
                             <td class="px-4 py-3 text-slate-700 dark:text-slate-200">{{ e.paid_to || '—' }}</td>
@@ -166,7 +168,7 @@
         <!-- Create / Edit Office Expense modal -->
         <div v-if="formOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-slate-900/40" @click="formOpen = false" />
-            <div class="relative z-10 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div class="relative z-10 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
                 <div class="flex items-start justify-between">
                     <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ editing ? 'Edit Office Expense' : 'Create Office Expense' }}</h2>
                     <button type="button" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" @click="formOpen = false">
@@ -176,7 +178,7 @@
 
                 <div class="mt-4 grid grid-cols-2 gap-4">
                     <div>
-                        <label class="form-label">Category</label>
+                        <label class="form-label">Category (Part 1)</label>
                         <select v-model.number="form.expense_category_id" class="form-input">
                             <option :value="null">Select category</option>
                             <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -187,8 +189,24 @@
                         <input v-model.number="form.amount" type="number" min="0" step="0.01" class="form-input" />
                     </div>
                     <div>
+                        <label class="form-label">Part 2</label>
+                        <input v-model="form.part2" type="text" class="form-input" placeholder="e.g. STAFF, TRANSPORT vehicle" />
+                    </div>
+                    <div>
+                        <label class="form-label">Part 3</label>
+                        <input v-model="form.part3" type="text" class="form-input" placeholder="e.g. SALARY, MAINT B, FARE" />
+                    </div>
+                    <div class="col-span-2">
+                        <label class="form-label">Description</label>
+                        <input v-model="form.description" type="text" class="form-input" />
+                    </div>
+                    <div>
                         <label class="form-label">Expense date</label>
                         <input v-model="form.date" type="date" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Receipt No <span class="font-normal text-slate-400">(optional)</span></label>
+                        <input v-model="form.receipt_no" type="text" class="form-input" placeholder="Auto-generated if left blank" />
                     </div>
                     <div class="col-span-2">
                         <label class="form-label">Paid to</label>
@@ -201,6 +219,10 @@
                             <option>Approved</option>
                             <option>Rejected</option>
                         </select>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="form-label">Remarks</label>
+                        <textarea v-model="form.remarks" rows="2" class="form-input" />
                     </div>
                     <div class="col-span-2">
                         <label class="form-label">Notes</label>
@@ -304,10 +326,15 @@ const formOpen = ref(false);
 const editing = ref(null);
 const form = reactive({
     expense_category_id: null,
+    part2: '',
+    part3: '',
+    description: '',
     amount: '',
     date: new Date().toISOString().slice(0, 10),
+    receipt_no: '',
     paid_to: '',
     status: 'Pending',
+    remarks: '',
     notes: '',
 });
 
@@ -385,10 +412,15 @@ function openCreate() {
     editing.value = null;
     Object.assign(form, {
         expense_category_id: null,
+        part2: '',
+        part3: '',
+        description: '',
         amount: '',
         date: new Date().toISOString().slice(0, 10),
+        receipt_no: '',
         paid_to: '',
         status: 'Pending',
+        remarks: '',
         notes: '',
     });
     formOpen.value = true;
@@ -398,10 +430,15 @@ function openEdit(expense) {
     editing.value = expense;
     Object.assign(form, {
         expense_category_id: expense.expense_category_id,
+        part2: expense.part2 || '',
+        part3: expense.part3 || '',
+        description: expense.title || '',
         amount: Number(expense.amount),
         date: String(expense.date).slice(0, 10),
+        receipt_no: (expense.voucher_no || '').replace(/^EXP-/, ''),
         paid_to: expense.paid_to || '',
         status: expense.status,
+        remarks: expense.remarks || '',
         notes: expense.notes || '',
     });
     formOpen.value = true;
@@ -412,13 +449,24 @@ async function save() {
         pushToast('Select a category.', 'error');
         return;
     }
+    if (!form.description.trim()) {
+        pushToast('Description is required.', 'error');
+        return;
+    }
     if (!form.paid_to.trim()) {
         pushToast('"Paid to" is required.', 'error');
         return;
     }
     saving.value = true;
     try {
-        const payload = { ...form, notes: form.notes || null };
+        const payload = {
+            ...form,
+            part2: form.part2 || null,
+            part3: form.part3 || null,
+            receipt_no: form.receipt_no || null,
+            remarks: form.remarks || null,
+            notes: form.notes || null,
+        };
         if (editing.value) {
             await client.put(`/finance-payroll/expenses/${editing.value.id}`, payload);
             pushToast('Expense updated.', 'success');

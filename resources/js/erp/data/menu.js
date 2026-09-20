@@ -88,7 +88,7 @@ const rawMenu = [
     {
         label: 'Settings',
         icon: '⚙️',
-        children: ['School Settings', 'Academic Sessions', 'Roles & Permissions', 'Database Backup'],
+        children: ['School Settings', 'Academic Sessions', 'Roles & Permissions', 'Database Backup', 'Student Portal'],
     },
     {
         label: 'Account',

@@ -24,7 +24,7 @@
 
         <div class="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
             Only students without <strong>In UDISE</strong> appear here. Set District / Block under Settings → School Settings for the form header.
-            Select multiple students and click Prepare — the PDF includes every selected student (S.No 1, 2, 3…).
+            Select multiple students and click Prepare — the PDF includes one full FORM S02 page per selected student.
         </div>
 
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">

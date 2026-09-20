@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Erp\ImportExport;
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
 use App\Models\AttendanceMonthlySummary;
+use App\Models\BankAccount;
 use App\Models\BankTransaction;
 use App\Models\Expense;
 use App\Models\FeeHead;
@@ -554,11 +555,12 @@ class ExportController extends Controller
     private function sectionMoneyTotal(string $entity, array $header, array $rows): array
     {
         $columnHints = match ($entity) {
-            'fee' => ['FEE', 'Total fee collected'],
+            'fee' => ['TOTAL', 'Total fee collected'],
             'stud-rec-sum' => ['TOT_PMNT', 'Total student payments'],
-            'expense' => ['Amount', 'Total expenses'],
+            'expense' => ['AMOUNT', 'Total expenses'],
             'salary' => ['TOTAL', 'Total salary paid (Bank sheet)'],
-            'bank' => ['Amount', 'Total bank movements'],
+            // No 'bank' entry: its TOTAL column is a running balance, not a summable amount —
+            // summing it across rows would add together many point-in-time snapshots.
             default => null,
         };
 
@@ -603,19 +605,24 @@ class ExportController extends Controller
             'student-udise' => $this->buildStudentUdiseExport($request),
             'stud-rec-sum' => $this->buildStudRecSumExport($request),
             'fee' => $this->buildIncomeExport($request),
+            // Same column layout as the legacy workbook's EXPENSES sheet / Global Workbook import.
             'expense' => [
-                ['Voucher No', 'Category', 'Title', 'Amount', 'Date', 'Mode'],
+                ['RCPT', 'YEAR', 'MONTH', 'DATE', 'DESCRIPTION', 'PART 1', 'PART 2', 'AMOUNT', 'PART 3', 'REMARKS'],
                 $byDate(Expense::with('expenseCategory:id,name'))->orderByDesc('date')->get()->map(fn (Expense $e) => [
-                    $e->voucher_no, $e->expenseCategory->name ?? '', $e->title, (float) $e->amount, $e->date->toDateString(), $e->payment_mode,
+                    preg_replace('/^EXP-/', '', (string) $e->voucher_no) ?: $e->voucher_no,
+                    $this->fiscalYearLabel($e->date),
+                    $e->date->copy()->startOfMonth()->toDateString(),
+                    $e->date->toDateString(),
+                    $e->title,
+                    $e->expenseCategory->name ?? '',
+                    $e->part2 ?? '',
+                    (float) $e->amount,
+                    $e->part3 ?? '',
+                    $e->remarks ?? '',
                 ])->all(),
             ],
             'salary' => $this->buildSalaryBankExport($request),
-            'bank' => [
-                ['Account', 'Type', 'Amount', 'Date', 'Reference No'],
-                $byDate(BankTransaction::with('bankAccount:id,account_name'))->orderByDesc('date')->get()->map(fn (BankTransaction $t) => [
-                    $t->bankAccount->account_name ?? '', $t->type, (float) $t->amount, $t->date->toDateString(), $t->reference_no,
-                ])->all(),
-            ],
+            'bank' => $this->buildBankExport($request),
             // Routes aren't session-bound data (a route doesn't belong to an academic year) — never scoped.
             'route' => [
                 ['Route', 'Start Point', 'End Point', 'Vehicle', 'Status'],
@@ -629,9 +636,15 @@ class ExportController extends Controller
     }
 
     /**
-     * Fee / income export in the same column layout as Global Workbook INCOME import:
-     * YEAR | MONTH | DATE | ADM NO | NAME | ADDRESS | CLASS | HEAD | FEE | SESSION | RECEIPT | REMARKS | PMNT MODE
-     * One Excel row per fee-head line (and FINE), matching how the school maintains GAS INC_EXP workbooks.
+     * Fee / income export — one row per student per receipt DATE. Same-day payments for the
+     * same student are merged into a single line (a student never shows more than one receipt
+     * line for a given date), with REG/ADM/ANN/TUI/TRA/FINE/DIARY broken out into their own
+     * amount columns (anything else lands in OTHER) and a TOTAL column replacing the old
+     * generic 'FEE' figure with the full amount the student paid that day.
+     *
+     * This is a reporting layout only — Global Workbook import still expects (and produces via
+     * re-export of a legacy workbook) the older long-format HEAD/FEE-per-row sheet; this wide
+     * layout is not read back in by GlobalWorkbookImportController.
      *
      * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
      */
@@ -639,10 +652,13 @@ class ExportController extends Controller
     {
         [$session, $allSessions] = $this->resolveHeaderSession($request);
 
-        $headers = [
-            'YEAR', 'MONTH', 'DATE', 'ADM NO', 'NAME', 'ADDRESS', 'CLASS',
-            'HEAD', 'FEE', 'SESSION', 'RECEIPT', 'REMARKS', 'PMNT MODE',
-        ];
+        $headCodes = ['REG', 'ADM', 'ANN', 'TUI', 'TRA', 'FINE', 'DIARY'];
+        $headers = array_merge(
+            ['YEAR', 'MONTH', 'DATE', 'ADM NO', 'NAME', 'ADDRESS', 'CLASS'],
+            $headCodes,
+            ['OTHER', 'TOTAL', 'SESSION', 'RECEIPT', 'REMARKS', 'PMNT MODE']
+        );
+        $knownCodes = array_flip($headCodes);
 
         $payments = FeePayment::query()
             ->with([
@@ -677,31 +693,27 @@ class ExportController extends Controller
             }
         }
 
-        $rows = [];
+        // Group by student + calendar day — merges multiple same-day payments into one row.
+        $groups = [];
         foreach ($payments as $payment) {
-            $student = $payment->student;
             $paymentDate = $payment->payment_date?->toDateString() ?? '';
-            $monthStart = $payment->payment_date?->copy()->startOfMonth()->toDateString() ?? '';
-            $yearLabel = $payment->payment_date ? $this->fiscalYearLabel($payment->payment_date) : '';
-            $sessionLabel = $payment->academicSession->name ?? '';
-            $admNo = $student->admission_no ?? '';
-            $name = $student->name ?? '';
-            $address = trim(implode(' ', array_filter([
-                $student->address ?? null,
-                $student->address_line_2 ?? null,
-            ])));
-            $class = $student->schoolClass->name ?? '';
-            $receipt = $payment->receipt_no ?? '';
-            $mode = $modeByReceipt[$receipt]
-                ?? ($payment->payment_mode ?: 'Cash');
+            $key = $payment->student_id.'|'.$paymentDate;
+
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'student' => $payment->student,
+                    'date' => $paymentDate,
+                    'session_label' => $payment->academicSession->name ?? '',
+                    'amounts' => array_fill_keys(array_merge($headCodes, ['OTHER']), 0.0),
+                    'receipts' => [],
+                    'remarks' => [],
+                    'modes' => [],
+                ];
+            }
 
             $items = is_array($payment->items) ? $payment->items : [];
             if ($items === [] && (float) $payment->amount > 0 && (float) $payment->fine_amount <= 0) {
-                $items[] = [
-                    'fee_head_name' => 'Fee',
-                    'amount' => (float) $payment->amount,
-                    'months' => [],
-                ];
+                $items[] = ['fee_head_name' => 'Fee', 'amount' => (float) $payment->amount, 'months' => []];
             }
 
             foreach ($items as $item) {
@@ -710,44 +722,71 @@ class ExportController extends Controller
                 if ($amount == 0.0) {
                     continue;
                 }
-                $rows[] = [
-                    $yearLabel,
-                    $monthStart,
-                    $paymentDate,
-                    $admNo,
-                    $name,
-                    $address,
-                    $class,
-                    $this->incomeHeadCode($headName),
-                    round($amount, 2),
-                    $sessionLabel,
-                    $receipt,
-                    $this->incomeRemarksForItem($item, $payment->remarks),
-                    $mode,
-                ];
+                $code = $this->incomeHeadCode($headName);
+                $bucket = isset($knownCodes[$code]) ? $code : 'OTHER';
+                $groups[$key]['amounts'][$bucket] += $amount;
+
+                $remark = $this->incomeRemarksForItem($item, $payment->remarks);
+                if ($remark !== '' && ! in_array($remark, $groups[$key]['remarks'], true)) {
+                    $groups[$key]['remarks'][] = $remark;
+                }
             }
 
             $fine = (float) $payment->fine_amount;
             if ($fine > 0) {
-                $rows[] = [
-                    $yearLabel,
-                    $monthStart,
-                    $paymentDate,
-                    $admNo,
-                    $name,
-                    $address,
-                    $class,
-                    'FINE',
-                    round($fine, 2),
-                    $sessionLabel,
-                    $receipt !== '' ? $receipt.'-FINE' : '',
-                    'FINE',
-                    $mode,
-                ];
+                $groups[$key]['amounts']['FINE'] += $fine;
+            }
+
+            $receipt = $payment->receipt_no ?? '';
+            if ($receipt !== '' && ! in_array($receipt, $groups[$key]['receipts'], true)) {
+                $groups[$key]['receipts'][] = $receipt;
+            }
+
+            $mode = $modeByReceipt[$receipt] ?? ($payment->payment_mode ?: 'Cash');
+            if (! in_array($mode, $groups[$key]['modes'], true)) {
+                $groups[$key]['modes'][] = $mode;
+            }
+
+            if ($groups[$key]['session_label'] === '' && $payment->academicSession) {
+                $groups[$key]['session_label'] = $payment->academicSession->name ?? '';
             }
         }
 
-        // Misc income rows (no admission no) — same INCOME columns so re-import stays compatible.
+        $rows = [];
+        foreach ($groups as $group) {
+            $total = array_sum($group['amounts']);
+            if ($total == 0.0) {
+                continue;
+            }
+
+            $student = $group['student'];
+            $date = $group['date'];
+            $yearLabel = $date !== '' ? $this->fiscalYearLabel(\Carbon\Carbon::parse($date)) : '';
+            $monthStart = $date !== '' ? \Carbon\Carbon::parse($date)->startOfMonth()->toDateString() : '';
+            $address = trim(implode(' ', array_filter([
+                $student->address ?? null,
+                $student->address_line_2 ?? null,
+            ])));
+
+            $row = [
+                $yearLabel, $monthStart, $date,
+                $student->admission_no ?? '', $student->name ?? '', $address,
+                $student->schoolClass->name ?? '',
+            ];
+            foreach ($headCodes as $code) {
+                $row[] = ($group['amounts'][$code] != 0.0) ? round($group['amounts'][$code], 2) : '';
+            }
+            $row[] = ($group['amounts']['OTHER'] != 0.0) ? round($group['amounts']['OTHER'], 2) : '';
+            $row[] = round($total, 2);
+            $row[] = $group['session_label'];
+            $row[] = implode(', ', $group['receipts']);
+            $row[] = implode('; ', $group['remarks']);
+            $row[] = implode('/', $group['modes']);
+
+            $rows[] = $row;
+        }
+
+        // Misc income rows (no admission no) — same wide columns, one row per entry.
         $incomes = Income::query()
             ->with('bankAccount:id,account_name')
             ->when(! $allSessions && $session && $session->start_date && $session->end_date,
@@ -761,21 +800,88 @@ class ExportController extends Controller
             $monthStart = $income->date?->copy()->startOfMonth()->toDateString() ?? '';
             $mode = trim((string) ($income->bankAccount->account_name ?? ''))
                 ?: ($income->payment_mode ?: 'Cash');
-            $rows[] = [
+            $code = $this->incomeHeadCode((string) ($income->source ?: 'Income'));
+            $bucket = isset($knownCodes[$code]) ? $code : 'OTHER';
+            $amount = round((float) $income->amount, 2);
+
+            $row = [
                 $income->date ? $this->fiscalYearLabel($income->date) : '',
-                $monthStart,
-                $date,
-                '',
-                '',
-                '',
-                '',
-                $this->incomeHeadCode((string) ($income->source ?: 'Income')),
-                round((float) $income->amount, 2),
-                (! $allSessions && $session) ? ($session->name ?? '') : '',
-                preg_replace('/^INC-/', '', (string) $income->voucher_no) ?: $income->voucher_no,
-                $income->remarks,
-                $mode,
+                $monthStart, $date, '', '', '', '',
             ];
+            foreach ($headCodes as $c) {
+                $row[] = ($c === $bucket) ? $amount : '';
+            }
+            $row[] = ($bucket === 'OTHER') ? $amount : '';
+            $row[] = $amount;
+            $row[] = (! $allSessions && $session) ? ($session->name ?? '') : '';
+            $row[] = preg_replace('/^INC-/', '', (string) $income->voucher_no) ?: $income->voucher_no;
+            $row[] = $income->remarks;
+            $row[] = $mode;
+
+            $rows[] = $row;
+        }
+
+        return [$headers, $rows];
+    }
+
+    /**
+     * Bank export — same column layout as the legacy workbook's BANK <account> ledger sheets /
+     * Global Workbook import: YEAR | MONTH | DATE | ITEM | CHQ NO | DR/CR | AMOUNT | TOTAL |
+     * CATEGORY, with an ACCOUNT column up front since every account's ledger is combined into
+     * one sheet here instead of one sheet per account (matching how the Salary sheet already
+     * combines everyone into one Bank-layout sheet). Each account's own OPENING BALANCE row is
+     * synthesized first, then its transactions follow in date order with a running TOTAL —
+     * signed the same way the source ledger is (deposits positive, withdrawals negative).
+     *
+     * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
+     */
+    private function buildBankExport(?Request $request = null): array
+    {
+        [$session, $allSessions] = $this->resolveHeaderSession($request);
+
+        $headers = ['ACCOUNT', 'YEAR', 'MONTH', 'DATE', 'ITEM', 'CHQ NO', 'DR/CR', 'AMOUNT', 'TOTAL', 'CATEGORY'];
+
+        $accounts = BankAccount::query()->orderBy('account_name')->get();
+        if ($accounts->isEmpty()) {
+            return [$headers, []];
+        }
+
+        $transactionsByAccount = BankTransaction::query()
+            ->whereIn('bank_account_id', $accounts->pluck('id'))
+            ->when(! $allSessions && $session && $session->start_date && $session->end_date,
+                fn ($q) => $q->whereBetween('date', [$session->start_date, $session->end_date]))
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('bank_account_id');
+
+        $rows = [];
+        foreach ($accounts as $account) {
+            $running = (float) $account->opening_balance;
+
+            $rows[] = [
+                $account->account_name, '', '', '',
+                'OPENING BALANCE', '', '',
+                round($running, 2), round($running, 2), '',
+            ];
+
+            foreach ($transactionsByAccount->get($account->id, collect()) as $t) {
+                $signedAmount = $t->type === 'Deposit' ? (float) $t->amount : -(float) $t->amount;
+                $running += $signedAmount;
+
+                $rows[] = [
+                    $account->account_name,
+                    $this->fiscalYearLabel($t->date),
+                    $t->date->copy()->startOfMonth()->toDateString(),
+                    $t->date->toDateString(),
+                    $t->item ?: ($t->remarks ?: $t->type),
+                    $t->reference_no ?: '',
+                    $t->type === 'Deposit' ? 'CR' : 'DR',
+                    round($signedAmount, 2),
+                    round($running, 2),
+                    $t->category ?: '',
+                ];
+            }
         }
 
         return [$headers, $rows];

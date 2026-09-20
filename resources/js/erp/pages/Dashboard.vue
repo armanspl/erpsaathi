@@ -78,6 +78,10 @@
                                 <i>Bank / UPI</i>
                                 <strong>₹{{ money(todaySummary.fee.bank) }}</strong>
                             </span>
+                            <span class="mode is-total">
+                                <i>Total</i>
+                                <strong>₹{{ money(todayCashBankTotal) }}</strong>
+                            </span>
                         </div>
                     </div>
                 </DashCard>
@@ -234,6 +238,7 @@ const todaySummary = ref({
     staff: { present: 0, absent: 0 },
     fee: { received: 0, cash: 0, bank: 0, receipts: 0 },
 });
+const todayCashBankTotal = computed(() => Number(todaySummary.value.fee.cash || 0) + Number(todaySummary.value.fee.bank || 0));
 const classStrength = ref([]);
 const feeCollectionStatus = ref([]);
 const categoryByClass = ref([]);
@@ -556,7 +561,7 @@ const quickActions = [
 }
 .dash-row--split {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
     padding: 0.5rem;
 }
@@ -583,6 +588,10 @@ const quickActions = [
 .dash-row--split .is-bank {
     background: rgba(125, 180, 230, 0.12);
     color: #9ec8f0;
+}
+.dash-row--split .is-total {
+    background: rgba(243, 239, 230, 0.1);
+    color: var(--erp-cream, #f3efe6);
 }
 .dash-row__vals {
     display: inline-flex;

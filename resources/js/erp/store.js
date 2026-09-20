@@ -30,7 +30,10 @@ const state = reactive({
 
     // Prefer an explicit dark-mode choice; otherwise follow the active UI template.
     darkMode: savedDark !== null ? savedDark === '1' : !!initialTemplate.dark,
-    sidebarCollapsed: localStorage.getItem('erp_sidebar_collapsed') === '1',
+    // Prefer rail (icon-only) menu by default; user toggle still persists.
+    sidebarCollapsed: localStorage.getItem('erp_sidebar_collapsed') !== '0',
+    /** Desktop: keep sidebar expanded (pinned) instead of hover-only. */
+    sidebarPinned: localStorage.getItem('erp_sidebar_pinned') === '1',
     sidebarMobileOpen: false,
 
     /** Option labels for the header picker, always starting with {@link ALL_SESSIONS}. */
@@ -97,6 +100,11 @@ watch(
 );
 
 watch(
+    () => state.sidebarPinned,
+    (val) => localStorage.setItem('erp_sidebar_pinned', val ? '1' : '0'),
+);
+
+watch(
     () => state.currentSession,
     (val) => {
         if (val) localStorage.setItem('erp_current_session', val);
@@ -109,6 +117,14 @@ export function toggleDarkMode() {
 
 export function toggleSidebar() {
     state.sidebarCollapsed = !state.sidebarCollapsed;
+}
+
+export function toggleSidebarPin() {
+    state.sidebarPinned = !state.sidebarPinned;
+}
+
+export function setSidebarPinned(pinned) {
+    state.sidebarPinned = !!pinned;
 }
 
 export function setThemeColor(hex) {
@@ -236,6 +252,7 @@ export function applySchoolSettings(data) {
     if (data.compact_sidebar && localStorage.getItem('erp_sidebar_collapsed') === null) {
         state.sidebarCollapsed = true;
     }
+    // Keep explicit expand preference; otherwise school compact_sidebar stays rail.
 
     const title = data.browser_title || data.school_name;
     if (title) document.title = title;

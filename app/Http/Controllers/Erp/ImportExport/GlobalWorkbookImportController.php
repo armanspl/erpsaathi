@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Erp\ImportExport;
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
 use App\Models\BankAccount;
+use App\Models\BankTransaction;
 use App\Models\Branch;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
@@ -28,15 +29,19 @@ use Illuminate\Support\Facades\DB;
 /**
  * Imports legacy school Excel workbooks (multi-sheet). INCOME, EXPENSES, any sheet whose name
  * starts with TRANSPORT (e.g. "TRANSPORT-26", "TRANSPORT-27" next year), any sheet whose
- * name starts with "Student Master" (e.g. "Student Master 22-26"), and the yearly
- * "SALARY … Bank" sheet (auto-creates Teachers/Staff/Drivers + monthly salary slips) are
- * processed; pivots, bank statement sheets, fuel, CHQ, and summary dashboards are ignored.
+ * name starts with "Student Master" (e.g. "Student Master 22-26"), any sheet whose name starts
+ * with "BANK" and isn't a pivot (e.g. "BANK IDBI 11662 26-27" — a real statement ledger, not
+ * "BANK GAS PIVOT"), and the yearly "SALARY … Bank" sheet (auto-creates Teachers/Staff/Drivers
+ * + monthly salary slips) are processed; pivots, fuel, CHQ, and summary dashboards are ignored.
  * TRANSPORT runs before Student Master so stoppage routes exist when bus numbers are
  * attached — see the note at that block in store().
  *
  * The Student Master sheet is processed by {@see StudentMasterImportService} — the exact same
  * pipeline erp/dashboard/import-export?type=student-import uses on its own, so the two never
- * drift out of sync. SALARY Bank is processed by {@see SalaryBankWorkbookService}.
+ * drift out of sync. SALARY Bank is processed by {@see SalaryBankWorkbookService}. Each BANK
+ * sheet is processed by {@see importBankSheet()} — every row becomes a BankTransaction against
+ * the BankAccount its own sheet title names (e.g. "BANK IDBI 11662 26-27" → account "IDBI 11662"),
+ * the same account resolution an INCOME/EXPENSES row's PMNT MODE cell already uses.
  *
  * Corrupted columns are skipped explicitly:
  * - Purely numeric headers (e.g. a pasted TOTAL INCOME figure used as a column title)
@@ -50,7 +55,7 @@ class GlobalWorkbookImportController extends Controller
     private const EXPENSE_SHEETS = ['expenses', 'expense'];
 
     /** Sheets we never import — listed in the response for transparency. */
-    private const IGNORED_SHEET_HINT = 'SUMMARY, STUD_REC*, pivots, BANK* statements, CHQ*, FUEL*, WORKING DAYS';
+    private const IGNORED_SHEET_HINT = 'SUMMARY, STUD_REC*, pivots (incl. BANK*PIVOT), CHQ*, FUEL*, WORKING DAYS';
 
     private const MSG_BROKEN_FORMULA = 'Skipped — column contains a broken formula reference (#REF!/#N/A), not usable data.';
 
@@ -166,6 +171,7 @@ class GlobalWorkbookImportController extends Controller
         $transportTitle = null;
         $studentMasterTitle = null;
         $salaryBankTitle = null;
+        $bankTitles = [];
         $toLoad = [];
         $salaryBank = app(SalaryBankWorkbookService::class);
         foreach ($sheetNames as $title) {
@@ -195,22 +201,30 @@ class GlobalWorkbookImportController extends Controller
                 $salaryBankTitle = $title;
                 $toLoad[] = $title;
             }
+            // "BANK IDBI 11662 26-27", "BANK IDBI TRUST 6739 26-27", ... — every real statement
+            // ledger sheet is imported (unlike TRANSPORT/Student Master, there can be more than
+            // one open at once, one per account); "BANK GAS PIVOT" etc. are skipped as pivots.
+            if (str_starts_with($lower, 'bank') && ! str_contains($lower, 'pivot')) {
+                $bankTitles[] = $title;
+                $toLoad[] = $title;
+            }
         }
 
         if ($toLoad === []) {
             return response()->json([
-                'message' => 'No INCOME, EXPENSES, TRANSPORT-*, Student Master*, or SALARY … Bank sheet found. Present sheets: '.implode(', ', $sheetNames)
+                'message' => 'No INCOME, EXPENSES, TRANSPORT-*, Student Master*, BANK*, or SALARY … Bank sheet found. Present sheets: '.implode(', ', $sheetNames)
                     .' — Only those are imported ('.self::IGNORED_SHEET_HINT.' are skipped).',
             ], 422);
         }
 
-        // Load ONLY matched sheets — never pivots / bank statements / fuel (formula-heavy).
+        // Load ONLY matched sheets — never pivots / fuel (formula-heavy).
         $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, $toLoad);
         $incomeSheet = null;
         $expenseSheet = null;
         $transportSheet = null;
         $studentMasterSheet = null;
         $salaryBankSheet = null;
+        $bankSheets = [];
 
         foreach ($spreadsheet->getAllSheets() as $sheet) {
             $title = trim((string) $sheet->getTitle());
@@ -240,6 +254,13 @@ class GlobalWorkbookImportController extends Controller
             if ($salaryBankTitle && strtolower($salaryBankTitle) === $lower) {
                 $salaryBankSheet = $sheet;
             }
+            if ($bankTitles !== [] && in_array($lower, array_map('strtolower', $bankTitles), true)) {
+                // YEAR | MON | DATE | ITEM | CHQ NO | DR/CR | AMOUNT | TOTAL (running-balance
+                // formula, never read) | CATEGORY — positional read, same as TRANSPORT above.
+                $parsed = SpreadsheetImportReader::fromWorksheet($sheet);
+                $parsed['title'] = $title;
+                $bankSheets[] = $parsed;
+            }
         }
 
         $salaryBankResult = null;
@@ -255,7 +276,8 @@ class GlobalWorkbookImportController extends Controller
             $lower = strtolower($name);
             if (in_array($lower, self::INCOME_SHEETS, true) || in_array($lower, self::EXPENSE_SHEETS, true)
                 || str_starts_with($lower, 'transport') || str_starts_with($lower, 'student master')
-                || $salaryBank->isSalaryBankSheetTitle($name)) {
+                || $salaryBank->isSalaryBankSheetTitle($name)
+                || (str_starts_with($lower, 'bank') && ! str_contains($lower, 'pivot'))) {
                 continue;
             }
             $ignoredSheets[] = $name;
@@ -312,9 +334,22 @@ class GlobalWorkbookImportController extends Controller
             'income_vouchers' => [],
             'expense_vouchers' => [],
             'bank_accounts' => [],
+            'bank_ledger_covered_accounts' => [],
             'user_id' => Auth::guard('erp')->id(),
             'now' => now()->toDateTimeString(),
         ];
+
+        // Resolve (find-or-create) every ledger sheet's account BEFORE Income rows are
+        // processed, so an income row naming the same account (e.g. PMNT MODE "GAS 11662")
+        // never synthesizes its own Deposit — the ledger sheet imported further below already
+        // carries that exact deposit as a real "TRANSFER DEPOSIT" line, and recording it twice
+        // would double the account's balance.
+        foreach ($bankSheets as $bankSheet) {
+            $accId = $this->resolveBankAccount($this->bankAccountLabelFromSheetTitle($bankSheet['title']), $cache);
+            if ($accId) {
+                $cache['bank_ledger_covered_accounts'][$accId] = true;
+            }
+        }
 
         $buffers = [
             'fee_payments' => [],
@@ -466,6 +501,18 @@ class GlobalWorkbookImportController extends Controller
 
         $flush();
 
+        // BANK sheets last — order doesn't matter for correctness (account resolution is
+        // find-or-create by account number either way), but this keeps ledger imports grouped
+        // with the other "extra" sheets below in the summary message.
+        $bankStats = ['bank_transactions_imported' => 0, 'bank_rows_skipped' => 0, 'bank_synthetic_deposits_replaced' => 0, 'bank_sheets' => []];
+        foreach ($bankSheets as $bankSheet) {
+            $result = $this->importBankSheet($bankSheet, $bankSheet['title'], $cache);
+            $bankStats['bank_transactions_imported'] += $result['transactions_imported'];
+            $bankStats['bank_rows_skipped'] += $result['rows_skipped'];
+            $bankStats['bank_synthetic_deposits_replaced'] += $result['synthetic_deposits_replaced'];
+            $bankStats['bank_sheets'][] = $bankSheet['title'];
+        }
+
         $stats = array_merge($stats, $transportStats);
 
         $breakdown['total_rows'] = $total;
@@ -509,6 +556,16 @@ class GlobalWorkbookImportController extends Controller
                 .$salaryBankResult['employees_updated'].' updated, '
                 .$salaryBankResult['slips_written'].' salary slip(s) written'
                 .(count($salaryBankResult['failed']) > 0 ? ', '.count($salaryBankResult['failed']).' row(s) need review' : '')
+                .'.';
+        }
+        if ($bankSheets !== []) {
+            $stats['bank'] = $bankStats;
+            $message .= ' | Bank ('.implode(', ', $bankStats['bank_sheets']).'): '
+                .$bankStats['bank_transactions_imported'].' transaction(s) imported, '
+                .$bankStats['bank_rows_skipped'].' row(s) skipped'
+                .($bankStats['bank_synthetic_deposits_replaced'] > 0
+                    ? ', '.$bankStats['bank_synthetic_deposits_replaced'].' earlier income-derived deposit(s) replaced with ledger data'
+                    : '')
                 .'.';
         }
 
@@ -590,6 +647,160 @@ class GlobalWorkbookImportController extends Controller
         }
 
         return $stats;
+    }
+
+    /**
+     * "BANK IDBI 11662 26-27" / "BANK IDBI TRUST 6739 26-27" style ledger sheet:
+     * YEAR | MON | DATE | ITEM | CHQ NO | DR/CR | AMOUNT | TOTAL (running-balance formula,
+     * never read) | CATEGORY. The account itself is resolved from the sheet title (stripping
+     * the leading "BANK " and trailing year range leaves e.g. "IDBI 11662"), reusing
+     * {@see resolveBankAccount()} so a ledger row lands on the exact same BankAccount an
+     * INCOME/EXPENSES row's PMNT MODE cell would already have created/matched.
+     *
+     * The OPENING BALANCE row (DR/CR blank or 0) is never a movement — it sets the account's
+     * opening_balance, and only on the very first import for that account (a later fiscal
+     * year's sheet restates the prior year's closing balance as its own "opening" row, which
+     * is already reflected by that prior year's transactions, so it must not overwrite).
+     *
+     * A one-time cleanup runs first: any earlier income import (before this account had a
+     * ledger sheet, or from before this codepath existed) may have left synthetic "Imported
+     * fee payment — …" Deposit rows for this exact account — money the ledger's own CR rows
+     * are about to re-supply properly. Those synthetic rows are deleted so the account isn't
+     * left with the same deposit counted twice.
+     *
+     * @param  array{header: array<int,string>, rows: array<int, array<int, mixed>>, title?: string}  $sheet
+     * @param  array<string, mixed>  $cache
+     * @return array{transactions_imported: int, rows_skipped: int, synthetic_deposits_replaced: int}
+     */
+    private function importBankSheet(array $sheet, string $sheetTitle, array &$cache): array
+    {
+        $stats = ['transactions_imported' => 0, 'rows_skipped' => 0, 'synthetic_deposits_replaced' => 0];
+
+        $accountLabel = $this->bankAccountLabelFromSheetTitle($sheetTitle);
+        $bankAccountId = $this->resolveBankAccount($accountLabel, $cache);
+        if (! $bankAccountId) {
+            $stats['rows_skipped'] = count($sheet['rows']);
+
+            return $stats;
+        }
+
+        // Delete-then-rebuild for this one account runs inside a transaction — if anything
+        // fails partway (e.g. a schema mismatch), the account is left exactly as it was found
+        // rather than with its synthetic deposits deleted but the real ledger never inserted.
+        DB::transaction(function () use ($sheet, $bankAccountId, $cache, &$stats) {
+            $stats['synthetic_deposits_replaced'] = BankTransaction::where('bank_account_id', $bankAccountId)
+                ->where('remarks', 'like', 'Imported fee payment — %')
+                ->delete();
+
+            $isFreshAccount = ! BankTransaction::where('bank_account_id', $bankAccountId)->exists();
+
+            // Dedup against whatever this account already has, so re-importing the same
+            // workbook (or a later year's sheet repeating earlier months) never doubles a row.
+            $seen = [];
+            foreach (BankTransaction::where('bank_account_id', $bankAccountId)->get(['date', 'type', 'amount', 'reference_no', 'remarks']) as $existing) {
+                $seen[$this->bankTxKey($existing->date->toDateString(), $existing->type, (float) $existing->amount, $existing->reference_no, $existing->remarks)] = true;
+            }
+
+            $now = $cache['now'];
+            $buffer = [];
+            $flushBuffer = function () use (&$buffer) {
+                if ($buffer === []) {
+                    return;
+                }
+                foreach (array_chunk($buffer, 250) as $chunk) {
+                    DB::table('bank_transactions')->insert($chunk);
+                }
+                $buffer = [];
+            };
+
+            foreach ($sheet['rows'] as $row) {
+                $item = trim((string) ($row[3] ?? ''));
+                $drCr = strtoupper(trim((string) ($row[5] ?? '')));
+                $amountRaw = $row[6] ?? null;
+                $amount = is_numeric($amountRaw) ? (float) $amountRaw : null;
+
+                if ($item === '' && $amount === null) {
+                    continue; // blank trailing row past the real data
+                }
+
+                $date = ExcelDateParser::parse($row[2] ?? null);
+                if (! $date) {
+                    $stats['rows_skipped']++;
+
+                    continue;
+                }
+
+                $isOpeningRow = $drCr === '' || $drCr === '0' || strtoupper($item) === 'OPENING BALANCE';
+                if ($isOpeningRow) {
+                    if ($isFreshAccount && $amount !== null) {
+                        BankAccount::where('id', $bankAccountId)->update(['opening_balance' => round($amount, 2)]);
+                        $isFreshAccount = false; // only the sheet's own first opening row counts
+                    }
+
+                    continue;
+                }
+
+                if ($amount === null || $amount == 0.0 || ! in_array($drCr, ['CR', 'DR'], true)) {
+                    $stats['rows_skipped']++;
+
+                    continue;
+                }
+
+                $type = $drCr === 'CR' ? 'Deposit' : 'Withdrawal';
+                $chqNo = trim((string) ($row[4] ?? ''));
+                $referenceNo = ($chqNo !== '' && $chqNo !== '0') ? $chqNo : null;
+                $category = trim((string) ($row[8] ?? ''));
+                $remarksParts = array_filter([
+                    $item !== '' ? $item : null,
+                    ($category !== '' && $category !== $item) ? $category : null,
+                ]);
+                $remarks = $remarksParts !== [] ? implode(' | ', $remarksParts) : null;
+                $roundedAmount = round(abs($amount), 2);
+
+                $key = $this->bankTxKey($date, $type, $roundedAmount, $referenceNo, $remarks);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                $buffer[] = [
+                    'bank_account_id' => $bankAccountId,
+                    'type' => $type,
+                    'amount' => $roundedAmount,
+                    'date' => $date,
+                    'reference_no' => $referenceNo,
+                    'item' => $item !== '' ? $item : null,
+                    'category' => $category !== '' ? $category : null,
+                    'remarks' => $remarks,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+                $stats['transactions_imported']++;
+
+                if (count($buffer) >= 500) {
+                    $flushBuffer();
+                }
+            }
+
+            $flushBuffer();
+        });
+
+        return $stats;
+    }
+
+    private function bankTxKey(string $date, string $type, float $amount, ?string $referenceNo, ?string $remarks): string
+    {
+        return $date.'|'.$type.'|'.number_format($amount, 2, '.', '').'|'.($referenceNo ?? '').'|'.($remarks ?? '');
+    }
+
+    /** "BANK IDBI 11662 26-27" → "IDBI 11662" — same shape resolveBankAccount() parses from a PMNT MODE cell. */
+    private function bankAccountLabelFromSheetTitle(string $title): string
+    {
+        $label = trim($title);
+        $label = preg_replace('/^bank\s+/i', '', $label) ?? $label;
+        $label = preg_replace('/\s+\d{2}-\d{2}$/', '', $label) ?? $label;
+
+        return trim($label);
     }
 
     /** @param  array<string, int>  $breakdown */
@@ -921,8 +1132,11 @@ class GlobalWorkbookImportController extends Controller
 
                 // fee_payments has no bank_account_id column, so the link to the account is a
                 // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums
-                // these, the same mechanism a manually-entered deposit uses.
-                $bankTx = $bankAccountId ? [
+                // these, the same mechanism a manually-entered deposit uses. Skipped entirely
+                // when this account has its own authoritative BANK ledger sheet in this same
+                // workbook — that sheet's own "TRANSFER DEPOSIT" row already covers this money.
+                $bankCovered = $bankAccountId && ! empty($cache['bank_ledger_covered_accounts'][$bankAccountId]);
+                $bankTx = ($bankAccountId && ! $bankCovered) ? [
                     'bank_account_id' => $bankAccountId,
                     'type' => 'Deposit',
                     'amount' => $amount,
@@ -1050,11 +1264,9 @@ class GlobalWorkbookImportController extends Controller
             }
 
             $cache['expense_vouchers'][$voucher] = true;
-            $remarksParts = array_filter([
-                trim((string) ($row['part2'] ?? '')) !== '' ? 'Part-2: '.trim((string) $row['part2']) : null,
-                trim((string) ($row['part3'] ?? '')) !== '' ? 'Part-3: '.trim((string) $row['part3']) : null,
-                trim((string) ($row['remarks'] ?? '')) !== '' ? trim((string) $row['remarks']) : null,
-            ]);
+            $part2 = trim((string) ($row['part2'] ?? ''));
+            $part3 = trim((string) ($row['part3'] ?? ''));
+            $remarks = trim((string) ($row['remarks'] ?? ''));
             $now = $cache['now'];
 
             return [
@@ -1064,11 +1276,13 @@ class GlobalWorkbookImportController extends Controller
                 'data' => [
                     'voucher_no' => $voucher,
                     'expense_category_id' => $categoryId,
+                    'part2' => $part2 !== '' ? $part2 : null,
+                    'part3' => $part3 !== '' ? $part3 : null,
                     'title' => $description,
                     'amount' => $amount,
                     'date' => $date,
                     'payment_mode' => 'Cash',
-                    'remarks' => $remarksParts ? implode(' | ', $remarksParts) : null,
+                    'remarks' => $remarks !== '' ? $remarks : null,
                     'paid_by_id' => $cache['user_id'],
                     'created_at' => $now,
                     'updated_at' => $now,
