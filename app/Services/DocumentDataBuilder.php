@@ -862,7 +862,7 @@ class DocumentDataBuilder
     public function certificate(CertificateType $type, Certificate $certificate, Student $student, array $overrides = []): array
     {
         $student->loadMissing(['schoolClass:id,name', 'section:id,name', 'father:id,name', 'mother:id,name', 'branch:id,name', 'additionalDetail', 'udiseDetail', 'documents']);
-        $session = AcademicSession::where('is_current', true)->value('name') ?? '';
+        $session = $this->shortSessionLabel(AcademicSession::where('is_current', true)->value('name') ?? '');
 
         $val = fn (string $key, string $default) => trim((string) ($overrides[$key] ?? '')) !== '' ? $overrides[$key] : $default;
         $dateVal = fn (string $key, string $format, ?Carbon $default) => trim((string) ($overrides[$key] ?? '')) !== ''
@@ -958,6 +958,14 @@ class DocumentDataBuilder
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /** "2026-2027" -> "2026-27"; anything else passes through unchanged. */
+    private function shortSessionLabel(string $label): string
+    {
+        return preg_match('/^(\d{4})-(\d{4})$/', trim($label), $m)
+            ? $m[1].'-'.substr($m[2], -2)
+            : $label;
     }
 
     public function idCard(IdCard $idCard): array

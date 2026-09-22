@@ -65,20 +65,22 @@ return new class extends Migration
 .tc-logo{ position:absolute; left:8mm; top:8mm; width:16mm; height:16mm; object-fit:contain; }
 .tc-photo{ position:absolute; right:8mm; top:8mm; width:20mm; height:24mm; border:0.3mm solid #94a3b8; object-fit:cover; }
 .tc-head{ text-align:center; margin-bottom:0.5mm; }
-.tc-school{ font-size:20pt; font-weight:bold; color:#7c2d12; margin:0 24mm; letter-spacing:0.3px; }
+.tc-school{ font-size:23pt; font-weight:bold; color:#7c2d12; margin:0 24mm; letter-spacing:0.3px; }
 .tc-address{ font-size:8.5pt; font-weight:bold; margin-top:1mm; }
 .tc-phone{ font-size:8pt; font-weight:bold; margin-top:0.6mm; }
 .tc-titlebar{ border:0.35mm solid #1f2937; background:#e2e8f0; text-align:center; font-weight:bold; font-size:11.5pt; letter-spacing:2.5px; padding:1.3mm 0; margin:2.5mm 0 2mm; }
 .tc-refrow{ border:0.3mm solid #1f2937; width:100%; font-size:8pt; font-weight:bold; border-collapse:collapse; margin-bottom:2.5mm; }
 .tc-refrow td{ padding:1.2mm 1.5mm; overflow-wrap:break-word; }
-.tc-list{ width:100%; font-size:8.2pt; line-height:1.3; border-collapse:collapse; }
-.tc-list td{ padding:0.5mm 0; vertical-align:top; overflow-wrap:break-word; }
-.tc-list .num{ width:6mm; }
-.tc-list .label{ width:112mm; }
-.tc-list .colon{ width:4mm; }
-.tc-list .value{ width:62mm; font-weight:bold; }
+.tc-list, .tc-list tr, .tc-list td{ border:none !important; outline:none; }
+.tc-list{ width:100%; font-size:11pt; line-height:1.45; border-collapse:collapse; }
+.tc-list td{ padding:0.55mm 0; vertical-align:top; border:none !important; overflow-wrap:break-word; }
+.tc-list .num{ width:6mm; padding-right:4.5mm; }
+.tc-list .label{ width:104mm; padding-right:4.5mm; }
+.tc-list .colon{ width:8mm; text-align:center; padding:0 2.5mm; }
+.tc-list .value{ width:62mm; font-weight:bold; padding-left:4.5mm; }
 .tc-footer{ width:100%; margin-top:6mm; font-size:8.5pt; font-weight:bold; border-collapse:collapse; }
-.tc-footer td{ vertical-align:bottom; }
+.tc-footer td{ vertical-align:bottom; border:none !important; }
+.tc-checked-date{ display:block; padding-top:8mm; margin:0; line-height:1.2; }
 </style>
 <div class="tc-page">
     <div class="tc-frame">
@@ -126,8 +128,8 @@ return new class extends Migration
             <tr><td class="num">23.</td><td class="label">Any other remarks</td><td class="colon">:-</td><td class="value">{{remarks}}</td></tr>
         </table>
         <table class="tc-footer"><tr>
-            <td style="text-align:left;">Checked By<br/>Date: {{issue_date_numeric}}</td>
-            <td style="text-align:right;">Sign of Principal &amp; Seal</td>
+            <td style="text-align:left; border:none;">Checked By<br/><div class="tc-checked-date">Date: {{issue_date_numeric}}</div></td>
+            <td style="text-align:right; border:none;">Sign of Principal &amp; Seal</td>
         </tr></table>
     </div>
 </div>

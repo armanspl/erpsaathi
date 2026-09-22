@@ -251,9 +251,9 @@
             <div v-if="preparing" class="py-10 text-center text-sm text-slate-400">Loading...</div>
             <template v-else>
                 <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Every field shown here is printed on the {{ prepareTypeLabel }} PDF for {{ prepareRow?.name }}. Edit anything below, then either
-                    <strong>Save</strong> (keeps these values for this certificate — they pre-fill next time and apply to future downloads too) or
-                    just <strong>Download PDF</strong> for a one-off change that isn't kept. Nothing here touches the student's own record.
+                    Every field shown here is printed on the {{ prepareTypeLabel }} PDF for {{ prepareRow?.name }}. Edit anything below —
+                    both <strong>Save</strong> and <strong>Download PDF</strong> keep these values for this certificate, so they pre-fill
+                    next time and apply to future downloads too. Nothing here touches the student's own record.
                 </p>
 
                 <div>
@@ -548,10 +548,10 @@
                 <button
                     type="button"
                     class="btn-primary"
-                    :disabled="!tcStatus?.can_issue || tcDownloading"
+                    :disabled="(!tcStatus?.can_issue && !canAutoCollectTc) || tcDownloading"
                     @click="downloadAfterTcCheck"
                 >
-                    {{ tcDownloading ? 'Downloading...' : 'Download Transfer Certificate' }}
+                    {{ tcDownloading ? 'Downloading...' : (canAutoCollectTc ? 'Collect TC Fee & Download' : 'Download Transfer Certificate') }}
                 </button>
             </template>
         </SlideOver>
@@ -740,19 +740,35 @@ async function openTcCheckout(row, overrides = {}) {
     }
 }
 
+// True only when TC Fee is the sole remaining blocker (academic Fee Due is already clear) —
+// in that case "Download" can collect the TC Fee itself using the filled Amount/Payment mode,
+// instead of requiring a separate "Collect TC Fee" click first.
+const canAutoCollectTc = computed(() => {
+    if (!tcStatus.value || tcStatus.value.can_issue) return false;
+    const academicDue = tcStatus.value.academic_outstanding || 0;
+    const tcDue = tcStatus.value.tc_fee?.due || 0;
+    return !!tcStatus.value.tc_fee?.enabled && academicDue <= 0.009 && tcDue > 0.009;
+});
+
+/** Collects TC Fee for the amount/mode currently in tcPayForm and refreshes tcStatus from the response. */
+async function collectTcFee() {
+    const { data } = await client.post(
+        `/documents/certificates/${filters.certificate_type_id}/${tcRow.value.student_id}/tc-pay`,
+        {
+            amount: tcPayForm.amount,
+            payment_mode: tcPayForm.payment_mode,
+        },
+    );
+    tcStatus.value = data.checkout;
+    tcPayForm.amount = Number(data.checkout?.tc_fee?.due || 0);
+    return data;
+}
+
 async function payTcFee() {
     if (!tcRow.value || !tcStatus.value) return;
     tcPaying.value = true;
     try {
-        const { data } = await client.post(
-            `/documents/certificates/${filters.certificate_type_id}/${tcRow.value.student_id}/tc-pay`,
-            {
-                amount: tcPayForm.amount,
-                payment_mode: tcPayForm.payment_mode,
-            },
-        );
-        tcStatus.value = data.checkout;
-        tcPayForm.amount = Number(data.checkout?.tc_fee?.due || 0);
+        const data = await collectTcFee();
         pushToast(`TC Fee collected. Receipt ${data.payment?.receipt_no || ''}.`.trim(), 'success');
     } catch (e) {
         const msg = e?.response?.data?.errors?.amount?.[0]
@@ -765,10 +781,26 @@ async function payTcFee() {
 }
 
 async function downloadAfterTcCheck() {
-    if (!tcRow.value || !tcStatus.value?.can_issue) return;
+    if (!tcRow.value || !tcStatus.value) return;
+    if (!tcStatus.value.can_issue && !canAutoCollectTc.value) return;
     tcDownloading.value = true;
     downloadingId.value = tcRow.value.student_id;
     try {
+        if (!tcStatus.value.can_issue && canAutoCollectTc.value) {
+            try {
+                await collectTcFee();
+            } catch (e) {
+                const msg = e?.response?.data?.errors?.amount?.[0]
+                    || e?.response?.data?.message
+                    || 'Could not collect TC Fee.';
+                pushToast(msg, 'error');
+                return;
+            }
+        }
+        if (!tcStatus.value?.can_issue) {
+            pushToast(tcStatus.value?.block_reason || 'Outstanding fees must be cleared before issuing the Transfer Certificate.', 'error');
+            return;
+        }
         await downloadPdf(
             `/documents/certificates/${filters.certificate_type_id}/${tcRow.value.student_id}/pdf`,
             `certificate-${tcRow.value.admission_no}.pdf`,
@@ -910,10 +942,32 @@ async function openPrepare(row) {
     }
 }
 
+/** POSTs the current form to the save endpoint and re-syncs prepareForm from the response. */
+async function persistPrepareOverrides() {
+    const { data } = await client.post(
+        `/documents/certificates/${filters.certificate_type_id}/${prepareRow.value.student_id}/prepare`,
+        { ...prepareForm },
+    );
+    PREPARE_FIELDS.forEach((key) => { prepareForm[key] = data[key] ?? ''; });
+    prepareForm.dob = data.dob_iso || '';
+    prepareForm.admission_date = data.admission_date_iso || '';
+    prepareForm.issue_date = data.issue_date_iso || '';
+    prepareForm.application_date = data.application_date_iso || '';
+    return data;
+}
+
 async function downloadFromPrepare() {
     if (!prepareRow.value) return;
     downloadingPrepare.value = true;
     try {
+        // Downloading also saves — no need to click "Save" separately first.
+        try {
+            await persistPrepareOverrides();
+        } catch (e) {
+            const msg = e?.response?.data?.errors?.sr_no?.[0] || e?.response?.data?.message || 'Could not save.';
+            pushToast(msg, 'error');
+            return;
+        }
         await downloadStudentPdf(prepareRow.value, { ...prepareForm });
         prepareOpen.value = false;
     } finally {
@@ -925,15 +979,7 @@ async function savePrepare() {
     if (!prepareRow.value) return;
     savingPrepare.value = true;
     try {
-        const { data } = await client.post(
-            `/documents/certificates/${filters.certificate_type_id}/${prepareRow.value.student_id}/prepare`,
-            { ...prepareForm },
-        );
-        PREPARE_FIELDS.forEach((key) => { prepareForm[key] = data[key] ?? ''; });
-        prepareForm.dob = data.dob_iso || '';
-        prepareForm.admission_date = data.admission_date_iso || '';
-        prepareForm.issue_date = data.issue_date_iso || '';
-        prepareForm.application_date = data.application_date_iso || '';
+        await persistPrepareOverrides();
         pushToast('Saved — these values will pre-fill and apply to future downloads.', 'success');
     } catch (e) {
         const msg = e?.response?.data?.errors?.sr_no?.[0] || e?.response?.data?.message || 'Could not save.';
