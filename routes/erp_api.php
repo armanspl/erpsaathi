@@ -765,6 +765,7 @@ Route::prefix('documents')->name('documents.')->group(function () {
     Route::post('certificates/{certificateType}/{student}/tc-pay', [CertificateController::class, 'tcPay'])->name('certificates.tc-pay');
     Route::get('certificates/{certificateType}/{student}/pdf', [CertificateController::class, 'downloadStudentPdf'])->name('certificates.student-pdf');
     Route::get('certificates/{certificateType}/{student}/prepare', [CertificateController::class, 'prepareData'])->name('certificates.prepare');
+    Route::post('certificates/{certificateType}/{student}/prepare', [CertificateController::class, 'saveOverrides'])->name('certificates.prepare.save');
     Route::get('id-cards', [IdCardController::class, 'index'])->name('id-cards.index');
     Route::get('id-cards/{idCard}/pdf', [IdCardController::class, 'downloadPdf'])->name('id-cards.pdf');
     Route::get('transport-cards', [TransportCardController::class, 'index'])->name('transport-cards.index');

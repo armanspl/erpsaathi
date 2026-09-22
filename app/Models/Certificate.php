@@ -7,12 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Certificate extends Model
 {
-    protected $fillable = ['certificate_no', 'student_id', 'type', 'certificate_type_id', 'issue_date', 'reason', 'remarks', 'issued_by_id'];
+    protected $fillable = ['certificate_no', 'student_id', 'type', 'certificate_type_id', 'issue_date', 'reason', 'remarks', 'issued_by_id', 'overrides'];
 
     protected function casts(): array
     {
         return [
             'issue_date' => 'date',
+            'overrides' => 'array',
         ];
     }
 

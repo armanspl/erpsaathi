@@ -926,7 +926,7 @@ class DocumentDataBuilder
             'aadhar_no' => $val('aadhar_no', $student->aadhar_no ?? ''),
             'class_teacher_name' => $classTeacher->name ?? '',
             'class_teacher_signature_image' => $this->resolveStoredImage($classTeacher?->signature_path),
-            'sr_no' => $certificate->certificate_no,
+            'sr_no' => $val('sr_no', $certificate->certificate_no),
             'remarks' => $val('remarks', $certificate->remarks ?? ''),
             'book_no' => $val('book_no', ''),
             'last_exam_result' => $val('last_exam_result', ''),

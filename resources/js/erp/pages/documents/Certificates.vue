@@ -251,8 +251,9 @@
             <div v-if="preparing" class="py-10 text-center text-sm text-slate-400">Loading...</div>
             <template v-else>
                 <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Every field shown here is printed on the {{ prepareTypeLabel }} PDF for {{ prepareRow?.name }}. Edit anything below, then download —
-                    changes apply only to this download and aren't saved to the student's record.
+                    Every field shown here is printed on the {{ prepareTypeLabel }} PDF for {{ prepareRow?.name }}. Edit anything below, then either
+                    <strong>Save</strong> (keeps these values for this certificate — they pre-fill next time and apply to future downloads too) or
+                    just <strong>Download PDF</strong> for a one-off change that isn't kept. Nothing here touches the student's own record.
                 </p>
 
                 <div>
@@ -331,6 +332,10 @@
                     <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Certificate details</p>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
+                            <label class="form-label">SR. No.</label>
+                            <input v-model="prepareForm.sr_no" type="text" class="form-input" />
+                        </div>
+                        <div>
                             <label class="form-label">Book No.</label>
                             <input v-model="prepareForm.book_no" type="text" class="form-input" />
                         </div>
@@ -362,7 +367,11 @@
                         </div>
                         <div>
                             <label class="form-label">Failed, if so once/twice</label>
-                            <input v-model="prepareForm.failed_status" type="text" class="form-input" />
+                            <select v-model="prepareForm.failed_status" class="form-input">
+                                <option value="">—</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
                         </div>
                         <div class="col-span-2">
                             <label class="form-label">Subjects studied</label>
@@ -370,7 +379,11 @@
                         </div>
                         <div>
                             <label class="form-label">Qualified for promotion</label>
-                            <input v-model="prepareForm.promotion_status" type="text" class="form-input" placeholder="Yes / No" />
+                            <select v-model="prepareForm.promotion_status" class="form-input">
+                                <option value="">—</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
                         </div>
                         <div>
                             <label class="form-label">Promoted to class</label>
@@ -390,11 +403,19 @@
                         </div>
                         <div>
                             <label class="form-label">Fee concession</label>
-                            <input v-model="prepareForm.fee_concession" type="text" class="form-input" />
+                            <select v-model="prepareForm.fee_concession" class="form-input">
+                                <option value="">—</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
                         </div>
                         <div>
                             <label class="form-label">NCC / Scout / Guide</label>
-                            <input v-model="prepareForm.ncc_activities" type="text" class="form-input" />
+                            <select v-model="prepareForm.ncc_activities" class="form-input">
+                                <option value="">—</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
                         </div>
                         <div>
                             <label class="form-label">Games / extra-curricular</label>
@@ -409,6 +430,9 @@
             </template>
             <template #footer>
                 <button type="button" class="btn-outline" @click="prepareOpen = false">Cancel</button>
+                <button type="button" class="btn-outline" :disabled="preparing || savingPrepare" @click="savePrepare">
+                    {{ savingPrepare ? 'Saving...' : 'Save' }}
+                </button>
                 <button type="button" class="btn-primary" :disabled="preparing || downloadingPrepare" @click="downloadFromPrepare">
                     {{ downloadingPrepare ? 'Downloading...' : 'Download PDF' }}
                 </button>
@@ -856,7 +880,7 @@ async function savePerson() {
 const PREPARE_FIELDS = [
     'recipient_name', 'father_name', 'mother_name', 'admission_id', 'roll_number', 'class', 'section',
     'branch', 'session_year', 'purpose', 'conduct', 'character', 'nationality', 'category', 'pen_no',
-    'aadhar_no', 'remarks', 'book_no', 'last_exam_result', 'failed_status', 'subjects_studied', 'promotion_status',
+    'aadhar_no', 'remarks', 'sr_no', 'book_no', 'last_exam_result', 'failed_status', 'subjects_studied', 'promotion_status',
     'promoted_class', 'working_days', 'presence_days', 'fee_paid_upto', 'fee_concession', 'ncc_activities',
     'games_activities', 'general_conduct',
 ];
@@ -864,6 +888,7 @@ const PREPARE_FIELDS = [
 const prepareOpen = ref(false);
 const preparing = ref(false);
 const downloadingPrepare = ref(false);
+const savingPrepare = ref(false);
 const prepareRow = ref(null);
 const prepareForm = reactive({});
 const prepareTypeLabel = computed(() => types.value.find((t) => t.id === filters.certificate_type_id)?.label || 'certificate');
@@ -893,6 +918,28 @@ async function downloadFromPrepare() {
         prepareOpen.value = false;
     } finally {
         downloadingPrepare.value = false;
+    }
+}
+
+async function savePrepare() {
+    if (!prepareRow.value) return;
+    savingPrepare.value = true;
+    try {
+        const { data } = await client.post(
+            `/documents/certificates/${filters.certificate_type_id}/${prepareRow.value.student_id}/prepare`,
+            { ...prepareForm },
+        );
+        PREPARE_FIELDS.forEach((key) => { prepareForm[key] = data[key] ?? ''; });
+        prepareForm.dob = data.dob_iso || '';
+        prepareForm.admission_date = data.admission_date_iso || '';
+        prepareForm.issue_date = data.issue_date_iso || '';
+        prepareForm.application_date = data.application_date_iso || '';
+        pushToast('Saved — these values will pre-fill and apply to future downloads.', 'success');
+    } catch (e) {
+        const msg = e?.response?.data?.errors?.sr_no?.[0] || e?.response?.data?.message || 'Could not save.';
+        pushToast(msg, 'error');
+    } finally {
+        savingPrepare.value = false;
     }
 }
 </script>

@@ -14,19 +14,26 @@ use App\Services\TcFeeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use ZipArchive;
 
 class CertificateController extends Controller
 {
-    /** Fields the "Prepare" drawer can override for a single download — nothing here is persisted. */
+    /**
+     * Fields the "Prepare" drawer can override. A plain download passes these as
+     * one-off overrides; POSTing to the same endpoint's "save" route persists them
+     * (via `certificates.overrides`) so they pre-fill next time and survive future
+     * downloads too. `sr_no` is the one exception — saving it updates the certificate's
+     * actual `certificate_no` rather than the JSON blob, since it's the official number.
+     */
     private const OVERRIDABLE_FIELDS = [
         'recipient_name', 'father_name', 'mother_name', 'admission_id', 'roll_number', 'class', 'section',
         'branch', 'session_year', 'dob', 'purpose', 'issue_date', 'conduct', 'character', 'nationality',
         'category', 'admission_date', 'pen_no', 'aadhar_no', 'remarks', 'book_no', 'last_exam_result', 'failed_status',
         'subjects_studied', 'promotion_status', 'promoted_class', 'working_days', 'presence_days',
         'fee_paid_upto', 'fee_concession', 'ncc_activities', 'games_activities', 'general_conduct',
-        'application_date',
+        'application_date', 'sr_no',
     ];
 
     public function __construct(
@@ -40,7 +47,28 @@ class CertificateController extends Controller
     {
         $certificate = $this->certificateFor($certificateType, $student);
 
-        return response()->json($this->dataBuilder->certificate($certificateType, $certificate, $student));
+        return response()->json($this->dataBuilder->certificate($certificateType, $certificate, $student, $certificate->overrides ?? []));
+    }
+
+    /** Persist the "Prepare" drawer's fields so they pre-fill next time and apply to future downloads too. */
+    public function saveOverrides(Request $request, CertificateType $certificateType, Student $student)
+    {
+        $certificate = $this->certificateFor($certificateType, $student);
+
+        $rules = array_fill_keys(self::OVERRIDABLE_FIELDS, 'nullable|string|max:500');
+        $rules['sr_no'] = ['nullable', 'string', 'max:100', Rule::unique('certificates', 'certificate_no')->ignore($certificate->id)];
+        $data = $request->validate($rules);
+
+        $srNo = trim((string) ($data['sr_no'] ?? ''));
+        unset($data['sr_no']);
+        if ($srNo !== '' && $srNo !== $certificate->certificate_no) {
+            $certificate->certificate_no = $srNo;
+        }
+
+        $certificate->overrides = array_filter($data, fn ($v) => trim((string) $v) !== '');
+        $certificate->save();
+
+        return response()->json($this->dataBuilder->certificate($certificateType, $certificate, $student, $certificate->overrides ?? []));
     }
 
     /** Start TC process: create one-time TC fee if enabled and return dues breakdown. */
@@ -94,7 +122,9 @@ class CertificateController extends Controller
         }
 
         $certificate = $this->certificateFor($certificateType, $student);
-        $overrides = $request->only(self::OVERRIDABLE_FIELDS);
+        // Saved overrides are the baseline; any values the current request sends (e.g. still-unsaved
+        // edits in the "Prepare" drawer) win for this particular download.
+        $overrides = array_merge($certificate->overrides ?? [], $request->only(self::OVERRIDABLE_FIELDS));
         $data = $this->dataBuilder->certificate($certificateType, $certificate, $student, $overrides);
 
         return $this->renderer->streamPdf('certificate', $data, $this->certificateFilename($certificate), $certificateType->template_id);
@@ -128,7 +158,7 @@ class CertificateController extends Controller
             $certificate = $this->certificateFor($certificateType, $student);
             $binary = $this->renderer->pdfBinary(
                 'certificate',
-                $this->dataBuilder->certificate($certificateType, $certificate, $student),
+                $this->dataBuilder->certificate($certificateType, $certificate, $student, $certificate->overrides ?? []),
                 $certificateType->template_id
             );
             $zip->addFromString($this->certificateFilename($certificate), $binary);
