@@ -163,7 +163,17 @@
                     </tbody>
                 </table>
             </div>
-            <Pagination v-if="rows.length > perPage" v-model="page" :per-page="perPage" :total="rows.length" />
+            <div v-if="rows.length" class="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-800">
+                <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    Show
+                    <select v-model="perPageSelection" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                    </select>
+                    per page
+                </label>
+                <p v-if="perPageSelection === 'all'" class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ rows.length }} entries</p>
+            </div>
+            <Pagination v-if="perPageSelection !== 'all' && rows.length > perPage" v-model="page" :per-page="perPage" :total="rows.length" />
         </div>
     </div>
 </template>
@@ -193,12 +203,18 @@ const filters = reactive({
     search: '',
 });
 
-const perPage = 25;
+const perPageOptions = [10, 25, 50, 100, 'all'];
+const perPageSelection = ref(25);
+const perPage = computed(() => (perPageSelection.value === 'all' ? Math.max(rows.value.length, 1) : perPageSelection.value));
 const page = ref(1);
 const filterSections = computed(() =>
     sections.value.filter((s) => !filters.school_class_id || s.school_class_id === filters.school_class_id),
 );
-const pagedRows = computed(() => rows.value.slice((page.value - 1) * perPage, page.value * perPage));
+const pagedRows = computed(() => {
+    if (perPageSelection.value === 'all') return rows.value;
+    const start = (page.value - 1) * perPage.value;
+    return rows.value.slice(start, start + perPage.value);
+});
 
 function money(n) {
     return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -253,6 +269,7 @@ async function runExport(format) {
 watch(() => filters.school_class_id, () => {
     filters.section_id = null;
 });
+watch(perPageSelection, () => { page.value = 1; });
 
 let loadTimer;
 watch([filters, view], () => {

@@ -18,10 +18,10 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Sections</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Subjects</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Class {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('sections')">Sections {{ sortArrow('sections') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('subjects')">Subjects {{ sortArrow('subjects') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('capacity')">Capacity {{ sortArrow('capacity') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -32,7 +32,7 @@
                     <tr v-else-if="!classes.length">
                         <td colspan="5" class="px-4 py-10 text-center text-slate-400">No classes yet.</td>
                     </tr>
-                    <tr v-for="c in classes" :key="c.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="c in sortedClasses" :key="c.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ c.name }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">
                             <span v-if="(c.sections || []).length">{{ c.sections.map((s) => s.name).join(', ') }}</span>
@@ -137,6 +137,46 @@ const allSubjects = ref([]);
 
 const totalSections = computed(() => classes.value.reduce((sum, c) => sum + (c.sections || []).length, 0));
 const totalCapacity = computed(() => classes.value.reduce((sum, c) => sum + (c.capacity || 0), 0));
+
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedClasses = computed(() => {
+    return [...classes.value].sort((a, b) => {
+        let av;
+        let bv;
+        if (sortKey.value === 'sections') {
+            av = (a.sections || []).map((s) => s.name).join(', ');
+            bv = (b.sections || []).map((s) => s.name).join(', ');
+        } else if (sortKey.value === 'subjects') {
+            av = (a.subjects || []).length;
+            bv = (b.subjects || []).length;
+        } else {
+            av = a[sortKey.value];
+            bv = b[sortKey.value];
+        }
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

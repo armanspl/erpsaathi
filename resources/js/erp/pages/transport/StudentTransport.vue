@@ -20,11 +20,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Route</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Stop</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Fare</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('studentName')">Student {{ sortArrow('studentName') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('routeName')">Route {{ sortArrow('routeName') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('stopName')">Stop {{ sortArrow('stopName') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('fare')">Fare {{ sortArrow('fare') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -35,7 +35,7 @@
                     <tr v-else-if="!filteredAssignments.length">
                         <td colspan="6" class="px-4 py-10 text-center text-slate-400">No students match your filters.</td>
                     </tr>
-                    <tr v-for="a in filteredAssignments" :key="a.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="a in sortedAssignments" :key="a.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3">
                             <p class="font-medium text-slate-800 dark:text-slate-100">{{ a.student.name }}</p>
                             <p class="text-xs text-slate-400">{{ a.student.admission_no }}<span v-if="a.student.school_class"> · {{ a.student.school_class.name }}</span></p>
@@ -154,6 +154,44 @@ const filteredAssignments = computed(() =>
         return true;
     }),
 );
+
+const sortKey = ref('studentName');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortValueGetters = {
+    studentName: (a) => a.student?.name,
+    routeName: (a) => a.route?.name,
+    stopName: (a) => a.route_stop?.stop_name,
+    fare: (a) => a.route_stop?.fare,
+};
+
+const sortedAssignments = computed(() => {
+    return [...filteredAssignments.value].sort((a, b) => {
+        const getter = sortValueGetters[sortKey.value];
+        let av = getter ? getter(a) : a[sortKey.value];
+        let bv = getter ? getter(b) : b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

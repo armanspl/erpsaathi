@@ -21,7 +21,7 @@ const rawMenu = [
         label: 'Import & Export',
         icon: '📥',
         children: [
-            'Global Workbook Import', 'Global Workbook Export', 'Student PEN Import', 'Student Export',
+            'Global Workbook Import', 'Global Workbook Export', 'Student Export',
             'Student UDISE Export',
             'Attendance Import', 'Attendance Export', 'Exam Marks Import', 'Exam Marks Export',
             'Academic Calendar Import', 'Academic Calendar Export',

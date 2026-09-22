@@ -40,10 +40,10 @@
                 <table class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Rank</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Percentage</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Grade</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('rank')">Rank {{ sortArrow('rank') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('percentage')">Percentage {{ sortArrow('percentage') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('grade')">Grade {{ sortArrow('grade') }}</th>
                             <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Result</th>
                         </tr>
                     </thead>
@@ -51,7 +51,7 @@
                         <tr v-if="!report.rows.length">
                             <td colspan="5" class="px-4 py-10 text-center text-slate-400">No results yet for this exam.</td>
                         </tr>
-                        <tr v-for="r in report.rows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="r in sortedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">#{{ r.rank }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.percentage }}%</td>
@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import client from '../../api/client';
@@ -82,6 +82,36 @@ const classes = ref([]);
 const examId = ref(null);
 const classId = ref(null);
 const report = ref(null);
+const sortKey = ref('rank');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    const rows = report.value?.rows || [];
+    return [...rows].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 client.get('/exams').then(({ data }) => (exams.value = data));
 client.get('/academics/classes').then(({ data }) => (classes.value = data));

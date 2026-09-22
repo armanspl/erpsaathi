@@ -26,11 +26,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Description</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Cost</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Next Due</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('type')">Type {{ sortArrow('type') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('description')">Description {{ sortArrow('description') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('cost')">Cost {{ sortArrow('cost') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('date')">Date {{ sortArrow('date') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('next_due_date')">Next Due {{ sortArrow('next_due_date') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -44,7 +44,7 @@
                     <tr v-else-if="!records.length">
                         <td colspan="6" class="px-4 py-10 text-center text-slate-400">No maintenance records for this vehicle.</td>
                     </tr>
-                    <tr v-for="r in records" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="r in sortedRecords" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.type }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.description || '—' }}</td>
                         <td class="px-4 py-3 text-rose-600 dark:text-rose-400">₹{{ Number(r.cost).toLocaleString('en-IN') }}</td>
@@ -117,6 +117,36 @@ const totalCost = computed(() => records.value.reduce((sum, r) => sum + Number(r
 const nextDue = computed(() => {
     const dates = records.value.map((r) => r.next_due_date).filter(Boolean).sort();
     return dates.length ? formatDate(dates[0]) : null;
+});
+
+const sortKey = ref('date');
+const sortDir = ref('desc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRecords = computed(() => {
+    return [...records.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
 });
 
 client.get('/transport/vehicles').then(({ data }) => (vehicles.value = data));

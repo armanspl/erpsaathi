@@ -21,11 +21,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Question</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Subject</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Difficulty</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Marks</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('question_text')">Question {{ sortArrow('question_text') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('subject')">Subject {{ sortArrow('subject') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('question_type')">Type {{ sortArrow('question_type') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('difficulty')">Difficulty {{ sortArrow('difficulty') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('marks')">Marks {{ sortArrow('marks') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -126,13 +126,40 @@ const optionsText = ref('');
 
 const form = reactive({ subject_id: null, question_text: '', question_type: 'MCQ', options: null, correct_answer: '', marks: 1, difficulty: 'Medium' });
 
-const filteredQuestions = computed(() =>
-    questions.value.filter((q) => {
+const sortKey = ref('question_text');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const filteredQuestions = computed(() => {
+    const rows = questions.value.filter((q) => {
         if (filterValues.search && !q.question_text.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.status && q.difficulty !== filterValues.status) return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        let av = sortKey.value === 'subject' ? a.subject?.name : a[sortKey.value];
+        let bv = sortKey.value === 'subject' ? b.subject?.name : b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

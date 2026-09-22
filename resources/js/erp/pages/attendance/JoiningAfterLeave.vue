@@ -78,9 +78,9 @@
             <table v-else class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Person</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Leave</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Period</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('attendable_name')">Person {{ sortArrow('attendable_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('leave_type')">Leave {{ sortArrow('leave_type') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('from_date')">Period {{ sortArrow('from_date') }}</th>
                         <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ activeTab === 'rejoined' ? 'Rejoined' : 'Status' }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
@@ -193,6 +193,21 @@ const filters = reactive({ search: '', type: '' });
 
 const rejoining = ref(null);
 const rejoinDate = ref('');
+const sortKey = ref('attendable_name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 const tabs = computed(() => [
     { id: 'awaiting', label: 'Awaiting rejoin', count: filteredAwaiting.value.length },
@@ -216,9 +231,20 @@ function matchesFilters(row) {
 const filteredAwaiting = computed(() => awaiting.value.filter(matchesFilters));
 const filteredRejoined = computed(() => rejoined.value.filter(matchesFilters));
 
-const visibleRows = computed(() => (
-    activeTab.value === 'rejoined' ? filteredRejoined.value : filteredAwaiting.value
-));
+const visibleRows = computed(() => {
+    const rows = activeTab.value === 'rejoined' ? filteredRejoined.value : filteredAwaiting.value;
+    return [...rows].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 const emptyTitle = computed(() => (
     activeTab.value === 'rejoined' ? 'No recent rejoins' : 'No one awaiting rejoin'

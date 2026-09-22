@@ -22,10 +22,10 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Email</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Role</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('email')">Email {{ sortArrow('email') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('role')">Role {{ sortArrow('role') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('is_active')">Status {{ sortArrow('is_active') }}</th>
                         <th v-if="isAdmin" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -36,7 +36,7 @@
                     <tr v-else-if="!filteredUsers.length">
                         <td :colspan="isAdmin ? 5 : 4" class="px-4 py-10 text-center text-slate-400">No users match your filters.</td>
                     </tr>
-                    <tr v-for="u in filteredUsers" :key="u.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="u in sortedUsers" :key="u.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ u.name }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ u.email }}</td>
                         <td class="px-4 py-3 capitalize text-slate-500 dark:text-slate-400">{{ u.role }}</td>
@@ -123,6 +123,36 @@ const filteredUsers = computed(() =>
         return true;
     }),
 );
+
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedUsers = computed(() => {
+    return [...filteredUsers.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

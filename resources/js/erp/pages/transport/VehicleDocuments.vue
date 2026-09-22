@@ -20,10 +20,10 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Document No.</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Issued</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Expires</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('document_type')">Type {{ sortArrow('document_type') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('document_no')">Document No. {{ sortArrow('document_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('issue_date')">Issued {{ sortArrow('issue_date') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('expiry_date')">Expires {{ sortArrow('expiry_date') }}</th>
                         <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
@@ -38,7 +38,7 @@
                     <tr v-else-if="!documents.length">
                         <td colspan="6" class="px-4 py-10 text-center text-slate-400">No documents recorded for this vehicle.</td>
                     </tr>
-                    <tr v-for="d in documents" :key="d.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="d in sortedDocuments" :key="d.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ d.document_type }}</td>
                         <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ d.document_no || '—' }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ d.issue_date ? formatDate(d.issue_date) : '—' }}</td>
@@ -94,7 +94,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import SlideOver from '../../components/common/SlideOver.vue';
 import client from '../../api/client';
@@ -110,6 +110,36 @@ const drawerOpen = ref(false);
 const editing = ref(null);
 
 const form = reactive({ document_type: 'Insurance', document_no: '', issue_date: '', expiry_date: '', remarks: '' });
+
+const sortKey = ref('expiry_date');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedDocuments = computed(() => {
+    return [...documents.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 client.get('/transport/vehicles').then(({ data }) => (vehicles.value = data));
 

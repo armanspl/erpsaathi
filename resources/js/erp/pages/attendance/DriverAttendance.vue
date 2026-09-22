@@ -99,14 +99,14 @@
                         <table class="w-full text-left text-sm">
                             <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                                 <tr>
-                                    <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Code</th>
-                                    <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
-                                    <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Route / Stop</th>
+                                    <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('code')">Code {{ sortArrow('code') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('route')">Route / Stop {{ sortArrow('route') }}</th>
                                     <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                                <tr v-for="p in routeStudents" :key="p.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <tr v-for="p in sortedRouteStudents" :key="p.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                     <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ p.code || '—' }}</td>
                                     <td class="px-4 py-3">
                                         <div class="font-medium text-slate-800 dark:text-slate-100">{{ p.name }}</div>
@@ -183,16 +183,16 @@
                 <table v-else class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Driver</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Vehicle</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('date')">Date {{ sortArrow2('date') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('driver_name')">Driver {{ sortArrow2('driver_name') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('driver_phone')">Phone {{ sortArrow2('driver_phone') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('driver_vehicle')">Vehicle {{ sortArrow2('driver_vehicle') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('status')">Status {{ sortArrow2('status') }}</th>
                             <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="r in historyRecords" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="r in sortedHistoryRecords2" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 text-slate-800 dark:text-slate-100">{{ formatDisplayDate(r.date) }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.driver?.name || '—' }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ r.driver?.phone || '—' }}</td>
@@ -211,7 +211,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { fetchPeopleLookups } from '../../api/people';
 import client from '../../api/client';
 import { statusBadgeClass } from '../../utils/colors';
@@ -248,6 +248,35 @@ const routeStudents = ref([]);
 const routeMessage = ref('');
 const routeLoading = ref(false);
 const routeSaving = ref(false);
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRouteStudents = computed(() => {
+    return [...routeStudents.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 const history = reactive({
     from: new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10),
@@ -256,6 +285,39 @@ const history = reactive({
 });
 const historyRecords = ref([]);
 const historyLoading = ref(false);
+const sortKey2 = ref('date');
+const sortDir2 = ref('asc');
+
+function toggleSort2(key) {
+    if (sortKey2.value === key) {
+        sortDir2.value = sortDir2.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey2.value = key;
+        sortDir2.value = 'asc';
+    }
+}
+function sortArrow2(key) {
+    if (sortKey2.value !== key) return '';
+    return sortDir2.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedHistoryRecords2 = computed(() => {
+    return [...historyRecords.value].sort((a, b) => {
+        let av;
+        let bv;
+        if (sortKey2.value === 'driver_name') { av = a.driver?.name; bv = b.driver?.name; }
+        else if (sortKey2.value === 'driver_phone') { av = a.driver?.phone; bv = b.driver?.phone; }
+        else if (sortKey2.value === 'driver_vehicle') { av = a.driver?.vehicle_no; bv = b.driver?.vehicle_no; }
+        else { av = a[sortKey2.value]; bv = b[sortKey2.value]; }
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir2.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir2.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function statusActiveClass(status) {
     return {

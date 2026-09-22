@@ -28,12 +28,12 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Employee</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Basic</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Allowances</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Deductions</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Net</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Employee {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('employee_type')">Type {{ sortArrow('employee_type') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('basic_salary')">Basic {{ sortArrow('basic_salary') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('allowances')">Allowances {{ sortArrow('allowances') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('deductions')">Deductions {{ sortArrow('deductions') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('net')">Net {{ sortArrow('net') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -44,7 +44,7 @@
                     <tr v-else-if="!rows.length">
                         <td colspan="7" class="px-4 py-10 text-center text-slate-400">No teachers or staff found.</td>
                     </tr>
-                    <tr v-for="r in rows" :key="`${r.employee_type}-${r.employee_id}`" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="r in sortedRows" :key="`${r.employee_type}-${r.employee_id}`" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3">
                             <p class="font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</p>
                             <p class="text-xs text-slate-400">{{ r.employee_code }}<span v-if="r.meta"> · {{ r.meta }}</span></p>
@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import SlideOver from '../../components/common/SlideOver.vue';
@@ -100,8 +100,37 @@ const rows = ref([]);
 const period = ref(new Date().toISOString().slice(0, 7));
 const drawerOpen = ref(false);
 const editing = ref(null);
+const sortKey = ref('name');
+const sortDir = ref('asc');
 
 const form = reactive({ basic_salary: 0, allowances: 0, deductions: 0 });
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    return [...rows.value].sort((a, b) => {
+        let av = sortKey.value === 'net' ? a.basic_salary + a.allowances - a.deductions : a[sortKey.value];
+        let bv = sortKey.value === 'net' ? b.basic_salary + b.allowances - b.deductions : b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

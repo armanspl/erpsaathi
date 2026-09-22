@@ -73,12 +73,12 @@
                         <th class="w-10 px-3 py-3">
                             <input type="checkbox" class="rounded border-slate-300" :checked="allSelected" @change="toggleAll($event.target.checked)" />
                         </th>
-                        <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Adm No</th>
-                        <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                        <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
-                        <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
-                        <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">PEN</th>
-                        <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Aadhaar</th>
+                        <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Adm No {{ sortArrow('admission_no') }}</th>
+                        <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('school_class_name')">Class {{ sortArrow('school_class_name') }}</th>
+                        <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
+                        <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('student_pen')">PEN {{ sortArrow('student_pen') }}</th>
+                        <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('aadhar_no')">Aadhaar {{ sortArrow('aadhar_no') }}</th>
                         <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">FORM S03</th>
                     </tr>
                 </thead>
@@ -89,7 +89,7 @@
                     <tr v-else-if="!rows.length">
                         <td colspan="8" class="px-4 py-10 text-center text-slate-400">No students match your filters.</td>
                     </tr>
-                    <tr v-for="r in rows" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="r in sortedRows" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-3 py-3">
                             <input type="checkbox" class="rounded border-slate-300" :checked="selectedIds.has(r.id)" @change="toggleOne(r.id, $event.target.checked)" />
                         </td>
@@ -352,6 +352,36 @@ const sectionsForClass = computed(() =>
 
 const withPen = computed(() => rows.value.filter((r) => r.student_pen).length);
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.has(r.id)));
+
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    return [...rows.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function resetFilters() {
     Object.assign(filterValues, { search: '', branch_id: null, school_class_id: null, section_id: null, status: null });

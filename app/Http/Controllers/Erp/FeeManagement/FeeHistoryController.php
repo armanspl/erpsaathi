@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Erp\FeeManagement;
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
 use App\Models\FeeHead;
+use App\Models\FeePayment;
 use App\Models\Student;
 use App\Services\FeeBalanceService;
 use App\Services\FeeCalculator;
@@ -57,9 +58,59 @@ class FeeHistoryController extends Controller
                 'received' => round($rows->sum('received'), 2),
                 'ledger_balance' => round($rows->sum('ledger_balance'), 2),
                 'net' => round($rows->sum('net'), 2),
+                'month_collection' => $this->currentMonthCollection($request),
                 'zero_balance' => $rows->where('ledger_balance', 0)->count(),
             ],
         ]);
+    }
+
+    /**
+     * Total fee payments received in the current calendar month, for students
+     * matching the same branch/class/section/search filters as the list.
+     */
+    private function currentMonthCollection(Request $request): float
+    {
+        $data = $request->validate([
+            'branch_id' => 'nullable|exists:branches,id',
+            'school_class_id' => 'nullable|exists:school_classes,id',
+            'section_id' => 'nullable|exists:sections,id',
+            'search' => 'nullable|string|max:100',
+        ]);
+
+        $session = AcademicSession::fromRequest($request, true);
+        if (! $session) {
+            return 0.0;
+        }
+
+        $studentIds = Student::query()
+            ->where('status', 'Active')
+            ->when(! empty($data['branch_id']), fn ($q) => $q->forBranch((int) $data['branch_id']))
+            ->when(! empty($data['school_class_id']), fn ($q) => $q->where('school_class_id', $data['school_class_id']))
+            ->when(! empty($data['section_id']), fn ($q) => $q->where('section_id', $data['section_id']))
+            ->when(! empty($data['search']), function ($q) use ($data) {
+                $term = $data['search'];
+                $q->where(function ($w) use ($term) {
+                    $w->where('name', 'like', "%{$term}%")
+                        ->orWhere('admission_no', 'like', "%{$term}%")
+                        ->orWhere('mobile', 'like', "%{$term}%");
+                });
+            })
+            ->pluck('id');
+
+        if ($studentIds->isEmpty()) {
+            return 0.0;
+        }
+
+        $start = now()->startOfMonth()->toDateString();
+        $end = now()->endOfMonth()->toDateString();
+
+        return round((float) FeePayment::query()
+            ->whereIn('student_id', $studentIds)
+            ->where('academic_session_id', $session->id)
+            ->whereNotIn('status', ['Rolled Back'])
+            ->whereBetween('payment_date', [$start, $end])
+            ->selectRaw('COALESCE(SUM(amount - refunded_amount), 0) as t')
+            ->value('t'), 2);
     }
 
     public function export(Request $request)

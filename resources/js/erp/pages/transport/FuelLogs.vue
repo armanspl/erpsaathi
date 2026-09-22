@@ -26,11 +26,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Liters</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Cost</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Odometer</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('date')">Date {{ sortArrow('date') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('liters')">Liters {{ sortArrow('liters') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('cost')">Cost {{ sortArrow('cost') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('odometer_reading')">Odometer {{ sortArrow('odometer_reading') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('remarks')">Remarks {{ sortArrow('remarks') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -44,7 +44,7 @@
                     <tr v-else-if="!logs.length">
                         <td colspan="6" class="px-4 py-10 text-center text-slate-400">No fuel logs for this vehicle.</td>
                     </tr>
-                    <tr v-for="l in logs" :key="l.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="l in sortedLogs" :key="l.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ formatDate(l.date) }}</td>
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ Number(l.liters).toLocaleString('en-IN') }} L</td>
                         <td class="px-4 py-3 text-rose-600 dark:text-rose-400">₹{{ Number(l.cost).toLocaleString('en-IN') }}</td>
@@ -109,6 +109,36 @@ const drawerOpen = ref(false);
 const editing = ref(null);
 
 const form = reactive({ date: new Date().toISOString().slice(0, 10), liters: 0, cost: 0, odometer_reading: null, remarks: '' });
+
+const sortKey = ref('date');
+const sortDir = ref('desc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedLogs = computed(() => {
+    return [...logs.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 const totalLiters = computed(() => logs.value.reduce((sum, l) => sum + Number(l.liters), 0));
 const totalCost = computed(() => logs.value.reduce((sum, l) => sum + Number(l.cost), 0));

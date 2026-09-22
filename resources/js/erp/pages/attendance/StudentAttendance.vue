@@ -142,16 +142,16 @@
             <table v-else class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Adm No.</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
-                        <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Days Present</th>
-                        <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Working Days</th>
-                        <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Full Year %</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Adm No. {{ sortArrow('admission_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('days_present_total')">Days Present {{ sortArrow('days_present_total') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('working_days_total')">Working Days {{ sortArrow('working_days_total') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('full_percentage')">Full Year % {{ sortArrow('full_percentage') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                    <tr v-for="s in monthlyStudents" :key="s.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="s in sortedMonthlyStudents" :key="s.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ s.admission_no || '—' }}</td>
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</td>
                         <td class="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{{ s.days_present_total || 0 }}</td>
@@ -195,6 +195,36 @@ const selectedMonthlyDetail = ref(null);
 
 const monthlySections = computed(() => sections.value.filter((s) => s.school_class_id === monthly.school_class_id));
 const liveMonthlyTotals = computed(() => summarizeEditableMonths(selectedMonthlyDetail.value?.months || []));
+
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedMonthlyStudents = computed(() => {
+    return [...monthlyStudents.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function formatPct(value) {
     if (value === null || value === undefined || value === '') return '—';

@@ -51,7 +51,7 @@
                     <table class="w-full text-left text-sm">
                         <thead class="border-b border-slate-200 dark:border-slate-800">
                             <tr>
-                                <th class="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Fee Head</th>
+                                <th class="cursor-pointer px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Fee Head {{ sortArrow('name') }}</th>
                                 <th class="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tally Ledger Name</th>
                             </tr>
                         </thead>
@@ -59,7 +59,7 @@
                             <tr v-if="!feeHeads.length">
                                 <td colspan="2" class="px-2 py-8 text-center text-slate-400">No fee heads. Add them in Fee Settings.</td>
                             </tr>
-                            <tr v-for="h in feeHeads" :key="h.id">
+                            <tr v-for="h in sortedFeeHeads" :key="h.id">
                                 <td class="px-2 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ h.name }}</td>
                                 <td class="px-2 py-2.5">
                                     <input v-model="tally.fee_ledgers[h.id]" type="text" class="form-input" :placeholder="h.name" />
@@ -122,18 +122,18 @@
                     <table class="w-full min-w-[800px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Voucher</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Narration</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('date')">Date {{ sortArrow2('date') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('voucher_no')">Voucher {{ sortArrow2('voucher_no') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('narration')">Narration {{ sortArrow2('narration') }}</th>
                                 <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Entries</th>
-                                <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</th>
+                                <th class="cursor-pointer px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('amount')">Amount {{ sortArrow2('amount') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                             <tr v-if="!vouchers.length">
                                 <td colspan="5" class="px-4 py-12 text-center text-slate-400">No receipts in this range. Adjust dates and Preview.</td>
                             </tr>
-                            <tr v-for="v in vouchers" :key="v.voucher_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                            <tr v-for="v in sortedVouchers" :key="v.voucher_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                 <td class="px-3 py-3 whitespace-nowrap text-slate-500">{{ v.date }}</td>
                                 <td class="px-3 py-3 font-mono text-xs text-slate-700">{{ v.voucher_no }}</td>
                                 <td class="max-w-[280px] truncate px-3 py-3 text-slate-600" :title="v.narration">{{ v.narration }}</td>
@@ -155,7 +155,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
 import { pushToast } from '../../utils/toast';
@@ -171,6 +171,10 @@ const feeHeads = ref([]);
 const branches = ref([]);
 const vouchers = ref([]);
 const summary = reactive({ vouchers: 0, amount: 0 });
+const sortKey = ref(null);
+const sortDir = ref('asc');
+const sortKey2 = ref(null);
+const sortDir2 = ref('asc');
 
 const tally = reactive({
     company_name: '',
@@ -189,6 +193,60 @@ const filters = reactive({
 function money(n) {
     return Number(n || 0).toLocaleString('en-IN');
 }
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+const sortedFeeHeads = computed(() => {
+    if (!sortKey.value) return feeHeads.value;
+    return [...feeHeads.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+function toggleSort2(key) {
+    if (sortKey2.value === key) {
+        sortDir2.value = sortDir2.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey2.value = key;
+        sortDir2.value = 'asc';
+    }
+}
+function sortArrow2(key) {
+    if (sortKey2.value !== key) return '';
+    return sortDir2.value === 'asc' ? '↑' : '↓';
+}
+const sortedVouchers = computed(() => {
+    if (!sortKey2.value) return vouchers.value;
+    return [...vouchers.value].sort((a, b) => {
+        let av = a[sortKey2.value];
+        let bv = b[sortKey2.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir2.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir2.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function filterParams() {
     const p = {};

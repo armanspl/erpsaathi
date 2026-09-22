@@ -90,7 +90,12 @@
                     <table class="w-full min-w-[720px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
-                                <th v-for="h in ['Adm No', 'Name', 'Class', 'Roll', 'Father Name', 'Mobile']" :key="h" class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">{{ h }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('admission_no')">Adm No {{ sortArrow('admission_no') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('school_class')">Class {{ sortArrow('school_class') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('roll_no')">Roll {{ sortArrow('roll_no') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('father')">Father Name {{ sortArrow('father') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('mobile')">Mobile {{ sortArrow('mobile') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -106,7 +111,17 @@
                         </tbody>
                     </table>
                 </div>
-                <Pagination v-if="classRows.length > perPage" v-model="classPage" :per-page="perPage" :total="classRows.length" />
+                <div class="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-800">
+                    <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        Show
+                        <select v-model="perPage" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                            <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                        </select>
+                        per page
+                    </label>
+                    <Pagination v-if="perPage !== 'all' && classRows.length > perPage" v-model="classPage" :per-page="perPage" :total="classRows.length" class="!border-t-0 !p-0" />
+                    <p v-else-if="perPage === 'all'" class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ classRows.length }} entries</p>
+                </div>
             </div>
         </template>
 
@@ -145,7 +160,11 @@
                     <table class="w-full min-w-[720px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
-                                <th v-for="h in ['Adm No', 'Name', 'Father Name', 'Mobile', 'Vehicle']" :key="h" class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">{{ h }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('admission_no')">Adm No {{ sortArrow2('admission_no') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('name')">Name {{ sortArrow2('name') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('father')">Father Name {{ sortArrow2('father') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('mobile')">Mobile {{ sortArrow2('mobile') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('vehicle')">Vehicle {{ sortArrow2('vehicle') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -160,7 +179,17 @@
                         </tbody>
                     </table>
                 </div>
-                <Pagination v-if="areaRows.length > perPage" v-model="areaPage" :per-page="perPage" :total="areaRows.length" />
+                <div class="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-800">
+                    <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        Show
+                        <select v-model="perPage" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                            <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                        </select>
+                        per page
+                    </label>
+                    <Pagination v-if="perPage !== 'all' && areaRows.length > perPage" v-model="areaPage" :per-page="perPage" :total="areaRows.length" class="!border-t-0 !p-0" />
+                    <p v-else-if="perPage === 'all'" class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ areaRows.length }} entries</p>
+                </div>
             </div>
         </template>
 
@@ -182,11 +211,14 @@
                     <table class="w-full min-w-[560px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
-                                <th v-for="h in ['Adm No', 'Name', 'Class', 'Dues']" :key="h" class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">{{ h }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('admission_no')">Adm No {{ sortArrow3('admission_no') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('name')">Name {{ sortArrow3('name') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('school_class')">Class {{ sortArrow3('school_class') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('due')">Dues {{ sortArrow3('due') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-for="c in f.children" :key="c.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                            <tr v-for="c in sortedChildren(f)" :key="c.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                 <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ c.admission_no }}</td>
                                 <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ c.name }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ c.school_class || '—' }}</td>
@@ -196,7 +228,17 @@
                     </table>
                 </div>
             </div>
-            <Pagination v-if="fathers.length > cardsPerPage" v-model="fatherPage" :per-page="cardsPerPage" :total="fathers.length" class="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
+            <div class="flex flex-col items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:flex-row dark:border-slate-800 dark:bg-slate-900">
+                <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    Show
+                    <select v-model="cardsPerPage" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                    </select>
+                    per page
+                </label>
+                <Pagination v-if="cardsPerPage !== 'all' && fathers.length > cardsPerPage" v-model="fatherPage" :per-page="cardsPerPage" :total="fathers.length" class="!border-t-0 !p-0" />
+                <p v-else-if="cardsPerPage === 'all'" class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ fathers.length }} entries</p>
+            </div>
         </template>
 
         <!-- VEHICLE WISE -->
@@ -220,12 +262,15 @@
                         <table class="w-full min-w-[560px] text-left text-sm">
                             <thead class="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                                 <tr>
-                                    <th v-for="h in ['Adm No', 'Name', 'Class', 'Stop']" :key="h" class="px-3 py-2.5 text-xs font-semibold uppercase text-slate-500">{{ h }}</th>
+                                    <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('admission_no')">Adm No {{ sortArrow4('admission_no') }}</th>
+                                    <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('name')">Name {{ sortArrow4('name') }}</th>
+                                    <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('school_class')">Class {{ sortArrow4('school_class') }}</th>
+                                    <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('stop')">Stop {{ sortArrow4('stop') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                                 <tr v-if="!t.students.length"><td colspan="4" class="px-4 py-6 text-center text-slate-400">No students on this trip.</td></tr>
-                                <tr v-for="s in t.students" :key="s.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <tr v-for="s in sortedTripStudents(t)" :key="s.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                     <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ s.admission_no }}</td>
                                     <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</td>
                                     <td class="px-3 py-2.5 text-slate-500">{{ s.school_class || '—' }}</td>
@@ -236,7 +281,17 @@
                     </div>
                 </div>
             </div>
-            <Pagination v-if="vehicles.length > cardsPerPage" v-model="vehiclePage" :per-page="cardsPerPage" :total="vehicles.length" class="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
+            <div class="flex flex-col items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:flex-row dark:border-slate-800 dark:bg-slate-900">
+                <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    Show
+                    <select v-model="cardsPerPage" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                    </select>
+                    per page
+                </label>
+                <Pagination v-if="cardsPerPage !== 'all' && vehicles.length > cardsPerPage" v-model="vehiclePage" :per-page="cardsPerPage" :total="vehicles.length" class="!border-t-0 !p-0" />
+                <p v-else-if="cardsPerPage === 'all'" class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ vehicles.length }} entries</p>
+            </div>
         </template>
     </div>
 </template>
@@ -277,18 +332,102 @@ const areaRows = ref([]);
 const fathers = ref([]);
 const vehicles = ref([]);
 
-const perPage = 20;
-const cardsPerPage = 10;
+const perPageOptions = [10, 25, 50, 100, 'all'];
+const perPage = ref(20);
+const cardsPerPage = ref(10);
 const classPage = ref(1);
 const areaPage = ref(1);
 const fatherPage = ref(1);
 const vehiclePage = ref(1);
 
 const slice = (arr, page, size) => arr.slice((page - 1) * size, page * size);
-const pagedClassRows = computed(() => slice(classRows.value, classPage.value, perPage));
-const pagedAreaRows = computed(() => slice(areaRows.value, areaPage.value, perPage));
-const pagedFathers = computed(() => slice(fathers.value, fatherPage.value, cardsPerPage));
-const pagedVehicles = computed(() => slice(vehicles.value, vehiclePage.value, cardsPerPage));
+
+function sortRows(arr, key, dir) {
+    return [...arr].sort((a, b) => {
+        let av = a[key];
+        let bv = b[key];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return dir === 'asc' ? -1 : 1;
+        if (av > bv) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+const sortKey = ref('name');
+const sortDir = ref('asc');
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+const sortedClassRows = computed(() => sortRows(classRows.value, sortKey.value, sortDir.value));
+
+const sortKey2 = ref('name');
+const sortDir2 = ref('asc');
+function toggleSort2(key) {
+    if (sortKey2.value === key) {
+        sortDir2.value = sortDir2.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey2.value = key;
+        sortDir2.value = 'asc';
+    }
+}
+function sortArrow2(key) {
+    if (sortKey2.value !== key) return '';
+    return sortDir2.value === 'asc' ? '↑' : '↓';
+}
+const sortedAreaRows = computed(() => sortRows(areaRows.value, sortKey2.value, sortDir2.value));
+
+const sortKey3 = ref('name');
+const sortDir3 = ref('asc');
+function toggleSort3(key) {
+    if (sortKey3.value === key) {
+        sortDir3.value = sortDir3.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey3.value = key;
+        sortDir3.value = 'asc';
+    }
+}
+function sortArrow3(key) {
+    if (sortKey3.value !== key) return '';
+    return sortDir3.value === 'asc' ? '↑' : '↓';
+}
+function sortedChildren(father) {
+    return sortRows(father.children || [], sortKey3.value, sortDir3.value);
+}
+
+const sortKey4 = ref('name');
+const sortDir4 = ref('asc');
+function toggleSort4(key) {
+    if (sortKey4.value === key) {
+        sortDir4.value = sortDir4.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey4.value = key;
+        sortDir4.value = 'asc';
+    }
+}
+function sortArrow4(key) {
+    if (sortKey4.value !== key) return '';
+    return sortDir4.value === 'asc' ? '↑' : '↓';
+}
+function sortedTripStudents(trip) {
+    return sortRows(trip.students || [], sortKey4.value, sortDir4.value);
+}
+
+const pagedClassRows = computed(() => (perPage.value === 'all' ? sortedClassRows.value : slice(sortedClassRows.value, classPage.value, perPage.value)));
+const pagedAreaRows = computed(() => (perPage.value === 'all' ? sortedAreaRows.value : slice(sortedAreaRows.value, areaPage.value, perPage.value)));
+const pagedFathers = computed(() => (cardsPerPage.value === 'all' ? fathers.value : slice(fathers.value, fatherPage.value, cardsPerPage.value)));
+const pagedVehicles = computed(() => (cardsPerPage.value === 'all' ? vehicles.value : slice(vehicles.value, vehiclePage.value, cardsPerPage.value)));
 
 const filterSections = computed(() =>
     filters.school_class_id
@@ -412,4 +551,13 @@ watch(() => filters.area, () => {
 });
 
 watch(() => erpStore.currentSession, () => scheduleReload(0));
+
+watch(perPage, () => {
+    classPage.value = 1;
+    areaPage.value = 1;
+});
+watch(cardsPerPage, () => {
+    fatherPage.value = 1;
+    vehiclePage.value = 1;
+});
 </script>

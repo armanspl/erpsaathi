@@ -89,17 +89,17 @@
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
                             <th class="w-10 px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" disabled /></th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Exam ↕</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Branch ↕</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Session ↕</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Dates ↕</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Sittings ↕</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Updated ↕</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('exam')">Exam {{ sortArrow('exam') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('branch')">Branch {{ sortArrow('branch') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('session_name')">Session {{ sortArrow('session_name') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('dates_count')">Dates {{ sortArrow('dates_count') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('sittings_count')">Sittings {{ sortArrow('sittings_count') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('updated_at')">Updated {{ sortArrow('updated_at') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="s in filteredSheets" :key="s.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="s in sortedSheets" :key="s.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" /></td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ s.exam?.name }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ s.branch?.name }}</td>
@@ -407,6 +407,36 @@ const filteredSheets = computed(() => {
     if (scheduleFilters.exam_id) rows = rows.filter((s) => s.exam_id === scheduleFilters.exam_id);
     if (scheduleFilters.branch_id) rows = rows.filter((s) => s.branch_id === scheduleFilters.branch_id);
     return rows;
+});
+
+const scheduleSortKey = ref('updated_at');
+const scheduleSortDir = ref('desc');
+
+function toggleSort(key) {
+    if (scheduleSortKey.value === key) {
+        scheduleSortDir.value = scheduleSortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        scheduleSortKey.value = key;
+        scheduleSortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (scheduleSortKey.value !== key) return '';
+    return scheduleSortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedSheets = computed(() => {
+    return [...filteredSheets.value].sort((a, b) => {
+        let av = scheduleSortKey.value === 'exam' ? a.exam?.name : scheduleSortKey.value === 'branch' ? a.branch?.name : a[scheduleSortKey.value];
+        let bv = scheduleSortKey.value === 'exam' ? b.exam?.name : scheduleSortKey.value === 'branch' ? b.branch?.name : b[scheduleSortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return scheduleSortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return scheduleSortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
 });
 
 const scheduleColumns = computed(() => {

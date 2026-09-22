@@ -13,24 +13,7 @@
 
         <!-- Import tab -->
         <div v-if="activeTab === 'import'" class="space-y-5">
-            <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Select Data To Import</h3>
-                <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-                    <button
-                        v-for="m in visibleImportEntities"
-                        :key="m.key"
-                        type="button"
-                        class="flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition"
-                        :class="activeEntity === m.key ? 'border-primary-400 bg-primary-50 dark:border-primary-500 dark:bg-primary-500/10' : 'border-slate-100 hover:border-primary-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-primary-500/30 dark:hover:bg-slate-800'"
-                        @click="selectEntity(m.key)"
-                    >
-                        <span class="text-lg">{{ m.icon }}</span>
-                        <span class="text-xs font-medium text-slate-700 dark:text-slate-200">{{ m.label }}</span>
-                    </button>
-                </div>
-            </div>
-
-            <div v-if="activeEntity === 'student-pen' || activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' || activeEntity === 'academic-calendar'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-if="activeEntity === 'global' || activeEntity === 'attendance' || activeEntity === 'exam-marks' || activeEntity === 'academic-calendar'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Upload — {{ uploadTitle }}</h3>
                     <div class="flex flex-wrap items-center gap-2">
@@ -42,8 +25,7 @@
                         </button>
                     </div>
                 </div>
-                <p v-if="activeEntity === 'student-pen'" class="mb-3 text-xs text-slate-400">Upload the UDISE portal's "Students Details" export as-is — run this after Global Workbook Import (Student Master sheet). Its title row (row 1) is skipped automatically. Matching is by ENRL # (same value as Master Record Adm No.); only the Student PEN column is imported, everything else (including the masked Aadhaar) is ignored.</p>
-                <div v-else-if="activeEntity === 'academic-calendar'" class="mb-3 space-y-2 text-xs text-slate-400">
+                <div v-if="activeEntity === 'academic-calendar'" class="mb-3 space-y-2 text-xs text-slate-400">
                     <p>Upload the school <strong class="text-slate-600 dark:text-slate-300">Academic Calendar … At A Glance</strong> workbook (.xlsx). Columns imported:</p>
                     <ul class="list-disc space-y-1 pl-4">
                         <li><strong class="text-slate-600 dark:text-slate-300">SCHOOL HOLIDAYS</strong> — Occasion / Month / Date</li>
@@ -165,13 +147,17 @@
             </div>
 
             <div v-else class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
-                Import isn't available yet for {{ activeEntityLabel }} — Student, Student PEN, Global Workbook, Attendance, and Exam Marks Import are currently supported. Export is available for every data type from the Export tab.
+                Import isn't available yet for {{ activeEntityLabel }} — Student, Global Workbook, Attendance, and Exam Marks Import are currently supported. Export is available for every data type from the Export tab.
             </div>
         </div>
 
         <!-- Export tab -->
         <div v-else-if="activeTab === 'export'" class="space-y-4">
-            <div v-if="canUseIeKey('student-export')" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-if="!isExportEntityVisible(activeExportEntity)" class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
+                This export isn't available for your school.
+            </div>
+
+            <div v-else-if="activeExportEntity === 'student'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Student Export</h3>
                 <p class="mb-4 text-xs text-slate-400">Full session history in Master Import format. Filter by student status and academic sessions, then download.</p>
                 <div class="max-w-md rounded-xl border border-slate-100 p-3 dark:border-slate-800">
@@ -179,7 +165,7 @@
                 </div>
             </div>
 
-            <div v-if="canUseIeKey('student-udise-export')" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div v-else-if="activeExportEntity === 'student-udise'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Student UDISE Export</h3>
                 <p class="mb-4 text-xs text-slate-400">Only students marked In UDISE. Pick status, sessions, and columns — Excel includes checked columns in the order listed.</p>
                 <div class="max-w-md rounded-xl border border-slate-100 p-3 dark:border-slate-800">
@@ -187,21 +173,18 @@
                 </div>
             </div>
 
-            <div v-if="visibleOtherExportEntities.length" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Other Exports</h3>
-                <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                    <div v-for="m in visibleOtherExportEntities" :key="m.key" class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800" :class="(m.key === 'global' || m.key === 'academic-calendar' || m.key === 'exam-marks') && 'border-primary-200 bg-primary-50/40 dark:border-primary-500/30 dark:bg-primary-500/5'">
-                        <div class="flex items-center gap-2.5">
-                            <span class="text-lg">{{ m.icon }}</span>
-                            <div>
-                                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ m.label }}</p>
-                                <p v-if="m.key === 'global'" class="text-xs text-slate-400">Includes SALARY … Bank sheet (same layout as import)</p>
-                                <p v-else-if="m.key === 'exam-marks'" class="text-xs text-slate-400">One MARKSHEET workbook, every class (same layout as import)</p>
-                                <p v-else-if="m.key === 'academic-calendar'" class="text-xs text-slate-400">Same At A Glance layout as import</p>
-                            </div>
+            <div v-else-if="exportEntityMeta" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-lg">{{ exportEntityMeta.icon }}</span>
+                        <div>
+                            <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">{{ exportEntityMeta.label }} Export</p>
+                            <p v-if="exportEntityMeta.key === 'global'" class="text-xs text-slate-400">Includes SALARY … Bank sheet (same layout as import)</p>
+                            <p v-else-if="exportEntityMeta.key === 'exam-marks'" class="text-xs text-slate-400">One MARKSHEET workbook, every class (same layout as import)</p>
+                            <p v-else-if="exportEntityMeta.key === 'academic-calendar'" class="text-xs text-slate-400">Same At A Glance layout as import</p>
                         </div>
-                        <button type="button" class="btn-outline !py-1.5 !text-xs" :disabled="exportingKey === m.key" @click="exportEntity(m)">{{ exportingKey === m.key ? 'Exporting...' : 'Export' }}</button>
                     </div>
+                    <button type="button" class="btn-outline !py-1.5 !text-xs" :disabled="exportingKey === exportEntityMeta.key" @click="exportEntity(exportEntityMeta)">{{ exportingKey === exportEntityMeta.key ? 'Exporting...' : 'Export' }}</button>
                 </div>
             </div>
         </div>
@@ -305,9 +288,7 @@ const ENTITIES = [
 ];
 
 // Import-only — no export counterpart, so kept out of ENTITIES (which also drives the Export tab).
-const EXTRA_IMPORT_ENTITIES = [
-    { key: 'student-pen', label: 'Student PEN', icon: '🆔', slug: 'student-pen' },
-];
+const EXTRA_IMPORT_ENTITIES = [];
 
 // Export-only entities (not shown on the Import tab entity picker).
 const EXTRA_EXPORT_ENTITIES = [
@@ -324,7 +305,6 @@ const ALL_ROUTE_ENTITIES = [...ENTITIES, ...EXTRA_IMPORT_ENTITIES, ...EXTRA_EXPO
 
 const IMPORT_ENTITY_TO_MENU_KEY = {
     global: 'global-workbook-import',
-    'student-pen': 'student-pen-import',
     attendance: 'attendance-import',
     'exam-marks': 'exam-marks-import',
     'academic-calendar': 'academic-calendar-import',
@@ -349,12 +329,12 @@ const visibleImportEntities = computed(() =>
     }),
 );
 
-const visibleOtherExportEntities = computed(() =>
-    ENTITIES.filter((e) => e.key !== 'student').filter((e) => {
-        const key = EXPORT_ENTITY_TO_MENU_KEY[e.key];
-        return !key || canUseIeKey(key);
-    }),
-);
+function isExportEntityVisible(key) {
+    if (key === 'student') return canUseIeKey('student-export');
+    if (key === 'student-udise') return canUseIeKey('student-udise-export');
+    const menuKey = EXPORT_ENTITY_TO_MENU_KEY[key];
+    return !menuKey || canUseIeKey(menuKey);
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -374,9 +354,13 @@ const activeEntity = ref(
         : (parsedType.value.entity?.key || 'global'),
 );
 const activeEntityLabel = computed(() => ALL_ROUTE_ENTITIES.find((e) => e.key === activeEntity.value)?.label || '');
+
+const activeExportEntity = ref(
+    parsedType.value.direction === 'export' ? (parsedType.value.entity?.key || 'global') : 'global',
+);
+const exportEntityMeta = computed(() => ENTITIES.find((e) => e.key === activeExportEntity.value));
 const uploadTitle = computed(() => {
     if (activeEntity.value === 'student') return 'Students';
-    if (activeEntity.value === 'student-pen') return 'Student PEN';
     if (activeEntity.value === 'global') return 'Global Workbook';
     if (activeEntity.value === 'attendance') return 'Attendance';
     if (activeEntity.value === 'exam-marks') return 'Exam Marks (Class Term)';
@@ -386,7 +370,6 @@ const uploadTitle = computed(() => {
 
 const IMPORT_ENDPOINTS = {
     student: '/import-export/import/student-master',
-    'student-pen': '/import-export/import/student-pen',
     global: '/import-export/import/global-workbook',
     attendance: '/import-export/import/attendance',
     'exam-marks': '/import-export/import/class-term-marks',
@@ -395,7 +378,6 @@ const IMPORT_ENDPOINTS = {
 
 const TEMPLATE_TYPES = {
     global: 'global-workbook',
-    'student-pen': 'student-pen',
     attendance: 'attendance',
     'exam-marks': 'exam-marks',
     'academic-calendar': 'academic-calendar',
@@ -439,20 +421,15 @@ watch(
     ({ direction, entity }) => {
         if (direction) activeTab.value = direction;
         if (entity) {
-            if (direction === 'import' && entity.key === 'student') {
-                activeEntity.value = 'global';
-            } else {
-                activeEntity.value = entity.key;
+            if (direction === 'import') {
+                activeEntity.value = entity.key === 'student' ? 'global' : entity.key;
+            } else if (direction === 'export') {
+                activeExportEntity.value = entity.key;
             }
         }
         resetUpload();
     },
 );
-
-function selectEntity(key) {
-    activeEntity.value = key;
-    resetUpload();
-}
 
 const dragOver = ref(false);
 const selectedFile = ref(null);

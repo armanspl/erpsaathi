@@ -21,12 +21,12 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Enquiry No</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Parent</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Branch</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('enquiry_no')">Enquiry No {{ sortArrow('enquiry_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('student_name')">Student {{ sortArrow('student_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('parent_name')">Parent {{ sortArrow('parent_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('branch')">Branch {{ sortArrow('branch') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('class')">Class {{ sortArrow('class') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -273,14 +273,47 @@ function canConvert(enquiry) {
     return lead !== 'Converted' && lead !== 'Closed';
 }
 
-const filteredEnquiries = computed(() =>
-    enquiries.value.filter((e) => {
+const filteredEnquiries = computed(() => {
+    const rows = enquiries.value.filter((e) => {
         if (filterValues.search && !`${e.student_name} ${e.parent_name} ${e.phone} ${e.enquiry_no}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.branch && e.branch?.name !== filterValues.branch) return false;
         if (filterValues.status && (e.lead_status || 'New') !== filterValues.status) return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        const getValue = (e) => {
+            if (sortKey.value === 'branch') return e.branch?.name;
+            if (sortKey.value === 'class') return e.class_applying_for?.name;
+            if (sortKey.value === 'status') return e.lead_status || 'New';
+            return e[sortKey.value];
+        };
+        let av = getValue(a);
+        let bv = getValue(b);
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+const sortKey = ref('enquiry_no');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 const formDrawerOpen = ref(false);
 const editing = ref(null);

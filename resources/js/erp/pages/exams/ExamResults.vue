@@ -130,18 +130,18 @@
                 <table v-if="viewMode === 'table' && resultType === 'individual'" class="w-full min-w-[860px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Roll No</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Admission ID</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student Name</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('roll_no')">Roll No {{ sortArrow('roll_no') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Admission ID {{ sortArrow('admission_no') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student Name {{ sortArrow('name') }}</th>
                             <th v-for="subj in subjectColumns" :key="subj" class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ subj }}</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Total</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">%</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Grade</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('obtained')">Total {{ sortArrow('obtained') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('percentage')">% {{ sortArrow('percentage') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('grade')">Grade {{ sortArrow('grade') }}</th>
                             <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="r in rows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="r in sortedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.roll_no ?? '—' }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ r.admission_no }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
@@ -167,18 +167,18 @@
                 <table v-else-if="viewMode === 'table'" class="w-full min-w-[720px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Roll No</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Admission ID</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student Name</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ resultType === 'annual' ? 'Overall' : 'Term Total' }}</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">%</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Grade</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Rank</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('roll_no')">Roll No {{ sortArrow('roll_no') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Admission ID {{ sortArrow('admission_no') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student Name {{ sortArrow('name') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('obtained')">{{ resultType === 'annual' ? 'Overall' : 'Term Total' }} {{ sortArrow('obtained') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('percentage')">% {{ sortArrow('percentage') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('grade')">Grade {{ sortArrow('grade') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('rank')">Rank {{ sortArrow('rank') }}</th>
                             <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="r in rows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="r in sortedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.roll_no ?? '—' }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ r.admission_no }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
@@ -201,7 +201,7 @@
                 </table>
 
                 <div v-else class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-                    <div v-for="r in rows" :key="r.student_id" class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                    <div v-for="r in sortedRows" :key="r.student_id" class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                         <div class="flex items-start justify-between">
                             <div>
                                 <div class="font-semibold text-slate-800 dark:text-slate-100">{{ r.name }}</div>
@@ -351,6 +351,35 @@ const loading = ref(false);
 const reportCard = ref(null);
 const zipping = ref(false);
 const downloading = ref(false);
+const sortKey = ref('roll_no');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    return [...rows.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 // Term Result / Half Yearly Result and Annual Result don't have a single "exam" the user picked
 // — their PDFs are coloured by whichever exam AcademicTermController::anchorExam() /

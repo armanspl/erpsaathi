@@ -7,8 +7,13 @@
                         <th v-if="selectable" class="w-10 px-4 py-3">
                             <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500" :checked="allSelected" @change="toggleAll($event.target.checked)" />
                         </th>
-                        <th v-for="col in columns" :key="col.key" class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            {{ col.label }}
+                        <th
+                            v-for="col in columns"
+                            :key="col.key"
+                            class="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                            @click="toggleSort(col.key)"
+                        >
+                            {{ col.label }} {{ sortArrow(col.key) }}
                         </th>
                         <th v-if="actions.length" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Action</th>
                     </tr>
@@ -24,7 +29,7 @@
                             No records match your filters.
                         </td>
                     </tr>
-                    <tr v-for="row in rows" :key="row.id" class="transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="row in sortedRows" :key="row.id" class="transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td v-if="selectable" class="px-4 py-3">
                             <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500" :checked="selected.has(row.id)" @change="toggleOne(row.id, $event.target.checked)" />
                         </td>
@@ -60,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { statusBadgeClass } from '../../utils/colors';
 import { initials } from '../../utils/mock';
 
@@ -70,12 +75,56 @@ const props = defineProps({
     selectable: { type: Boolean, default: true },
     actions: { type: Array, default: () => ['view', 'edit', 'delete'] },
     loading: { type: Boolean, default: false },
+    // When true, `rows` is assumed to already be sorted (and paginated) by the parent —
+    // sorting the local `rows` prop here would only ever sort the current page's slice.
+    // The parent owns sortKey/sortDir and reacts to the `sort` event instead.
+    externalSort: { type: Boolean, default: false },
+    sortKey: { type: String, default: '' },
+    sortDir: { type: String, default: 'asc' },
 });
-const emit = defineEmits(['action']);
+const emit = defineEmits(['action', 'sort']);
 
 const selected = reactive(new Set());
 
 const allSelected = computed(() => props.rows.length > 0 && props.rows.every((r) => selected.has(r.id)));
+
+const internalSortKey = ref('');
+const internalSortDir = ref('asc');
+
+function toggleSort(key) {
+    if (props.externalSort) {
+        emit('sort', key);
+        return;
+    }
+    if (internalSortKey.value === key) {
+        internalSortDir.value = internalSortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        internalSortKey.value = key;
+        internalSortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    const activeKey = props.externalSort ? props.sortKey : internalSortKey.value;
+    const activeDir = props.externalSort ? props.sortDir : internalSortDir.value;
+    if (activeKey !== key) return '';
+    return activeDir === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    if (props.externalSort) return props.rows;
+    if (!internalSortKey.value) return props.rows;
+    return [...props.rows].sort((a, b) => {
+        let av = a[internalSortKey.value];
+        let bv = b[internalSortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return internalSortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return internalSortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function toggleAll(checked) {
     if (checked) props.rows.forEach((r) => selected.add(r.id));

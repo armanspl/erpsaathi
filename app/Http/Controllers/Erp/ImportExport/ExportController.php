@@ -37,8 +37,15 @@ class ExportController extends Controller
 {
     private const ENTITIES = ['student', 'student-udise', 'stud-rec-sum', 'fee', 'expense', 'salary', 'bank', 'route', 'attendance', 'global'];
 
-    /** Sheet order for Global Workbook export (Stud_Rec_Sum sits after Student Master, matching GAS INC_EXP). */
-    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fee', 'expense', 'salary', 'bank', 'route', 'attendance'];
+    /**
+     * Sheet order for Global Workbook export (Stud_Rec_Sum sits after Student Master, matching
+     * GAS INC_EXP). Route and Attendance are deliberately excluded from the combined workbook —
+     * they remain available as standalone exports via the 'route'/'attendance' entities above.
+     */
+    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fee', 'expense', 'salary', 'bank'];
+
+    /** Fee-head columns in the Income sheet — also used to flag those columns as money for formatting. */
+    private const INCOME_HEAD_CODES = ['REG', 'ADM', 'ANN', 'TUI', 'TRA', 'FINE', 'DIARY', 'TC'];
 
     /** Header/tab accent per sheet — gives the multi-sheet Global Workbook a distinct color per data type. */
     private const SHEET_ACCENTS = [
@@ -124,8 +131,12 @@ class ExportController extends Controller
         'Last Class Studied' => 16, 'STATUS' => 12, 'UDISE' => 12, 'Entry Status' => 12,
     ];
 
-    /** Free-text fields long enough to need left-alignment + wrapping instead of the default centered short values. */
-    private const STUDENT_WRAP_HEADERS = [
+    /**
+     * Free-text fields (names, address, email) that read better left-aligned than the default
+     * centered short-value look. These never wrap — shrink-to-fit keeps them on one line instead
+     * (wrapping a name across 2+ lines is exactly what this list exists to prevent).
+     */
+    private const STUDENT_LEFT_ALIGN_HEADERS = [
         'Name', 'Mother Name', 'Father Name', 'Guardian Name (Optional)',
         'ADDRESS', 'Name As per AADHAAR', 'EMAIL ID (STUDENT/PARENT/GUARDIAN) (Optional)',
     ];
@@ -190,27 +201,8 @@ class ExportController extends Controller
         'Last Class Studied',
         'STATUS',
         'UDISE',
-        // Extended UDISE / Student Master profile columns (export-only if blank in records)
+        // Extended UDISE / Student Master profile column (export-only if blank in records)
         'Aadhaar Status',
-        'Is Child Identified as Out of School-Child',
-        'When the Child is mainstreamed',
-        'Whether having Disability Certificate?',
-        'Disability Percentage',
-        'Medium of Instruction',
-        'Languages Group Studied',
-        'Academic Stream opted',
-        'Subjects Group Studied',
-        'Amount Claimed from Government for RTE',
-        'Whether Facilities provided to Student',
-        'Facilities provided in case of CWSN',
-        'Appeared in State/National Competitions/Olympiads',
-        'NCC',
-        'NSS',
-        'Scouts and Guides',
-        "Student's Height (in CMs)",
-        "Student's Weight (in KGs)",
-        'Approximate Distance of residence to school',
-        'Completed Highest Education Level of Parents',
     ];
 
     public function download(Request $request, string $entity)
@@ -235,7 +227,7 @@ class ExportController extends Controller
         }
 
         $sections = $entity === 'global'
-            ? collect(self::GLOBAL_SHEETS)->map(fn ($e) => [$e, $this->buildSection($e, $request)])
+            ? collect(self::GLOBAL_SHEETS)->map(fn ($e) => [$e, $this->finalizeGlobalSection($e, $this->buildSection($e, $request))])
             : collect([[$entity, $this->buildSection($entity, $request)]]);
 
         $rowCount = $sections->sum(fn ($pair) => count($pair[1][1]));
@@ -270,12 +262,13 @@ class ExportController extends Controller
         $spreadsheet = new Spreadsheet();
         $sheetIndex = 0;
 
-        // Global workbook always opens on a Summary sheet (counts + money totals).
+        // Global workbook always opens on a Summary sheet (counts + money totals). It styles
+        // itself fully (banner, section bands, highlight cards) rather than going through the
+        // generic single-table styleDataSheet(), since its layout isn't one flat table.
         if ($entity === 'global') {
             $summarySheet = $spreadsheet->getActiveSheet();
             $summarySheet->setTitle('Summary');
             $this->writeSummarySheet($summarySheet, $sections, $this->sessionLabel($request));
-            $this->styleDataSheet($summarySheet, ['Sheet', 'Rows', 'Key total', 'Notes'], count($sections) + 4, '1F2937');
             $sheetIndex = 1;
         }
 
@@ -288,9 +281,18 @@ class ExportController extends Controller
             $sheet->setTitle(mb_substr($title, 0, 31));
             $sheet->fromArray($header, null, 'A1');
             if ($rows) {
-                $sheet->fromArray($rows, null, 'A2');
+                // strictNullComparison=true — otherwise PhpSpreadsheet's default loose (==) null
+                // check treats a numeric 0 as "null" (0 == null is true in PHP) and skips the
+                // cell entirely, leaving it blank instead of writing 0.
+                $sheet->fromArray($rows, null, 'A2', true);
             }
-            $this->styleDataSheet($sheet, $header, count($rows), self::SHEET_ACCENTS[$name] ?? '4F46E5', $name === 'student');
+            $isRichLayout = $name === 'student';
+            $moneyHeaders = $entity === 'global' ? $this->moneyHeadersFor($name, $header) : [];
+            $dateFormats = $entity === 'global' ? $this->dateFormatsFor($name) : [];
+            // richLayout (Student) sheet uses its own curated STUDENT_COLUMN_WIDTHS map instead.
+            $columnWidths = ($entity === 'global' && ! $isRichLayout) ? $this->computeColumnWidths($header, $rows, $dateFormats) : null;
+            $rowsForStyling = $entity === 'global' ? $rows : null;
+            $this->styleDataSheet($sheet, $header, count($rows), self::SHEET_ACCENTS[$name] ?? '4F46E5', $isRichLayout, 1, $moneyHeaders, $columnWidths, $rowsForStyling, $dateFormats);
             $sheetIndex++;
         }
         $spreadsheet->setActiveSheetIndex(0);
@@ -313,9 +315,31 @@ class ExportController extends Controller
      * wrapped text on long free-text columns (names, address, email) instead of the default
      * centered short-value look. Other sheets keep the simpler generic styling + autosize.
      *
+     * $moneyHeaders (exact header labels) get a right-aligned thousands-separated number format
+     * plus a light, consistent tint so amount/price columns are easy to spot at a glance. When
+     * $rows is provided, the format is chosen per cell (moneyFormatCode()) instead of one blanket
+     * code for the whole column, since a mix of whole and fractional amounts needs different
+     * format strings to avoid an ambiguous optional-decimal mask.
+     *
+     * $dateFormats (exact header label => Excel format code, e.g. 'DATE' => 'dd-mmm-yy') applies
+     * a real-date display format to columns whose cell values are Excel serial-date numbers
+     * (see Date::PHPToExcel() at the call site) rather than the plain DD-MM-YYYY text strings
+     * most other date columns use.
+     *
+     * $columnWidths, when provided (index => character width), replaces Excel's own autosize with
+     * widths computed from the sheet's actual content (see computeColumnWidths()) — compact and
+     * capped, rather than however wide Excel's heuristic decides. Every cell in the header+data
+     * rectangle gets a thin border (header border is white-on-accent so the grid reads clearly
+     * against the colored header fill, instead of blending into it) and shrink-to-fit, so long
+     * values shrink to stay readable instead of overflowing into the next cell.
+     *
      * @param  array<int, string>  $headers
+     * @param  array<int, string>  $moneyHeaders
+     * @param  array<int, int>|null  $columnWidths
+     * @param  array<int, array<int, mixed>>|null  $rows
+     * @param  array<string, string>  $dateFormats
      */
-    private function styleDataSheet(Worksheet $sheet, array $headers, int $rowCount, string $accentHex, bool $richLayout = false, int $headerRow = 1): void
+    private function styleDataSheet(Worksheet $sheet, array $headers, int $rowCount, string $accentHex, bool $richLayout = false, int $headerRow = 1, array $moneyHeaders = [], ?array $columnWidths = null, ?array $rows = null, array $dateFormats = []): void
     {
         $colCount = count($headers);
         if ($colCount < 1 || $headerRow < 1) {
@@ -332,24 +356,26 @@ class ExportController extends Controller
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $accentHex]],
             'alignment' => [
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'horizontal' => $richLayout ? Alignment::HORIZONTAL_CENTER : Alignment::HORIZONTAL_LEFT,
-                'wrapText' => $richLayout,
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'wrapText' => true,
             ],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $accentHex]]],
+            // White border on the colored header band — a same-color border would be invisible
+            // against its own fill, so the header cells would look seamless/borderless.
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
         ]);
-        $sheet->getRowDimension($headerRow)->setRowHeight($richLayout ? 32 : 22);
+        $sheet->getRowDimension($headerRow)->setRowHeight($richLayout ? 32 : 24);
         $sheet->freezePane('B'.$firstDataRow);
         $sheet->setAutoFilter($headerRange);
         $sheet->getTabColor()->setRGB($accentHex);
 
         foreach ($headers as $i => $label) {
             $col = Coordinate::stringFromColumnIndex($i + 1);
-            $width = $richLayout ? (self::STUDENT_COLUMN_WIDTHS[$label] ?? 14) : null;
+            $width = $richLayout ? (self::STUDENT_COLUMN_WIDTHS[$label] ?? 14) : ($columnWidths[$i] ?? null);
 
             if ($width !== null) {
                 $sheet->getColumnDimension($col)->setWidth($width);
-            } elseif ($colCount <= 15) {
-                // Autosize is expensive on wide sheets — only worth it for narrow, non-art-directed ones.
+            } elseif ($colCount <= 30) {
+                // Autosize is expensive on very wide sheets — only worth it below that width.
                 $sheet->getColumnDimension($col)->setAutoSize(true);
             }
 
@@ -357,7 +383,7 @@ class ExportController extends Controller
                 $groupHex = self::STUDENT_GROUP_ACCENTS[self::STUDENT_COLUMN_GROUPS[$label]];
                 $headerCell = $sheet->getStyle("{$col}{$headerRow}");
                 $headerCell->getFill()->getStartColor()->setRGB($groupHex);
-                $headerCell->getBorders()->getAllBorders()->getColor()->setRGB($groupHex);
+                // Keep the white border here too — a border matching the group's own fill would vanish.
             }
         }
 
@@ -371,6 +397,7 @@ class ExportController extends Controller
             'alignment' => [
                 'vertical' => Alignment::VERTICAL_CENTER,
                 'horizontal' => $richLayout ? Alignment::HORIZONTAL_CENTER : Alignment::HORIZONTAL_GENERAL,
+                'shrinkToFit' => true,
             ],
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E5E7EB']]],
         ]);
@@ -383,13 +410,24 @@ class ExportController extends Controller
 
         if ($richLayout) {
             foreach ($headers as $i => $label) {
-                if (! in_array($label, self::STUDENT_WRAP_HEADERS, true)) {
+                if (! in_array($label, self::STUDENT_LEFT_ALIGN_HEADERS, true)) {
                     continue;
                 }
                 $col = Coordinate::stringFromColumnIndex($i + 1);
+                // Left-aligned, no wrap — shrink-to-fit (inherited from the base dataRange style
+                // above) keeps long names/addresses on one line instead of spilling to a 2nd line.
                 $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$lastRow}")->getAlignment()
                     ->setHorizontal(Alignment::HORIZONTAL_LEFT)
-                    ->setWrapText(true);
+                    ->setWrapText(false)
+                    ->setShrinkToFit(true);
+            }
+        } else {
+            // Non-richLayout sheets: alignment by column data type (text left, amounts right,
+            // dates/session/class/section/status centered) instead of one blanket alignment.
+            foreach ($headers as $i => $label) {
+                $col = Coordinate::stringFromColumnIndex($i + 1);
+                $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$lastRow}")->getAlignment()
+                    ->setHorizontal($this->columnAlignment($label, $moneyHeaders));
             }
         }
 
@@ -400,6 +438,245 @@ class ExportController extends Controller
                     ->getStartColor()->setRGB('F8FAFC');
             }
         }
+
+        if ($moneyHeaders !== []) {
+            // Comma-separated thousands, no forced trailing zeros — matches how the school reads figures.
+            foreach ($headers as $i => $label) {
+                if (! in_array($label, $moneyHeaders, true)) {
+                    continue;
+                }
+                $col = Coordinate::stringFromColumnIndex($i + 1);
+                $range = "{$col}{$firstDataRow}:{$col}{$lastRow}";
+                $sheet->getStyle($range)->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('EEF2FF');
+
+                if ($rows === null) {
+                    // No row data to inspect per cell (non-global caller) — one blanket code.
+                    $sheet->getStyle($range)->getNumberFormat()->setFormatCode('#,##0.00');
+
+                    continue;
+                }
+
+                foreach ($rows as $rIdx => $rowData) {
+                    $val = $rowData[$i] ?? null;
+                    if (! is_int($val) && ! is_float($val)) {
+                        continue;
+                    }
+                    $cellRow = $firstDataRow + $rIdx;
+                    $sheet->getStyle("{$col}{$cellRow}")->getNumberFormat()->setFormatCode($this->moneyFormatCode($val));
+                }
+            }
+        }
+
+        if ($dateFormats !== []) {
+            foreach ($headers as $i => $label) {
+                if (! isset($dateFormats[$label])) {
+                    continue;
+                }
+                $col = Coordinate::stringFromColumnIndex($i + 1);
+                $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$lastRow}")->getNumberFormat()->setFormatCode($dateFormats[$label]);
+            }
+        }
+    }
+
+    /**
+     * Horizontal alignment for a non-richLayout column, inferred from its header label: amount
+     * columns right-align, dates/session/class/section/status/short-code columns center-align,
+     * and everything else falls back to Excel's own "General" alignment — which already
+     * right-aligns numeric values (row counts, running balances, etc.) and left-aligns text
+     * (names, addresses, remarks) natively, so free text and stray numeric columns both land
+     * correctly without needing to be named here individually.
+     *
+     * @param  array<int, string>  $moneyHeaders
+     */
+    private function columnAlignment(string $label, array $moneyHeaders): string
+    {
+        if (in_array($label, $moneyHeaders, true)) {
+            return Alignment::HORIZONTAL_RIGHT;
+        }
+
+        $upper = strtoupper($label);
+        if (str_contains($upper, 'DATE') || str_contains($upper, 'DOB') || str_contains($upper, 'EXPORTED AT')) {
+            return Alignment::HORIZONTAL_CENTER;
+        }
+
+        $centerKeywords = [
+            'SESSION', 'CLASS', 'SECTION', 'STATUS', 'GENDER', 'TYPE', 'MODE', 'CATEGORY',
+            'MONTH', 'YEAR', 'ROLL', 'RCPT', 'CHQ NO', 'DR/CR', 'SL NO', 'MOBILE', 'PHONE', 'ADM NO',
+        ];
+        foreach ($centerKeywords as $keyword) {
+            if (str_contains($upper, $keyword)) {
+                return Alignment::HORIZONTAL_CENTER;
+            }
+        }
+
+        return Alignment::HORIZONTAL_GENERAL;
+    }
+
+    /**
+     * Column widths (character units) computed from actual header + cell content instead of
+     * Excel's own autosize heuristic — capped so no column grows unreasonably wide; shrink-to-fit
+     * (applied in styleDataSheet) handles anything that still doesn't fit.
+     *
+     * $dateFormats columns hold Excel serial-date numbers (see Date::PHPToExcel()) whose raw
+     * value is much shorter than its rendered form (e.g. serial 46024 displays as "02-Jan-26"),
+     * so those get a fixed width sized to their actual format pattern instead of the raw content
+     * length.
+     *
+     * @param  array<int, string>  $headers
+     * @param  array<int, array<int, mixed>>  $rows
+     * @param  array<string, string>  $dateFormats
+     * @return array<int, int>
+     */
+    private function computeColumnWidths(array $headers, array $rows, array $dateFormats = [], int $min = 8, int $max = 40): array
+    {
+        $widths = [];
+        foreach ($headers as $i => $label) {
+            $widths[$i] = max($min, min($max, mb_strlen((string) $label) + 2));
+        }
+
+        // Capped sample — column width doesn't need every row scanned to converge on a sensible size.
+        foreach (array_slice($rows, 0, 2000) as $row) {
+            foreach ($row as $i => $value) {
+                if (! isset($widths[$i]) || $widths[$i] >= $max || ! (is_string($value) || is_int($value) || is_float($value))) {
+                    continue;
+                }
+                $len = mb_strlen((string) $value) + 2;
+                if ($len > $widths[$i]) {
+                    $widths[$i] = min($max, $len);
+                }
+            }
+        }
+
+        foreach ($headers as $i => $label) {
+            if (isset($dateFormats[$label])) {
+                $widths[$i] = max($widths[$i], mb_strlen($dateFormats[$label]) + 4);
+            }
+        }
+
+        return $widths;
+    }
+
+    /**
+     * Header labels (exact match) treated as monetary amounts in a given Global Workbook sheet —
+     * these get a thousands-separated number format, a light highlight tint, and blank cells
+     * written as 0 rather than left empty. Text/ID/date columns are never included here.
+     *
+     * @param  array<int, string>  $header
+     * @return array<int, string>
+     */
+    private function moneyHeadersFor(string $name, array $header): array
+    {
+        return match ($name) {
+            'stud-rec-sum' => [
+                'TOT_PMNT', 'REG', 'ADM', 'ANN_PMNT', 'ANN_DUES', 'TUI_PMNT', 'TUI CALC',
+                'TUI_DUES', 'TRA_PMNT', 'TRA CALC', 'TRA_DUES', 'DUES',
+            ],
+            'fee' => array_merge(self::INCOME_HEAD_CODES, ['OTHER', 'GRAND TOTAL']),
+            'expense' => ['AMOUNT'],
+            'bank' => ['AMOUNT', 'TOTAL'],
+            'salary' => array_merge(['BASIC SALARY', 'TOTAL'], SalaryBankWorkbookService::EXPORT_MONTHS),
+            default => [],
+        };
+    }
+
+    /**
+     * Header labels (exact match) whose cells are real Excel serial-date numbers, mapped to the
+     * display format they should render with. Only the Income sheet's MONTH/DATE columns use
+     * actual dates today — every other date column in the workbook stays a plain DD-MM-YYYY text
+     * string, unaffected by this.
+     *
+     * @return array<string, string>
+     */
+    private function dateFormatsFor(string $name): array
+    {
+        return match ($name) {
+            'fee' => ['MONTH' => 'mmm-yy', 'DATE' => 'dd-mmm-yy'],
+            default => [],
+        };
+    }
+
+    /**
+     * Global-Workbook-only cleanup applied after a section is built: ISO (Y-m-d) date cells are
+     * rendered as DD-MM-YYYY, and blank cells in money columns become 0 instead of an empty cell
+     * (a fully-blank row — e.g. the Salary sheet's spacer row between Teacher/Staff/Driver blocks
+     * — is left untouched so it still reads as a visual separator, not a row of zeros).
+     *
+     * @param  array{0: array<int, string>, 1: array<int, array<int, mixed>>, 2?: string}  $section
+     * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>, 2?: string}
+     */
+    private function finalizeGlobalSection(string $name, array $section): array
+    {
+        $header = $section[0];
+        $rows = $section[1];
+
+        $moneyIdx = [];
+        foreach ($header as $i => $label) {
+            if (in_array($label, $this->moneyHeadersFor($name, $header), true)) {
+                $moneyIdx[$i] = true;
+            }
+        }
+
+        foreach ($rows as &$row) {
+            $rowIsBlank = true;
+            foreach ($row as $cell) {
+                if ($cell !== null && $cell !== '') {
+                    $rowIsBlank = false;
+                    break;
+                }
+            }
+            if ($rowIsBlank) {
+                continue;
+            }
+
+            foreach ($row as $i => &$cell) {
+                if (is_string($cell) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $cell)) {
+                    $cell = \Carbon\Carbon::createFromFormat('Y-m-d', $cell)->format('d-m-Y');
+
+                    continue;
+                }
+                if (is_string($cell) && preg_match('/^\d{4}-\d{4}$/', $cell)) {
+                    $cell = $this->shortSessionLabel($cell);
+
+                    continue;
+                }
+                if (isset($moneyIdx[$i])) {
+                    $cell = ($cell === null || $cell === '') ? 0 : $this->moneyValue((float) $cell);
+                }
+            }
+            unset($cell);
+        }
+        unset($row);
+
+        $section[1] = $rows;
+
+        return $section;
+    }
+
+    /**
+     * Whole-number-safe money value: PhpSpreadsheet's XLSX writer serializes a PHP float like
+     * 4500.0 into the sheet XML as literally "4500.0" (unlike a plain string cast, which drops
+     * the ".0") — so a genuinely whole amount must be written as a true int to display as
+     * "4,500" instead of "4,500.0". Non-whole amounts stay float so real decimals still show.
+     */
+    private function moneyValue(float $amount): int|float
+    {
+        $rounded = round($amount, 2);
+
+        return (float) (int) $rounded === $rounded ? (int) $rounded : $rounded;
+    }
+
+    /**
+     * Number format for an already-moneyValue()'d amount. Deliberately NOT a single "#,##0.##"
+     * pattern for both cases — some spreadsheet apps render that optional-decimal mask as a
+     * dangling "4,000." with no digits after the point instead of cleanly hiding it. An int gets
+     * a format with no decimal section at all (no ambiguity possible); a float (a genuine
+     * fractional amount) gets a fixed 2-decimal format (equally unambiguous, not an optional mask).
+     */
+    private function moneyFormatCode(int|float $value): string
+    {
+        return is_int($value) ? '#,##0' : '#,##0.00';
     }
 
     /**
@@ -510,41 +787,182 @@ class ExportController extends Controller
     }
 
     /**
-     * First sheet of a global workbook — one row per data sheet with counts and totals.
+     * First sheet of a global workbook: a title banner, a "Sheets Overview" table (one row per
+     * data sheet with its row count + key money total, left-accented in that sheet's own tab
+     * color so it's easy to spot which summary row belongs to which sheet), a bold total-rows
+     * row, and — when the workbook has any money totals at all — a "Key Financial Totals" band
+     * with each figure shown as a large, prominent highlight card rather than buried in a table
+     * column. Fully self-styled (banner/section bands/cards), so it does not go through the
+     * generic single-table styleDataSheet().
      *
      * @param  \Illuminate\Support\Collection<int, array{0: string, 1: array{0: array<int, string>, 1: array<int, array<int, mixed>>}}>  $sections
      */
     private function writeSummarySheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, $sections, string $sessionLabel): void
     {
-        $sheet->fromArray(['Sheet', 'Rows', 'Key total', 'Notes'], null, 'A1');
-        $sheet->getStyle('A1:D1')->getFont()->setBold(true);
+        $sheet->setShowGridlines(false);
 
-        $summaryRows = [];
+        $bannerHex = '1E293B';
+        $sectionHex = '334155';
+        $moneyBandHex = '047857';
+        $borderHex = 'E2E8F0';
+
+        $row = 1;
+
+        // Every row below — including the banner/section bands and blank spacers — gets this
+        // same thin border, applied across the full A:D range (not just cell A), so a merged
+        // band's border isn't left set on only its first cell and missing on the rest.
+        $bandBorder = ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]];
+
+        // --- Title banner ---
+        $sheet->mergeCells("A{$row}:D{$row}");
+        $sheet->setCellValue("A{$row}", 'GLOBAL WORKBOOK — SUMMARY');
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 15, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $bannerHex]],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
+        ]);
+        $sheet->getRowDimension($row)->setRowHeight(32);
+        $row++;
+
+        // --- Subtitle: session + export timestamp ---
+        $sheet->mergeCells("A{$row}:D{$row}");
+        $sheet->setCellValue("A{$row}", 'Academic Session: '.$this->shortSessionLabel($sessionLabel).'      •      Exported: '.now()->format('d M Y, H:i'));
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+            'font' => ['italic' => true, 'size' => 10, 'color' => ['rgb' => '64748B']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F1F5F9']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
+            'borders' => $bandBorder,
+        ]);
+        $sheet->getRowDimension($row)->setRowHeight(20);
+        $row++;
+
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray(['borders' => $bandBorder]);
+        $sheet->getRowDimension($row)->setRowHeight(8);
+        $row++;
+
+        // --- Section: Sheets Overview ---
+        $sheet->mergeCells("A{$row}:D{$row}");
+        $sheet->setCellValue("A{$row}", 'SHEETS OVERVIEW');
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $sectionHex]],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
+        ]);
+        $sheet->getRowDimension($row)->setRowHeight(22);
+        $row++;
+
+        $sheet->fromArray(['Sheet', 'Rows', 'Key Total', 'Notes'], null, "A{$row}");
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '334155']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]],
+        ]);
+        $sheet->getRowDimension($row)->setRowHeight(20);
+        $row++;
+
+        $firstDataRow = $row;
         $grandRows = 0;
+        $highlights = [];
 
         foreach ($sections as [$name, $section]) {
             [$header, $rows] = $section;
             $count = count($rows);
             $grandRows += $count;
             [$totalLabel, $totalValue] = $this->sectionMoneyTotal($name, $header, $rows);
+            if ($totalValue !== null) {
+                $highlights[$totalLabel] = $totalValue;
+            }
 
-            $summaryRows[] = [
-                self::sheetTitle($name),
-                $count,
-                $totalValue !== null ? $totalValue : '',
-                $totalLabel ?? ($count === 0 ? 'No records' : ''),
-            ];
+            $sheet->setCellValue("A{$row}", self::sheetTitle($name));
+            $sheet->setCellValue("B{$row}", $count);
+            if ($totalValue !== null) {
+                $normalized = $this->moneyValue($totalValue);
+                $sheet->setCellValue("C{$row}", $normalized);
+                $sheet->getStyle("C{$row}")->getNumberFormat()->setFormatCode($this->moneyFormatCode($normalized));
+            }
+            $sheet->setCellValue("D{$row}", $totalLabel ?? ($count === 0 ? 'No records' : ''));
+
+            $sheet->getStyle("A{$row}")->getFont()->setBold(true)->getColor()->setRGB(self::SHEET_ACCENTS[$name] ?? '4F46E5');
+            $row++;
+        }
+        $lastDataRow = $row - 1;
+
+        $sheet->getStyle("A{$firstDataRow}:D{$lastDataRow}")->applyFromArray([
+            'font' => ['size' => 10, 'color' => ['rgb' => '1F2937']],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'horizontal' => Alignment::HORIZONTAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]],
+        ]);
+        $sheet->getStyle("A{$firstDataRow}:A{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle("C{$firstDataRow}:C{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle("D{$firstDataRow}:D{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        for ($r = $firstDataRow + 1; $r <= $lastDataRow; $r += 2) {
+            $sheet->getStyle("A{$r}:D{$r}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F8FAFC');
         }
 
-        $summaryRows[] = ['', '', '', ''];
-        $summaryRows[] = ['TOTAL ROWS', $grandRows, '', 'All data sheets combined'];
-        $summaryRows[] = ['Academic Session', $sessionLabel, '', ''];
-        $summaryRows[] = ['Exported at', now()->format('d M Y H:i'), '', ''];
+        // --- Total rows (bold, highlighted) ---
+        $sheet->setCellValue("A{$row}", 'TOTAL ROWS');
+        $sheet->setCellValue("B{$row}", $grandRows);
+        $sheet->setCellValue("D{$row}", 'All data sheets combined');
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1E293B']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FEF3C7']],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'horizontal' => Alignment::HORIZONTAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]],
+        ]);
+        $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle("D{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $row++;
 
-        $sheet->fromArray($summaryRows, null, 'A2');
-        foreach (range(1, 4) as $col) {
-            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($col))->setAutoSize(true);
+        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray(['borders' => $bandBorder]);
+        $sheet->getRowDimension($row)->setRowHeight(8);
+        $row++;
+
+        // --- Section: Key Financial Totals (only when the workbook actually has money totals) ---
+        if ($highlights !== []) {
+            $sheet->mergeCells("A{$row}:D{$row}");
+            $sheet->setCellValue("A{$row}", 'KEY FINANCIAL TOTALS');
+            $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $moneyBandHex]],
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
+                'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
+            ]);
+            $sheet->getRowDimension($row)->setRowHeight(22);
+            $row++;
+
+            foreach ($highlights as $label => $value) {
+                $normalized = $this->moneyValue($value);
+
+                $sheet->mergeCells("A{$row}:C{$row}");
+                $sheet->setCellValue("A{$row}", $label);
+                $sheet->setCellValue("D{$row}", $normalized);
+
+                $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'ECFDF5']],
+                    'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+                    'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1FAE5']]],
+                ]);
+                $sheet->getStyle("A{$row}")->applyFromArray([
+                    'font' => ['size' => 11, 'color' => ['rgb' => '1F2937']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'indent' => 1],
+                ]);
+                $sheet->getStyle("D{$row}")->applyFromArray([
+                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => $moneyBandHex]],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT, 'indent' => 1],
+                ]);
+                $sheet->getStyle("D{$row}")->getNumberFormat()->setFormatCode($this->moneyFormatCode($normalized));
+                $sheet->getRowDimension($row)->setRowHeight(24);
+                $row++;
+            }
         }
+
+        $sheet->getColumnDimension('A')->setWidth(28);
+        $sheet->getColumnDimension('B')->setWidth(12);
+        $sheet->getColumnDimension('C')->setWidth(18);
+        $sheet->getColumnDimension('D')->setWidth(32);
     }
 
     /**
@@ -555,7 +973,7 @@ class ExportController extends Controller
     private function sectionMoneyTotal(string $entity, array $header, array $rows): array
     {
         $columnHints = match ($entity) {
-            'fee' => ['TOTAL', 'Total fee collected'],
+            'fee' => ['GRAND TOTAL', 'Total fee collected'],
             'stud-rec-sum' => ['TOT_PMNT', 'Total student payments'],
             'expense' => ['AMOUNT', 'Total expenses'],
             'salary' => ['TOTAL', 'Total salary paid (Bank sheet)'],
@@ -652,11 +1070,11 @@ class ExportController extends Controller
     {
         [$session, $allSessions] = $this->resolveHeaderSession($request);
 
-        $headCodes = ['REG', 'ADM', 'ANN', 'TUI', 'TRA', 'FINE', 'DIARY'];
+        $headCodes = self::INCOME_HEAD_CODES;
         $headers = array_merge(
             ['YEAR', 'MONTH', 'DATE', 'ADM NO', 'NAME', 'ADDRESS', 'CLASS'],
             $headCodes,
-            ['OTHER', 'TOTAL', 'SESSION', 'RECEIPT', 'REMARKS', 'PMNT MODE']
+            ['OTHER', 'GRAND TOTAL', 'SESSION', 'RECEIPT', 'REMARKS', 'PMNT MODE']
         );
         $knownCodes = array_flip($headCodes);
 
@@ -676,7 +1094,7 @@ class ExportController extends Controller
         $modeByReceipt = [];
         if ($receiptNos !== []) {
             $txs = BankTransaction::query()
-                ->with('bankAccount:id,account_name')
+                ->with('bankAccount:id,account_name,bank_name')
                 ->whereIn('reference_no', $receiptNos)
                 ->where('type', 'Deposit')
                 ->orderByDesc('id')
@@ -686,9 +1104,15 @@ class ExportController extends Controller
                 if ($ref === '' || isset($modeByReceipt[$ref])) {
                     continue;
                 }
-                $account = trim((string) ($tx->bankAccount->account_name ?? ''));
-                if ($account !== '') {
-                    $modeByReceipt[$ref] = $account;
+                // account_name is the identifier schools actually use day-to-day for a ledger
+                // account (e.g. "GAS 11662", "TRUST 6739" — same convention as the "BANK <name>"
+                // sheet titles the Global Workbook importer parses); bank_name is only a short,
+                // generic institution label (e.g. "GAS"). Prefer the more specific account_name.
+                $bankName = trim((string) ($tx->bankAccount->bank_name ?? ''));
+                $accountName = trim((string) ($tx->bankAccount->account_name ?? ''));
+                $resolved = $accountName ?: $bankName;
+                if ($resolved !== '') {
+                    $modeByReceipt[$ref] = $resolved;
                 }
             }
         }
@@ -761,22 +1185,22 @@ class ExportController extends Controller
 
             $student = $group['student'];
             $date = $group['date'];
-            $yearLabel = $date !== '' ? $this->fiscalYearLabel(\Carbon\Carbon::parse($date)) : '';
-            $monthStart = $date !== '' ? \Carbon\Carbon::parse($date)->startOfMonth()->toDateString() : '';
+            $dateObj = $date !== '' ? \Carbon\Carbon::parse($date) : null;
+            $yearLabel = $dateObj ? $this->fiscalYearLabel($dateObj) : '';
             $address = trim(implode(' ', array_filter([
                 $student->address ?? null,
                 $student->address_line_2 ?? null,
             ])));
 
             $row = [
-                $yearLabel, $monthStart, $date,
+                $yearLabel, $this->excelDateSerial($dateObj?->copy()->startOfMonth()), $this->excelDateSerial($dateObj),
                 $student->admission_no ?? '', $student->name ?? '', $address,
                 $student->schoolClass->name ?? '',
             ];
             foreach ($headCodes as $code) {
-                $row[] = ($group['amounts'][$code] != 0.0) ? round($group['amounts'][$code], 2) : '';
+                $row[] = round($group['amounts'][$code], 2);
             }
-            $row[] = ($group['amounts']['OTHER'] != 0.0) ? round($group['amounts']['OTHER'], 2) : '';
+            $row[] = round($group['amounts']['OTHER'], 2);
             $row[] = round($total, 2);
             $row[] = $group['session_label'];
             $row[] = implode(', ', $group['receipts']);
@@ -796,8 +1220,6 @@ class ExportController extends Controller
             ->get();
 
         foreach ($incomes as $income) {
-            $date = $income->date?->toDateString() ?? '';
-            $monthStart = $income->date?->copy()->startOfMonth()->toDateString() ?? '';
             $mode = trim((string) ($income->bankAccount->account_name ?? ''))
                 ?: ($income->payment_mode ?: 'Cash');
             $code = $this->incomeHeadCode((string) ($income->source ?: 'Income'));
@@ -806,12 +1228,12 @@ class ExportController extends Controller
 
             $row = [
                 $income->date ? $this->fiscalYearLabel($income->date) : '',
-                $monthStart, $date, '', '', '', '',
+                $this->excelDateSerial($income->date?->copy()->startOfMonth()), $this->excelDateSerial($income->date), '', '', '', '',
             ];
             foreach ($headCodes as $c) {
-                $row[] = ($c === $bucket) ? $amount : '';
+                $row[] = ($c === $bucket) ? $amount : 0;
             }
-            $row[] = ($bucket === 'OTHER') ? $amount : '';
+            $row[] = ($bucket === 'OTHER') ? $amount : 0;
             $row[] = $amount;
             $row[] = (! $allSessions && $session) ? ($session->name ?? '') : '';
             $row[] = preg_replace('/^INC-/', '', (string) $income->voucher_no) ?: $income->voucher_no;
@@ -1137,6 +1559,8 @@ class ExportController extends Controller
             'tuition fee' => 'TUI',
             'transport' => 'TRA',
             'fine' => 'FINE',
+            'transfer certificate fee' => 'TC',
+            'tc fee' => 'TC',
         ];
 
         $key = strtolower(trim($headName));
@@ -1191,6 +1615,17 @@ class ExportController extends Controller
         }
 
         return sprintf('%d-%02d', $year - 1, $year % 100);
+    }
+
+    /**
+     * Real Excel serial-date number for a date column that should render as an actual Excel
+     * date (e.g. Income's MONTH/DATE, formatted 'mmm-yy' / 'dd-mmm-yy' in dateFormatsFor())
+     * rather than a DD-MM-YYYY text string. PhpSpreadsheet's default value binder does not
+     * auto-convert DateTimeInterface objects — the value must already be the numeric serial.
+     */
+    private function excelDateSerial(?\Carbon\CarbonInterface $date): ?int
+    {
+        return $date ? (int) round(\PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel($date)) : null;
     }
 
     /**
@@ -1654,6 +2089,14 @@ class ExportController extends Controller
         return $allSessions ? 'All Sessions' : ($session->name ?? 'All Sessions');
     }
 
+    /** "2026-2027" -> "2026-27" (Global Workbook display form); anything else passes through unchanged. */
+    private function shortSessionLabel(string $label): string
+    {
+        return preg_match('/^(\d{4})-(\d{4})$/', trim($label), $m)
+            ? $m[1].'-'.substr($m[2], -2)
+            : $label;
+    }
+
     /**
      * Parse ?sessions=All or ?sessions[]=2025-2026&sessions[]=2026-2027 into alias list, or null = all.
      * When the Student Export panel hasn't sent an explicit `sessions` filter at all, this falls
@@ -1772,25 +2215,6 @@ class ExportController extends Controller
             $this->cell($promotionStatus),
             $this->cell($udise?->entry_status),
             $this->cell($aadhaar !== '' ? 'Available' : 'Not Available'),
-            '', // Out of school child
-            '', // Mainstreamed when
-            '', // Disability certificate
-            '', // Disability percentage
-            '', // Medium of instruction
-            '', // Languages group
-            '', // Academic stream
-            '', // Subjects group
-            '', // RTE amount claimed
-            '', // Facilities provided
-            '', // CWSN facilities
-            '', // Olympiads
-            '', // NCC
-            '', // NSS
-            '', // Scouts and Guides
-            $this->cell($additional?->height),
-            $this->cell($additional?->weight),
-            '', // Distance to school
-            '', // Parents education
         ];
     }
 

@@ -112,15 +112,15 @@
                     <table class="w-full min-w-[900px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Admission ID</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Student</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Roll No</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Father</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Mother</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Charge</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Paid</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Concession</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Due</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('admission_no')">Admission ID {{ sortArrow('admission_no') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('name')">Student {{ sortArrow('name') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('roll_no')">Roll No {{ sortArrow('roll_no') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('father')">Father {{ sortArrow('father') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('mother')">Mother {{ sortArrow('mother') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total_fee')">Charge {{ sortArrow('total_fee') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total_paid')">Paid {{ sortArrow('total_paid') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total_discount')">Concession {{ sortArrow('total_discount') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('due')">Due {{ sortArrow('due') }}</th>
                                 <th class="px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500">Actions</th>
                             </tr>
                         </thead>
@@ -153,11 +153,20 @@
                     </table>
                 </div>
                 <div v-if="!loading && autoRows.length" class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800">
-                    <span>Showing {{ (autoPage - 1) * perPage + 1 }}–{{ autoRangeEnd }} of {{ autoRows.length }}, sorted by highest due</span>
-                    <div class="flex items-center gap-1">
-                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="autoPage <= 1" @click="autoPage--">Prev</button>
-                        <span class="px-2">Page {{ autoPage }} / {{ autoTotalPages }}</span>
-                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="autoPage >= autoTotalPages" @click="autoPage++">Next</button>
+                    <span>Showing {{ autoPerPageSelection === 'all' ? 1 : (autoPage - 1) * autoPerPage + 1 }}–{{ autoRangeEnd }} of {{ autoRows.length }}, sorted by highest due</span>
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-2">
+                            Show
+                            <select v-model="autoPerPageSelection" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                                <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                            </select>
+                            per page
+                        </label>
+                        <div v-if="autoPerPageSelection !== 'all'" class="flex items-center gap-1">
+                            <button type="button" class="btn-outline !py-1 !text-xs" :disabled="autoPage <= 1" @click="autoPage--">Prev</button>
+                            <span class="px-2">Page {{ autoPage }} / {{ autoTotalPages }}</span>
+                            <button type="button" class="btn-outline !py-1 !text-xs" :disabled="autoPage >= autoTotalPages" @click="autoPage++">Next</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -190,12 +199,12 @@
                     <table class="w-full min-w-[800px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Student</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Fee Types</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Total</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Balance</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Latest Due Date</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Status</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('name')">Student {{ sortArrow2('name') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('fee_types')">Fee Types {{ sortArrow2('fee_types') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('total')">Total {{ sortArrow2('total') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('balance')">Balance {{ sortArrow2('balance') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('latest_due_date')">Latest Due Date {{ sortArrow2('latest_due_date') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('status')">Status {{ sortArrow2('status') }}</th>
                                 <th class="px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500">Actions</th>
                             </tr>
                         </thead>
@@ -283,11 +292,20 @@
                     </table>
                 </div>
                 <div v-if="!loading && manualRows.length" class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800">
-                    <span>Showing {{ (manualPage - 1) * perPage + 1 }}–{{ manualRangeEnd }} of {{ manualRows.length }}, sorted by highest balance</span>
-                    <div class="flex items-center gap-1">
-                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="manualPage <= 1" @click="manualPage--">Prev</button>
-                        <span class="px-2">Page {{ manualPage }} / {{ manualTotalPages }}</span>
-                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="manualPage >= manualTotalPages" @click="manualPage++">Next</button>
+                    <span>Showing {{ manualPerPageSelection === 'all' ? 1 : (manualPage - 1) * manualPerPage + 1 }}–{{ manualRangeEnd }} of {{ manualRows.length }}, sorted by highest balance</span>
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-2">
+                            Show
+                            <select v-model="manualPerPageSelection" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                                <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                            </select>
+                            per page
+                        </label>
+                        <div v-if="manualPerPageSelection !== 'all'" class="flex items-center gap-1">
+                            <button type="button" class="btn-outline !py-1 !text-xs" :disabled="manualPage <= 1" @click="manualPage--">Prev</button>
+                            <span class="px-2">Page {{ manualPage }} / {{ manualTotalPages }}</span>
+                            <button type="button" class="btn-outline !py-1 !text-xs" :disabled="manualPage >= manualTotalPages" @click="manualPage++">Next</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -624,32 +642,97 @@ const manualRows = ref([]);
 const summary = reactive({ students: 0, charged: 0, paid: 0, due: 0 });
 const expandedId = ref(null);
 
-const perPage = 20;
+const perPageOptions = [10, 25, 50, 100, 'all'];
+const autoPerPageSelection = ref(25);
+const manualPerPageSelection = ref(25);
 const autoPage = ref(1);
 const manualPage = ref(1);
+const sortKey = ref(null);
+const sortDir = ref('asc');
+const sortKey2 = ref(null);
+const sortDir2 = ref('asc');
 
-// Highest outstanding first, then paginate on the client (dues are computed, not a DB column).
-const sortedAutoRows = computed(() =>
-    [...autoRows.value].sort((a, b) => (Number(b.due) || 0) - (Number(a.due) || 0)),
-);
-const sortedManualRows = computed(() =>
-    [...manualRows.value].sort((a, b) => (Number(b.balance) || 0) - (Number(a.balance) || 0)),
-);
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+    autoPage.value = 1;
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+function toggleSort2(key) {
+    if (sortKey2.value === key) {
+        sortDir2.value = sortDir2.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey2.value = key;
+        sortDir2.value = 'asc';
+    }
+    manualPage.value = 1;
+}
+function sortArrow2(key) {
+    if (sortKey2.value !== key) return '';
+    return sortDir2.value === 'asc' ? '↑' : '↓';
+}
 
-const autoTotalPages = computed(() => Math.max(1, Math.ceil(sortedAutoRows.value.length / perPage)));
-const manualTotalPages = computed(() => Math.max(1, Math.ceil(sortedManualRows.value.length / perPage)));
+// Highest outstanding first by default, then paginate on the client (dues are computed, not a DB column).
+// Clicking a column header overrides the default with an explicit sort.
+const sortedAutoRows = computed(() => {
+    if (!sortKey.value) {
+        return [...autoRows.value].sort((a, b) => (Number(b.due) || 0) - (Number(a.due) || 0));
+    }
+    return [...autoRows.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+const sortedManualRows = computed(() => {
+    if (!sortKey2.value) {
+        return [...manualRows.value].sort((a, b) => (Number(b.balance) || 0) - (Number(a.balance) || 0));
+    }
+    return [...manualRows.value].sort((a, b) => {
+        let av = a[sortKey2.value];
+        let bv = b[sortKey2.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir2.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir2.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+const autoPerPage = computed(() => (autoPerPageSelection.value === 'all' ? Math.max(sortedAutoRows.value.length, 1) : autoPerPageSelection.value));
+const manualPerPage = computed(() => (manualPerPageSelection.value === 'all' ? Math.max(sortedManualRows.value.length, 1) : manualPerPageSelection.value));
+
+const autoTotalPages = computed(() => (autoPerPageSelection.value === 'all' ? 1 : Math.max(1, Math.ceil(sortedAutoRows.value.length / autoPerPage.value))));
+const manualTotalPages = computed(() => (manualPerPageSelection.value === 'all' ? 1 : Math.max(1, Math.ceil(sortedManualRows.value.length / manualPerPage.value))));
 
 const pagedAutoRows = computed(() => {
-    const start = (autoPage.value - 1) * perPage;
-    return sortedAutoRows.value.slice(start, start + perPage);
+    if (autoPerPageSelection.value === 'all') return sortedAutoRows.value;
+    const start = (autoPage.value - 1) * autoPerPage.value;
+    return sortedAutoRows.value.slice(start, start + autoPerPage.value);
 });
 const pagedManualRows = computed(() => {
-    const start = (manualPage.value - 1) * perPage;
-    return sortedManualRows.value.slice(start, start + perPage);
+    if (manualPerPageSelection.value === 'all') return sortedManualRows.value;
+    const start = (manualPage.value - 1) * manualPerPage.value;
+    return sortedManualRows.value.slice(start, start + manualPerPage.value);
 });
 
-const autoRangeEnd = computed(() => Math.min(autoPage.value * perPage, sortedAutoRows.value.length));
-const manualRangeEnd = computed(() => Math.min(manualPage.value * perPage, sortedManualRows.value.length));
+const autoRangeEnd = computed(() => (autoPerPageSelection.value === 'all' ? sortedAutoRows.value.length : Math.min(autoPage.value * autoPerPage.value, sortedAutoRows.value.length)));
+const manualRangeEnd = computed(() => (manualPerPageSelection.value === 'all' ? sortedManualRows.value.length : Math.min(manualPage.value * manualPerPage.value, sortedManualRows.value.length)));
 
 watch(autoTotalPages, (n) => {
     if (autoPage.value > n) autoPage.value = n;
@@ -657,6 +740,8 @@ watch(autoTotalPages, (n) => {
 watch(manualTotalPages, (n) => {
     if (manualPage.value > n) manualPage.value = n;
 });
+watch(autoPerPageSelection, () => { autoPage.value = 1; });
+watch(manualPerPageSelection, () => { manualPage.value = 1; });
 
 const collect = reactive({
     amount: 0,
@@ -859,7 +944,7 @@ async function recordPayment(row) {
         await reload();
         expandedId.value = row.student_id;
         const idx = sortedManualRows.value.findIndex((r) => r.student_id === row.student_id);
-        if (idx >= 0) manualPage.value = Math.floor(idx / perPage) + 1;
+        if (idx >= 0 && manualPerPageSelection.value !== 'all') manualPage.value = Math.floor(idx / manualPerPage.value) + 1;
         const updated = manualRows.value.find((r) => r.student_id === row.student_id);
         collect.amount = updated?.balance || 0;
     } finally {

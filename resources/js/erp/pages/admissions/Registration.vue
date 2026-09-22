@@ -28,13 +28,13 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Admission No</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Parent</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Branch</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Section</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Admission No {{ sortArrow('admission_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('parent')">Parent {{ sortArrow('parent') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('branch')">Branch {{ sortArrow('branch') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('class')">Class {{ sortArrow('class') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('section')">Section {{ sortArrow('section') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -556,8 +556,8 @@ async function load() {
     loading.value = false;
 }
 
-const filteredStudents = computed(() =>
-    students.value.filter((s) => {
+const filteredStudents = computed(() => {
+    const rows = students.value.filter((s) => {
         const pipeline = s.admission_status || 'Admitted';
         // Registration page: Registered (and New if any); Admission page: Admitted
         if (isAdmissionPage.value) {
@@ -571,8 +571,43 @@ const filteredStudents = computed(() =>
         if (filterValues.section && s.section?.name !== filterValues.section) return false;
         if (filterValues.status && pipeline !== filterValues.status) return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        const getValue = (s) => {
+            if (sortKey.value === 'parent') return s.father?.name;
+            if (sortKey.value === 'branch') return s.branch?.name;
+            if (sortKey.value === 'class') return s.school_class?.name;
+            if (sortKey.value === 'section') return s.section?.name;
+            if (sortKey.value === 'status') return s.admission_status || 'Registered';
+            return s[sortKey.value];
+        };
+        let av = getValue(a);
+        let bv = getValue(b);
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+const sortKey = ref('admission_no');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 const drawerOpen = ref(false);
 const editing = ref(null);

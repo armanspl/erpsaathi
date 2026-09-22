@@ -20,13 +20,13 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Gate Pass</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Visitor</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Purpose</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Whom to Meet</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Check In</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Check Out</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('gate_pass_no')">Gate Pass {{ sortArrow('gate_pass_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Visitor {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('purpose')">Purpose {{ sortArrow('purpose') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('whom_to_meet')">Whom to Meet {{ sortArrow('whom_to_meet') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('check_in_at')">Check In {{ sortArrow('check_in_at') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('check_out_at')">Check Out {{ sortArrow('check_out_at') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -37,7 +37,7 @@
                     <tr v-else-if="!filteredVisitors.length">
                         <td colspan="8" class="px-4 py-10 text-center text-slate-400">No visitor records match your filters.</td>
                     </tr>
-                    <tr v-for="v in filteredVisitors" :key="v.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="v in sortedVisitors" :key="v.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ v.gate_pass_no }}</td>
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ v.name }}<br /><span class="text-xs font-normal text-slate-400">{{ v.phone }}</span></td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ v.purpose || '—' }}</td>
@@ -118,6 +118,36 @@ const filteredVisitors = computed(() =>
         return true;
     }),
 );
+
+const sortKey = ref('check_in_at');
+const sortDir = ref('desc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedVisitors = computed(() => {
+    return [...filteredVisitors.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function formatTime(value) {
     return new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });

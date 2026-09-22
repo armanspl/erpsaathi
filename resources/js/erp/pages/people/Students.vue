@@ -28,10 +28,28 @@
         </div>
 
         <!-- Table -->
-        <DataTable :columns="columns" :rows="pagedRows" :loading="loading" :actions="['view', 'edit', 'delete', 'print', 'idcard', 'certificate']" @action="onRowAction" />
+        <DataTable
+            :columns="columns"
+            :rows="pagedRows"
+            :loading="loading"
+            :actions="['view', 'edit', 'delete', 'print', 'idcard', 'certificate']"
+            external-sort
+            :sort-key="sortKey"
+            :sort-dir="sortDir"
+            @action="onRowAction"
+            @sort="toggleSort"
+        />
 
-        <div class="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-            <Pagination v-model="page" :per-page="perPage" :total="filteredRows.length" />
+        <div class="flex flex-col items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2 sm:flex-row dark:border-slate-800 dark:bg-slate-900">
+            <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                Show
+                <select v-model="perPageSelection" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                    <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                </select>
+                per page
+            </label>
+            <Pagination v-if="perPageSelection !== 'all'" v-model="page" :per-page="perPage" :total="filteredRows.length" class="!border-t-0 !p-0" />
+            <p v-else class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ filteredRows.length }} entries</p>
         </div>
 
         <div v-if="exportModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -728,7 +746,11 @@ const tableRows = computed(() =>
 
 const filterValues = reactive({});
 const page = ref(1);
-const perPage = 10;
+const perPageOptions = [10, 25, 50, 100, 'all'];
+const perPageSelection = ref(10);
+const perPage = computed(() => (perPageSelection.value === 'all' ? Math.max(filteredRows.value.length, 1) : perPageSelection.value));
+const sortKey = ref('');
+const sortDir = ref('asc');
 const drawerOpen = ref(route.query.add === '1');
 const editing = ref(null);
 
@@ -827,8 +849,37 @@ const filteredRows = computed(() =>
     }),
 );
 watch(filteredRows, () => (page.value = 1));
+watch(perPageSelection, () => (page.value = 1));
 
-const pagedRows = computed(() => filteredRows.value.slice((page.value - 1) * perPage, page.value * perPage));
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+
+const sortedRows = computed(() => {
+    if (!sortKey.value) return filteredRows.value;
+    return [...filteredRows.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+const pagedRows = computed(() => {
+    if (perPageSelection.value === 'all') return sortedRows.value;
+    const start = (page.value - 1) * perPage.value;
+    return sortedRows.value.slice(start, start + perPage.value);
+});
 
 const counts = computed(() => ({
     total: students.value.length,

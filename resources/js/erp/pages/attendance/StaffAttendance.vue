@@ -98,16 +98,16 @@
                 <table v-else class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Staff</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Department</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('date')">Date {{ sortArrow('date') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('staff_name')">Staff {{ sortArrow('staff_name') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('staff_phone')">Phone {{ sortArrow('staff_phone') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('staff_department')">Department {{ sortArrow('staff_department') }}</th>
+                            <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                             <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="r in historyRecords" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="r in sortedHistoryRecords" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 text-slate-800 dark:text-slate-100">{{ formatDisplayDate(r.date) }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.staff?.name || '—' }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ r.staff?.phone || '—' }}</td>
@@ -126,7 +126,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import client from '../../api/client';
 import { statusBadgeClass } from '../../utils/colors';
 import { pushToast } from '../../utils/toast';
@@ -159,6 +159,39 @@ const history = reactive({
 });
 const historyRecords = ref([]);
 const historyLoading = ref(false);
+const sortKey = ref('date');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedHistoryRecords = computed(() => {
+    return [...historyRecords.value].sort((a, b) => {
+        let av;
+        let bv;
+        if (sortKey.value === 'staff_name') { av = a.staff?.name; bv = b.staff?.name; }
+        else if (sortKey.value === 'staff_phone') { av = a.staff?.phone; bv = b.staff?.phone; }
+        else if (sortKey.value === 'staff_department') { av = a.staff?.department; bv = b.staff?.department; }
+        else { av = a[sortKey.value]; bv = b[sortKey.value]; }
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 function formatDisplayDate(value) {
     if (!value) return '—';

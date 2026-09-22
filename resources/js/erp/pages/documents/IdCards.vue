@@ -20,11 +20,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Card No.</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Holder</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Valid Until</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('card_no')">Card No. {{ sortArrow('card_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('holder_name')">Holder {{ sortArrow('holder_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('holder_type')">Type {{ sortArrow('holder_type') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('valid_until')">Valid Until {{ sortArrow('valid_until') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -228,6 +228,8 @@ const candidatesLoading = ref(false);
 const filterValues = reactive({});
 const drawerOpen = ref(false);
 const downloadingId = ref(null);
+const sortKey = ref('card_no');
+const sortDir = ref('asc');
 
 const form = reactive({
     holder_type: 'student',
@@ -255,14 +257,42 @@ const candidateOptions = computed(() =>
     })),
 );
 
+function sortValue(c, key) {
+    if (key === 'holder_name') return c.holder?.name || '';
+    return c[key];
+}
+
 const filteredCards = computed(() =>
     cards.value.filter((c) => {
         const holderName = c.holder?.name || '';
         if (filterValues.search && !`${holderName} ${c.card_no}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.status && c.status !== filterValues.status) return false;
         return true;
+    }).sort((a, b) => {
+        let av = sortValue(a, sortKey.value);
+        let bv = sortValue(b, sortKey.value);
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
     }),
 );
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 async function loadCards() {
     loading.value = true;

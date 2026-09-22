@@ -20,11 +20,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Fee Head</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Value</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Reason</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('student_name')">Student {{ sortArrow('student_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('fee_head_name')">Fee Head {{ sortArrow('fee_head_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('type')">Type {{ sortArrow('type') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('value')">Value {{ sortArrow('value') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('reason')">Reason {{ sortArrow('reason') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -112,15 +112,54 @@ const heads = ref([]);
 const filterValues = reactive({});
 const drawerOpen = ref(false);
 const editing = ref(null);
+const sortKey = ref('student_name');
+const sortDir = ref('asc');
 
 const form = reactive({ student_id: null, fee_head_id: null, type: 'percentage', value: null, reason: '' });
 
-const filteredDiscounts = computed(() =>
-    discounts.value.filter((d) => {
+function sortValue(row, key) {
+    switch (key) {
+        case 'student_name':
+            return row.student?.name || '';
+        case 'fee_head_name':
+            return row.fee_head?.name || '';
+        case 'value':
+            return Number(row.value) || 0;
+        default:
+            return row[key];
+    }
+}
+
+const filteredDiscounts = computed(() => {
+    const rows = discounts.value.filter((d) => {
         if (filterValues.search && !`${d.student.name} ${d.student.admission_no} ${d.reason}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        let av = sortValue(a, sortKey.value);
+        let bv = sortValue(b, sortKey.value);
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 async function load() {
     loading.value = true;

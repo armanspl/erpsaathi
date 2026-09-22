@@ -268,11 +268,11 @@
                                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                                         <tr>
                                             <th class="px-3 py-2"><input type="checkbox" class="rounded" :checked="studentReceiptsAllSelected" @change="toggleStudentReceiptsAll" /></th>
-                                            <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
-                                            <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Date</th>
-                                            <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Months</th>
-                                            <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Advance</th>
-                                            <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Paid</th>
+                                            <th class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('receipt_no')">Receipt {{ sortArrow('receipt_no') }}</th>
+                                            <th class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('payment_date')">Payment Date {{ sortArrow('payment_date') }}</th>
+                                            <th class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('months')">Months {{ sortArrow('months') }}</th>
+                                            <th class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('advance')">Advance {{ sortArrow('advance') }}</th>
+                                            <th class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('paid')">Paid {{ sortArrow('paid') }}</th>
                                             <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Due</th>
                                             <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                                         </tr>
@@ -284,7 +284,7 @@
                                         <tr v-else-if="!studentReceipts.length">
                                             <td colspan="8" class="px-4 py-10 text-center text-slate-400">No receipts for this student yet.</td>
                                         </tr>
-                                        <tr v-for="p in studentReceipts" :key="p.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                        <tr v-for="p in sortedStudentReceipts" :key="p.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                             <td class="px-3 py-3"><input v-model="studentReceiptSelected" type="checkbox" class="rounded" :value="p.id" /></td>
                                             <td class="px-3 py-3 font-mono text-xs text-slate-600">{{ p.receipt_no }}</td>
                                             <td class="px-3 py-3 text-slate-500">{{ formatDateTime(p.payment_date || p.created_at) }}</td>
@@ -420,15 +420,15 @@
                             <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                                 <tr>
                                     <th class="px-3 py-3"><input type="checkbox" class="rounded" :checked="allSelected" @change="toggleSelectAll" /></th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Date</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Months</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Fee types</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Advance</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Paid</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Due</th>
-                                    <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('receipt_no')">Receipt {{ sortArrow2('receipt_no') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('payment_date')">Payment Date {{ sortArrow2('payment_date') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('student_name')">Student {{ sortArrow2('student_name') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('months')">Months {{ sortArrow2('months') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('fee_types')">Fee types {{ sortArrow2('fee_types') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('advance')">Advance {{ sortArrow2('advance') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('paid')">Paid {{ sortArrow2('paid') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('due')">Due {{ sortArrow2('due') }}</th>
+                                    <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('status')">Status {{ sortArrow2('status') }}</th>
                                     <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                                 </tr>
                             </thead>
@@ -436,10 +436,10 @@
                                 <tr v-if="!historyRows.length">
                                     <td colspan="11" class="px-4 py-12 text-center text-slate-400">No receipts match these filters.</td>
                                 </tr>
-                                <tr v-for="p in historyRows" :key="p.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <tr v-for="p in sortedHistoryRows" :key="p.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                     <td class="px-3 py-3"><input v-model="selectedIds" type="checkbox" class="rounded" :value="p.id" /></td>
                                     <td class="px-3 py-3 font-mono text-xs text-slate-700">{{ p.receipt_no }}</td>
-                                    <td class="px-3 py-3 whitespace-nowrap text-slate-500">{{ formatDateTime(p.payment_date || p.created_at) }}</td>
+                                    <td class="px-3 py-3 whitespace-nowrap text-slate-500">{{ formatDate(p.payment_date || p.created_at) }}</td>
                                     <td class="px-3 py-3">
                                         <div class="font-semibold uppercase text-slate-800 dark:text-slate-100">{{ p.student?.name }}</div>
                                         <div class="text-xs text-slate-400">{{ p.student?.admission_no }}</div>
@@ -523,21 +523,21 @@
                         <table class="w-full min-w-[720px] text-center text-sm">
                             <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                                 <tr>
-                                    <th class="px-4 py-3 text-left text-sm font-bold text-slate-800 dark:text-slate-100">Group</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Receipts</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Payable</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Discount</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Extra</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Paid</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Due</th>
-                                    <th class="px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">Rollback</th>
+                                    <th class="cursor-pointer px-4 py-3 text-left text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('group')">Group {{ sortArrow3('group') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('receipts')">Receipts {{ sortArrow3('receipts') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('payable')">Payable {{ sortArrow3('payable') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('discount')">Discount {{ sortArrow3('discount') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('extra')">Extra {{ sortArrow3('extra') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('paid')">Paid {{ sortArrow3('paid') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('due')">Due {{ sortArrow3('due') }}</th>
+                                    <th class="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100" @click="toggleSort3('rollback')">Rollback {{ sortArrow3('rollback') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                                 <tr v-if="!reportGroups.length">
                                     <td colspan="8" class="px-4 py-12 text-slate-400">No report data for these filters.</td>
                                 </tr>
-                                <tr v-for="(g, i) in reportGroups" :key="i" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <tr v-for="(g, i) in sortedReportGroups" :key="i" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                     <td class="px-4 py-3 text-left font-medium text-slate-800 dark:text-slate-100">{{ g.group }}</td>
                                     <td class="px-4 py-3 text-slate-700 dark:text-slate-200">{{ g.receipts }}</td>
                                     <td class="px-4 py-3 text-slate-700 dark:text-slate-200">₹{{ money(g.payable) }}</td>
@@ -906,6 +906,8 @@ const studentTransport = ref(null);
 const studentReceipts = ref([]);
 const studentReceiptsLoading = ref(false);
 const studentReceiptSelected = ref([]);
+const sortKey = ref(null);
+const sortDir = ref('asc');
 
 const studentModalOpen = ref(false);
 const modalPick = ref(null);
@@ -927,6 +929,10 @@ const historyLoading = ref(false);
 const historyRows = ref([]);
 const reportGroups = ref([]);
 const reportTotal = ref(0);
+const sortKey2 = ref(null);
+const sortDir2 = ref('asc');
+const sortKey3 = ref(null);
+const sortDir3 = ref('asc');
 const selectedIds = ref([]);
 const multiPrint = ref(2);
 const rollbackOpen = ref(false);
@@ -1350,6 +1356,12 @@ function historyStatusClass(p) {
     return 'bg-sky-50 text-sky-700 ring-sky-600/20';
 }
 
+function monthShortLabel(key) {
+    const [y, m] = String(key).split('-').map(Number);
+    if (!y || !m) return key;
+    return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'short' });
+}
+
 function historyMonths(p) {
     const keys = [];
     for (const item of p.items || []) {
@@ -1357,9 +1369,92 @@ function historyMonths(p) {
         else if (item.month) keys.push(item.month);
     }
     const unique = [...new Set(keys.map((k) => String(k).slice(0, 7)).filter((k) => /^\d{4}-\d{2}$/.test(k)))];
-    if (unique.length) return unique.join(', ');
+    if (unique.length) return unique.sort().map(monthShortLabel).join(', ');
     return p.months || '—';
 }
+
+function genericSort(rows, key, dir) {
+    if (!key) return rows;
+    return [...rows].sort((a, b) => {
+        let av = a[key];
+        let bv = b[key];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return dir === 'asc' ? -1 : 1;
+        if (av > bv) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+const sortedStudentReceipts = computed(() => {
+    if (!sortKey.value) return studentReceipts.value;
+    const decorated = studentReceipts.value.map((p) => ({
+        receipt_no: p.receipt_no,
+        payment_date: p.payment_date || p.created_at || '',
+        months: p.months || '',
+        advance: Number(p.advance) || 0,
+        paid: Number(p.paid_net ?? p.amount) || 0,
+        __row: p,
+    }));
+    return genericSort(decorated, sortKey.value, sortDir.value).map((d) => d.__row);
+});
+
+function toggleSort2(key) {
+    if (sortKey2.value === key) {
+        sortDir2.value = sortDir2.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey2.value = key;
+        sortDir2.value = 'asc';
+    }
+}
+function sortArrow2(key) {
+    if (sortKey2.value !== key) return '';
+    return sortDir2.value === 'asc' ? '↑' : '↓';
+}
+const sortedHistoryRows = computed(() => {
+    if (!sortKey2.value) return historyRows.value;
+    const decorated = historyRows.value.map((p) => ({
+        receipt_no: p.receipt_no,
+        payment_date: p.payment_date || p.created_at || '',
+        student_name: p.student?.name || '',
+        months: historyMonths(p),
+        fee_types: p.fee_types || '',
+        advance: Number(p.advance) || 0,
+        paid: Number(p.paid_net ?? p.amount) || 0,
+        due: Number(p.due_amount) || 0,
+        status: historyStatusLabel(p),
+        __row: p,
+    }));
+    return genericSort(decorated, sortKey2.value, sortDir2.value).map((d) => d.__row);
+});
+
+function toggleSort3(key) {
+    if (sortKey3.value === key) {
+        sortDir3.value = sortDir3.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey3.value = key;
+        sortDir3.value = 'asc';
+    }
+}
+function sortArrow3(key) {
+    if (sortKey3.value !== key) return '';
+    return sortDir3.value === 'asc' ? '↑' : '↓';
+}
+const sortedReportGroups = computed(() => genericSort(reportGroups.value, sortKey3.value, sortDir3.value));
 
 function openRollback(p) {
     rollbackTarget.value = p;

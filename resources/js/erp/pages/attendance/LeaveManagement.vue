@@ -82,11 +82,11 @@
             <table v-else-if="viewMode === 'table'" class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Requester</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Dates</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Days</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('attendable_name')">Requester {{ sortArrow('attendable_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('leave_type')">Type {{ sortArrow('leave_type') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('from_date')">Dates {{ sortArrow('from_date') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('total_days')">Days {{ sortArrow('total_days') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -158,12 +158,14 @@
             <div class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                 <p class="text-xs text-slate-400">Showing {{ showingFrom }}“{{ showingTo }} of {{ filtered.length }}</p>
                 <div class="flex flex-wrap items-center gap-3">
-                    <select v-model.number="perPage" class="form-input !w-auto !py-1.5 !text-xs">
+                    <select v-model="perPage" class="form-input !w-auto !py-1.5 !text-xs">
                         <option :value="10">10 / page</option>
                         <option :value="20">20 / page</option>
                         <option :value="50">50 / page</option>
+                        <option :value="100">100 / page</option>
+                        <option value="all">All</option>
                     </select>
-                    <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <div v-if="perPage !== 'all'" class="flex items-center gap-2 text-xs text-slate-500">
                         <button type="button" class="rounded-md border border-slate-200 p-1 disabled:opacity-40 dark:border-slate-700" :disabled="page <= 1" @click="page -= 1">
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                         </button>
@@ -320,6 +322,21 @@ const all = ref([]);
 const filters = reactive({ search: '', status: '', from: '', to: '' });
 const page = ref(1);
 const perPage = ref(20);
+const sortKey = ref('attendable_name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 const applyOpen = ref(false);
 const linkedProfile = ref(null);
@@ -339,15 +356,28 @@ const rejecting = ref(null);
 const rejectionReason = ref('');
 
 
-const filtered = computed(() => all.value);
+const filtered = computed(() => {
+    return [...all.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / perPage.value)));
+const totalPages = computed(() => (perPage.value === 'all' ? 1 : Math.max(1, Math.ceil(filtered.value.length / perPage.value))));
 const paged = computed(() => {
+    if (perPage.value === 'all') return filtered.value;
     const start = (page.value - 1) * perPage.value;
     return filtered.value.slice(start, start + perPage.value);
 });
-const showingFrom = computed(() => (filtered.value.length ? (page.value - 1) * perPage.value + 1 : 0));
-const showingTo = computed(() => Math.min(page.value * perPage.value, filtered.value.length));
+const showingFrom = computed(() => (filtered.value.length ? (perPage.value === 'all' ? 1 : (page.value - 1) * perPage.value + 1) : 0));
+const showingTo = computed(() => (perPage.value === 'all' ? filtered.value.length : Math.min(page.value * perPage.value, filtered.value.length)));
 
 const totalDaysLabel = computed(() => {
     if (!form.from_date || !form.to_date) return '—';

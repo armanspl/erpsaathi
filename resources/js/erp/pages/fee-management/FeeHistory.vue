@@ -127,8 +127,8 @@
                 <p class="mt-1 text-2xl font-bold text-teal-600 dark:text-teal-400">₹{{ money(summary.ledger_balance) }}</p>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Net</p>
-                <p class="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">₹{{ money(summary.net) }}</p>
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Month Collection</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">₹{{ money(summary.month_collection) }}</p>
             </div>
         </div>
 
@@ -142,29 +142,25 @@
                 <table class="w-full min-w-[960px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Adm No</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Roll</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Name</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Class</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Section</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Address</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Mobile</th>
-                            <th class="px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500">Total</th>
-                            <th class="px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500">Received</th>
-                            <th class="px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500">Ledger Bal.</th>
-                            <th class="px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500">Net</th>
+                            <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('admission_no')">Adm No {{ sortArrow('admission_no') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('school_class')">Class {{ sortArrow('school_class') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('address')">Address {{ sortArrow('address') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('mobile')">Mobile {{ sortArrow('mobile') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total')">Total {{ sortArrow('total') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort('received')">Received {{ sortArrow('received') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort('ledger_balance')">Ledger Bal. {{ sortArrow('ledger_balance') }}</th>
+                            <th class="cursor-pointer px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort('net')">Net {{ sortArrow('net') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-if="!rows.length">
-                            <td colspan="11" class="px-4 py-12 text-center text-slate-400">No students match these filters.</td>
+                            <td colspan="9" class="px-4 py-12 text-center text-slate-400">No students match these filters.</td>
                         </tr>
                         <tr v-for="r in pagedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
-                            <td class="px-3 py-2.5 text-slate-500">{{ r.roll_no || '—' }}</td>
                             <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
                             <td class="px-3 py-2.5 text-slate-500">{{ r.school_class || '—' }}</td>
-                            <td class="px-3 py-2.5 text-slate-500">{{ r.section || '—' }}</td>
                             <td class="max-w-[180px] truncate px-3 py-2.5 text-slate-500" :title="r.address || ''">{{ r.address || '—' }}</td>
                             <td class="px-3 py-2.5 text-slate-500">{{ r.mobile || '—' }}</td>
                             <td class="px-3 py-2.5 text-right text-slate-700 dark:text-slate-200">₹{{ money(r.total) }}</td>
@@ -175,7 +171,17 @@
                     </tbody>
                 </table>
             </div>
-            <Pagination v-if="rows.length > perPage" v-model="page" :per-page="perPage" :total="rows.length" />
+            <div v-if="rows.length" class="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-800">
+                <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    Show
+                    <select v-model="perPageSelection" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                    </select>
+                    per page
+                </label>
+                <p v-if="perPageSelection === 'all'" class="text-xs text-slate-500 dark:text-slate-400">Showing all {{ rows.length }} entries</p>
+            </div>
+            <Pagination v-if="perPageSelection !== 'all' && rows.length > perPage" v-model="page" :per-page="perPage" :total="rows.length" />
         </div>
     </div>
 </template>
@@ -191,7 +197,7 @@ import { pushToast } from '../../utils/toast';
 const loading = ref(false);
 const exporting = ref(false);
 const rows = ref([]);
-const summary = reactive({ students: 0, total: 0, received: 0, ledger_balance: 0, net: 0, zero_balance: 0 });
+const summary = reactive({ students: 0, total: 0, received: 0, ledger_balance: 0, net: 0, month_collection: 0, zero_balance: 0 });
 
 const branches = ref([]);
 const classes = ref([]);
@@ -220,10 +226,46 @@ const filters = reactive({
 });
 const exportSort = ref('class_section_roll_adm');
 
-const perPage = 25;
+const perPageOptions = [10, 25, 50, 100, 'all'];
+const perPageSelection = ref(25);
+const perPage = computed(() => (perPageSelection.value === 'all' ? Math.max(rows.value.length, 1) : perPageSelection.value));
 const page = ref(1);
+const sortKey = ref(null);
+const sortDir = ref('asc');
 const filterSections = computed(() => sections.value.filter((s) => s.school_class_id === filters.school_class_id));
-const pagedRows = computed(() => rows.value.slice((page.value - 1) * perPage, page.value * perPage));
+const sortedRows = computed(() => {
+    if (!sortKey.value) return rows.value;
+    return [...rows.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+const pagedRows = computed(() => {
+    if (perPageSelection.value === 'all') return sortedRows.value;
+    const start = (page.value - 1) * perPage.value;
+    return sortedRows.value.slice(start, start + perPage.value);
+});
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+    page.value = 1;
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 const allHeadsSelected = computed(() => feeHeads.value.length > 0 && filters.fee_head_ids.length === feeHeads.value.length);
 const allMonthsSelected = computed(() => months.value.length > 0 && filters.months.length === months.value.length);
 
@@ -326,6 +368,7 @@ watch(
     () => scheduleReload(0),
 );
 watch(() => filters.search, () => scheduleReload(300));
+watch(perPageSelection, () => { page.value = 1; });
 
 onMounted(async () => {
     const lookups = await fetchAcademicsLookups();

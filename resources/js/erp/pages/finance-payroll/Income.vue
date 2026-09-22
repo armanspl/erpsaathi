@@ -20,11 +20,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Voucher</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Source</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Mode</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('voucher_no')">Voucher {{ sortArrow('voucher_no') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('source')">Source {{ sortArrow('source') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('amount')">Amount {{ sortArrow('amount') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('payment_mode')">Mode {{ sortArrow('payment_mode') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('date')">Date {{ sortArrow('date') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -120,6 +120,21 @@ const drawerOpen = ref(false);
 const editing = ref(null);
 
 const form = reactive({ source: '', amount: 0, date: new Date().toISOString().slice(0, 10), payment_mode: 'Cash', bank_account_id: null, remarks: '' });
+const sortKey = ref('date');
+const sortDir = ref('desc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 const totalAmount = computed(() => incomes.value.reduce((sum, i) => sum + Number(i.amount), 0));
 const thisMonthAmount = computed(() => {
@@ -127,13 +142,24 @@ const thisMonthAmount = computed(() => {
     return incomes.value.filter((i) => i.date.startsWith(ym)).reduce((sum, i) => sum + Number(i.amount), 0);
 });
 
-const filteredIncomes = computed(() =>
-    incomes.value.filter((i) => {
+const filteredIncomes = computed(() => {
+    const rows = incomes.value.filter((i) => {
         if (filterValues.search && !`${i.source} ${i.voucher_no}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.status && i.payment_mode !== filterValues.status) return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

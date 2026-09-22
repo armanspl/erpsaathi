@@ -28,17 +28,17 @@
                 <table class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Employee</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Net Salary</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Employee {{ sortArrow('name') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('employee_type')">Type {{ sortArrow('employee_type') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('net_salary')">Net Salary {{ sortArrow('net_salary') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-if="!report.rows.length">
                             <td colspan="4" class="px-4 py-10 text-center text-slate-400">No salary slips generated for this period.</td>
                         </tr>
-                        <tr v-for="r in report.rows" :key="`${r.employee_type}-${r.employee_id}`" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="r in sortedRows" :key="`${r.employee_type}-${r.employee_id}`" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400 capitalize">{{ r.employee_type }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">₹{{ Number(r.net_salary).toLocaleString('en-IN') }}</td>
@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import client from '../../api/client';
@@ -62,6 +62,36 @@ import { statusBadgeClass } from '../../utils/colors';
 
 const period = ref(new Date().toISOString().slice(0, 7));
 const report = ref(null);
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    const rows = report.value?.rows || [];
+    return [...rows].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     const { data } = await client.get('/finance-payroll/salary-reports', { params: { period: period.value } });

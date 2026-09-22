@@ -26,13 +26,19 @@
                 <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div class="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">Payment Mode Breakdown</div>
                     <table class="w-full text-left text-sm">
+                        <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
+                            <tr>
+                                <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('mode')">Mode {{ sortArrow('mode') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('amount')">Amount {{ sortArrow('amount') }}</th>
+                            </tr>
+                        </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-if="!Object.keys(report.payment_mode_breakdown).length">
+                            <tr v-if="!modeRows.length">
                                 <td class="px-4 py-6 text-center text-slate-400">No payments recorded yet.</td>
                             </tr>
-                            <tr v-for="(amount, mode) in report.payment_mode_breakdown" :key="mode" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ mode }}</td>
-                                <td class="px-4 py-3 text-right text-slate-500 dark:text-slate-400">₹{{ Number(amount).toLocaleString('en-IN') }}</td>
+                            <tr v-for="row in modeRows" :key="row.mode" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ row.mode }}</td>
+                                <td class="px-4 py-3 text-right text-slate-500 dark:text-slate-400">₹{{ Number(row.amount).toLocaleString('en-IN') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -43,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import client from '../../api/client';
@@ -57,4 +63,33 @@ async function load() {
 }
 load();
 watch(() => erpStore.currentSession, load);
+
+const sortKey = ref('mode');
+const sortDir = ref('asc');
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+const modeRows = computed(() => {
+    const rows = Object.entries(report.value?.payment_mode_breakdown || {}).map(([mode, amount]) => ({ mode, amount }));
+    return rows.sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 </script>

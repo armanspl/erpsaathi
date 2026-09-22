@@ -28,12 +28,12 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt No</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Mode</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Collected By</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('receipt_no')">Receipt No {{ sortArrow('receipt_no') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('student_name')">Student {{ sortArrow('student_name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('amount')">Amount {{ sortArrow('amount') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('payment_mode')">Mode {{ sortArrow('payment_mode') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('payment_date')">Date {{ sortArrow('payment_date') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('collected_by_name')">Collected By {{ sortArrow('collected_by_name') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -77,6 +77,8 @@ const pageTitle = computed(() => ({
 const loading = ref(true);
 const payments = ref([]);
 const filterValues = reactive({ search: '', from: '', to: '', mode: '' });
+const sortKey = ref('payment_date');
+const sortDir = ref('asc');
 
 function applyDefaults() {
     const today = new Date().toISOString().slice(0, 10);
@@ -103,16 +105,53 @@ async function load() {
 load();
 watch(() => erpStore.currentSession, load);
 
-const filteredPayments = computed(() =>
-    payments.value.filter((p) => {
+function sortValue(row, key) {
+    switch (key) {
+        case 'student_name':
+            return row.student?.name || '';
+        case 'collected_by_name':
+            return row.collected_by?.name || '';
+        case 'amount':
+            return Number(row.amount) || 0;
+        default:
+            return row[key];
+    }
+}
+
+const filteredPayments = computed(() => {
+    const rows = payments.value.filter((p) => {
         if (filterValues.search && !`${p.student.name} ${p.student.admission_no} ${p.receipt_no}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.from && p.payment_date < filterValues.from) return false;
         if (filterValues.to && p.payment_date > filterValues.to) return false;
         if (filterValues.mode && p.payment_mode !== filterValues.mode) return false;
         if (route.path === '/fee-management/online-payments' && p.payment_mode === 'Cash') return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        let av = sortValue(a, sortKey.value);
+        let bv = sortValue(b, sortKey.value);
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
 
 const totalCollected = computed(() => filteredPayments.value.reduce((sum, p) => sum + (Number(p.amount) - Number(p.refunded_amount)), 0));
 const averageReceipt = computed(() => (filteredPayments.value.length ? Math.round(totalCollected.value / filteredPayments.value.length) : 0));

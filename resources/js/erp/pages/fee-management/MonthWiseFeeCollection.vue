@@ -114,10 +114,10 @@
                 <table class="w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Month</th>
-                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Students</th>
-                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Receipts</th>
-                            <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Total Collected</th>
+                            <th class="cursor-pointer px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('payment_month')">Payment Month {{ sortArrow('payment_month') }}</th>
+                            <th class="cursor-pointer px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('students')">Students {{ sortArrow('students') }}</th>
+                            <th class="cursor-pointer px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('receipts')">Receipts {{ sortArrow('receipts') }}</th>
+                            <th class="cursor-pointer px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('total_collected')">Total Collected {{ sortArrow('total_collected') }}</th>
                             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"></th>
                         </tr>
                     </thead>
@@ -126,7 +126,7 @@
                             <td colspan="5" class="px-4 py-8 text-center text-slate-400">No collections match your filters.</td>
                         </tr>
                         <tr
-                            v-for="s in summaries"
+                            v-for="s in sortedSummaries"
                             :key="s.payment_month"
                             class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40"
                             :class="expandedMonth === s.payment_month && 'bg-primary-50/40 dark:bg-primary-500/5'"
@@ -157,17 +157,17 @@
                 <table class="w-full min-w-[960px] text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Receipt</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Adm No</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Section</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Date</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Month</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Fee Month</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Fee Head</th>
-                            <th class="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</th>
-                            <th class="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Mode</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('receipt_no')">Receipt {{ sortArrow2('receipt_no') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('admission_no')">Adm No {{ sortArrow2('admission_no') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('student_name')">Student {{ sortArrow2('student_name') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('school_class')">Class {{ sortArrow2('school_class') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('section')">Section {{ sortArrow2('section') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('payment_date')">Payment Date {{ sortArrow2('payment_date') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('payment_month')">Payment Month {{ sortArrow2('payment_month') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('fee_month')">Fee Month {{ sortArrow2('fee_month') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('fee_head_name')">Fee Head {{ sortArrow2('fee_head_name') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('amount')">Amount {{ sortArrow2('amount') }}</th>
+                            <th class="cursor-pointer px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort2('payment_mode')">Mode {{ sortArrow2('payment_mode') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -197,11 +197,20 @@
                     </tbody>
                 </table>
             </div>
-            <div v-if="visibleRows.length > perPage" class="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800">
+            <div v-if="visibleRows.length" class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800">
                 <span>Showing {{ (page - 1) * perPage + 1 }}–{{ Math.min(page * perPage, visibleRows.length) }} of {{ visibleRows.length }}</span>
-                <div class="flex gap-2">
-                    <button type="button" class="btn-outline !py-1 !text-xs" :disabled="page <= 1" @click="page--">Prev</button>
-                    <button type="button" class="btn-outline !py-1 !text-xs" :disabled="page * perPage >= visibleRows.length" @click="page++">Next</button>
+                <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-2">
+                        Show
+                        <select v-model="perPageSelection" class="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800">
+                            <option v-for="opt in perPageOptions" :key="opt" :value="opt">{{ opt === 'all' ? 'All' : opt }}</option>
+                        </select>
+                        per page
+                    </label>
+                    <div v-if="perPageSelection !== 'all'" class="flex gap-2">
+                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="page <= 1" @click="page--">Prev</button>
+                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="page * perPage >= visibleRows.length" @click="page++">Next</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -226,7 +235,12 @@ const summaries = ref([]);
 const totals = reactive({ students: 0, receipts: 0, line_items: 0, total_collected: 0 });
 const expandedMonth = ref(null);
 const page = ref(1);
-const perPage = 40;
+const perPageOptions = [10, 25, 50, 100, 'all'];
+const perPageSelection = ref(50);
+const sortKey = ref(null);
+const sortDir = ref('asc');
+const sortKey2 = ref(null);
+const sortDir2 = ref('asc');
 
 const sessions = computed(() => (erpStore.sessionRecords || []).filter((s) => s?.id && s?.name));
 
@@ -247,7 +261,56 @@ const visibleRows = computed(() => {
     if (!expandedMonth.value) return rows.value;
     return rows.value.filter((r) => r.payment_month === expandedMonth.value);
 });
-const pagedRows = computed(() => visibleRows.value.slice((page.value - 1) * perPage, page.value * perPage));
+
+function genericSort(list, key, dir) {
+    if (!key) return list;
+    return [...list].sort((a, b) => {
+        let av = a[key];
+        let bv = b[key];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return dir === 'asc' ? -1 : 1;
+        if (av > bv) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+const sortedSummaries = computed(() => genericSort(summaries.value, sortKey.value, sortDir.value));
+
+function toggleSort2(key) {
+    if (sortKey2.value === key) {
+        sortDir2.value = sortDir2.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey2.value = key;
+        sortDir2.value = 'asc';
+    }
+    page.value = 1;
+}
+function sortArrow2(key) {
+    if (sortKey2.value !== key) return '';
+    return sortDir2.value === 'asc' ? '↑' : '↓';
+}
+const sortedVisibleRows = computed(() => genericSort(visibleRows.value, sortKey2.value, sortDir2.value));
+const perPage = computed(() => (perPageSelection.value === 'all' ? Math.max(sortedVisibleRows.value.length, 1) : perPageSelection.value));
+const pagedRows = computed(() => {
+    if (perPageSelection.value === 'all') return sortedVisibleRows.value;
+    const start = (page.value - 1) * perPage.value;
+    return sortedVisibleRows.value.slice(start, start + perPage.value);
+});
 
 function money(n) {
     return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -371,6 +434,7 @@ watch(
     () => scheduleReload(0),
 );
 watch(() => filters.search, () => scheduleReload(300));
+watch(perPageSelection, () => { page.value = 1; });
 
 onMounted(async () => {
     const lookups = await fetchAcademicsLookups();

@@ -147,12 +147,14 @@
             <div class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                 <p class="text-xs text-slate-400">Showing {{ showingFrom }}–{{ showingTo }} of {{ filtered.length }}</p>
                 <div class="flex flex-wrap items-center gap-3">
-                    <select v-model.number="perPage" class="form-input !w-auto !py-1.5 !text-xs">
+                    <select v-model="perPage" class="form-input !w-auto !py-1.5 !text-xs">
                         <option :value="10">10 / page</option>
                         <option :value="20">20 / page</option>
                         <option :value="50">50 / page</option>
+                        <option :value="100">100 / page</option>
+                        <option value="all">All</option>
                     </select>
-                    <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <div v-if="perPage !== 'all'" class="flex items-center gap-2 text-xs text-slate-500">
                         <button type="button" class="rounded-md border border-slate-200 p-1 disabled:opacity-40 dark:border-slate-700" :disabled="page <= 1" @click="page -= 1">
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                         </button>
@@ -372,13 +374,14 @@ const filtered = computed(() => {
     });
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / perPage.value)));
+const totalPages = computed(() => (perPage.value === 'all' ? 1 : Math.max(1, Math.ceil(filtered.value.length / perPage.value))));
 const paged = computed(() => {
+    if (perPage.value === 'all') return filtered.value;
     const start = (page.value - 1) * perPage.value;
     return filtered.value.slice(start, start + perPage.value);
 });
-const showingFrom = computed(() => (filtered.value.length ? (page.value - 1) * perPage.value + 1 : 0));
-const showingTo = computed(() => Math.min(page.value * perPage.value, filtered.value.length));
+const showingFrom = computed(() => (filtered.value.length ? (perPage.value === 'all' ? 1 : (page.value - 1) * perPage.value + 1) : 0));
+const showingTo = computed(() => (perPage.value === 'all' ? filtered.value.length : Math.min(page.value * perPage.value, filtered.value.length)));
 
 function toggleSort(key) {
     if (sortKey.value === key) {

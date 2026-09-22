@@ -17,10 +17,10 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Grade</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Min %</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Max %</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('grade')">Grade {{ sortArrow('grade') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('min_percentage')">Min % {{ sortArrow('min_percentage') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('max_percentage')">Max % {{ sortArrow('max_percentage') }}</th>
+                        <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('remarks')">Remarks {{ sortArrow('remarks') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -31,7 +31,7 @@
                     <tr v-else-if="!grades.length">
                         <td colspan="5" class="px-4 py-10 text-center text-slate-400">No grade bands defined yet.</td>
                     </tr>
-                    <tr v-for="g in grades" :key="g.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="g in sortedGrades" :key="g.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{{ g.grade }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ g.min_percentage }}%</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ g.max_percentage }}%</td>
@@ -89,6 +89,35 @@ const drawerOpen = ref(false);
 const editing = ref(null);
 
 const form = reactive({ grade: '', min_percentage: null, max_percentage: null, remarks: '' });
+const sortKey = ref('min_percentage');
+const sortDir = ref('desc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedGrades = computed(() => {
+    return [...grades.value].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 const coverage = computed(() => {
     if (!grades.value.length) return 0;

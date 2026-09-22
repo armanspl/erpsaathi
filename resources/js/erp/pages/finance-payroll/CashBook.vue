@@ -29,11 +29,11 @@
                 <table class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Particulars</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">In</th>
-                            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Out</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('date')">Date {{ sortArrow('date') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('particulars')">Particulars {{ sortArrow('particulars') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('type')">Type {{ sortArrow('type') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('in')">In {{ sortArrow('in') }}</th>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('out')">Out {{ sortArrow('out') }}</th>
                             <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Balance</th>
                         </tr>
                     </thead>
@@ -41,7 +41,7 @@
                         <tr v-if="!book.rows.length">
                             <td colspan="6" class="px-4 py-10 text-center text-slate-400">No cash transactions in this range.</td>
                         </tr>
-                        <tr v-for="(r, idx) in book.rows" :key="idx" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-for="(r, idx) in sortedRows" :key="idx" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ formatDate(r.date) }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.particulars }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.type }}</td>
@@ -57,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import client from '../../api/client';
@@ -65,6 +65,36 @@ import client from '../../api/client';
 const from = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
 const to = ref(new Date().toISOString().slice(0, 10));
 const book = ref(null);
+const sortKey = ref('date');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRows = computed(() => {
+    const rows = book.value?.rows || [];
+    return [...rows].sort((a, b) => {
+        let av = a[sortKey.value];
+        let bv = b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     const { data } = await client.get('/finance-payroll/cash-book', { params: { from: from.value, to: to.value } });

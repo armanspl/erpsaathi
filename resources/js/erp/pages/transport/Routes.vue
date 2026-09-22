@@ -18,11 +18,11 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Route</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">From → To</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Vehicle</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Stops</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Route {{ sortArrow('name') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('start_point')">From → To {{ sortArrow('start_point') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('vehicleNo')">Vehicle {{ sortArrow('vehicleNo') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('stops_count')">Stops {{ sortArrow('stops_count') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -33,7 +33,7 @@
                     <tr v-else-if="!routes.length">
                         <td colspan="6" class="px-4 py-10 text-center text-slate-400">No routes added yet.</td>
                     </tr>
-                    <tr v-for="r in routes" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <tr v-for="r in sortedRoutes" :key="r.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.start_point }} → {{ r.end_point }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.vehicle?.vehicle_no || '—' }}</td>
@@ -110,6 +110,36 @@ const drawerOpen = ref(false);
 const editing = ref(null);
 
 const form = reactive({ name: '', start_point: '', end_point: '', vehicle_id: null, status: 'Active' });
+
+const sortKey = ref('name');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedRoutes = computed(() => {
+    return [...routes.value].sort((a, b) => {
+        let av = sortKey.value === 'vehicleNo' ? a.vehicle?.vehicle_no : a[sortKey.value];
+        let bv = sortKey.value === 'vehicleNo' ? b.vehicle?.vehicle_no : b[sortKey.value];
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

@@ -24,12 +24,12 @@
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Section</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Teacher</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('assigned_date')">Date {{ sortArrow('assigned_date') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('class')">Class {{ sortArrow('class') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('section')">Section {{ sortArrow('section') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('teacher')">Teacher {{ sortArrow('teacher') }}</th>
                         <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Subjects</th>
-                        <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Description</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('description')">Description {{ sortArrow('description') }}</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Action</th>
                     </tr>
                 </thead>
@@ -270,8 +270,24 @@ const subjectsCovered = computed(() => {
     return ids.size;
 });
 
-const filteredHomeworks = computed(() =>
-    homeworks.value.filter((h) => {
+const sortKey = ref('assigned_date');
+const sortDir = ref('asc');
+
+function toggleSort(key) {
+    if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = key;
+        sortDir.value = 'asc';
+    }
+}
+function sortArrow(key) {
+    if (sortKey.value !== key) return '';
+    return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const filteredHomeworks = computed(() => {
+    const rows = homeworks.value.filter((h) => {
         if (filterValues.search) {
             const q = filterValues.search.toLowerCase();
             const hay = [
@@ -287,8 +303,32 @@ const filteredHomeworks = computed(() =>
         }
         if (filterValues.class && h.school_class?.name !== filterValues.class) return false;
         return true;
-    }),
-);
+    });
+    return [...rows].sort((a, b) => {
+        let av;
+        let bv;
+        if (sortKey.value === 'class') {
+            av = a.school_class?.name;
+            bv = b.school_class?.name;
+        } else if (sortKey.value === 'section') {
+            av = a.section?.name;
+            bv = b.section?.name;
+        } else if (sortKey.value === 'teacher') {
+            av = a.teacher?.name;
+            bv = b.teacher?.name;
+        } else {
+            av = a[sortKey.value];
+            bv = b[sortKey.value];
+        }
+        av = av ?? '';
+        bv = bv ?? '';
+        if (typeof av === 'string') av = av.toLowerCase();
+        if (typeof bv === 'string') bv = bv.toLowerCase();
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
 
 async function load() {
     loading.value = true;

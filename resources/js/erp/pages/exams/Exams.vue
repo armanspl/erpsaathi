@@ -131,12 +131,14 @@
                 <div class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                     <p class="text-xs text-slate-400">Showing {{ examsShowingFrom }}“{{ examsShowingTo }} of {{ filteredExams.length }}</p>
                     <div class="flex flex-wrap items-center gap-3">
-                        <select v-model.number="examsPerPage" class="form-input !w-auto !py-1.5 !text-xs">
+                        <select v-model="examsPerPage" class="form-input !w-auto !py-1.5 !text-xs">
                             <option :value="10">10 / page</option>
                             <option :value="20">20 / page</option>
                             <option :value="50">50 / page</option>
+                            <option :value="100">100 / page</option>
+                            <option value="all">All</option>
                         </select>
-                        <div class="flex items-center gap-2 text-xs text-slate-500">
+                        <div v-if="examsPerPage !== 'all'" class="flex items-center gap-2 text-xs text-slate-500">
                             <button type="button" class="rounded-md border border-slate-200 p-1 disabled:opacity-40 dark:border-slate-700" :disabled="examsPage <= 1" @click="examsPage -= 1">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                             </button>
@@ -219,12 +221,14 @@
                 <div class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                     <p class="text-xs text-slate-400">Showing {{ gradesShowingFrom }}“{{ gradesShowingTo }} of {{ filteredGrades.length }}</p>
                     <div class="flex flex-wrap items-center gap-3">
-                        <select v-model.number="gradesPerPage" class="form-input !w-auto !py-1.5 !text-xs">
+                        <select v-model="gradesPerPage" class="form-input !w-auto !py-1.5 !text-xs">
                             <option :value="10">10 / page</option>
                             <option :value="20">20 / page</option>
                             <option :value="50">50 / page</option>
+                            <option :value="100">100 / page</option>
+                            <option value="all">All</option>
                         </select>
-                        <div class="flex items-center gap-2 text-xs text-slate-500">
+                        <div v-if="gradesPerPage !== 'all'" class="flex items-center gap-2 text-xs text-slate-500">
                             <button type="button" class="rounded-md border border-slate-200 p-1 disabled:opacity-40 dark:border-slate-700" :disabled="gradesPage <= 1" @click="gradesPage -= 1">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                             </button>
@@ -429,13 +433,14 @@ const filteredExams = computed(() => {
         return 0;
     });
 });
-const examsTotalPages = computed(() => Math.max(1, Math.ceil(filteredExams.value.length / examsPerPage.value)));
+const examsTotalPages = computed(() => (examsPerPage.value === 'all' ? 1 : Math.max(1, Math.ceil(filteredExams.value.length / examsPerPage.value))));
 const pagedExams = computed(() => {
+    if (examsPerPage.value === 'all') return filteredExams.value;
     const start = (examsPage.value - 1) * examsPerPage.value;
     return filteredExams.value.slice(start, start + examsPerPage.value);
 });
-const examsShowingFrom = computed(() => (filteredExams.value.length ? (examsPage.value - 1) * examsPerPage.value + 1 : 0));
-const examsShowingTo = computed(() => Math.min(examsPage.value * examsPerPage.value, filteredExams.value.length));
+const examsShowingFrom = computed(() => (filteredExams.value.length ? (examsPerPage.value === 'all' ? 1 : (examsPage.value - 1) * examsPerPage.value + 1) : 0));
+const examsShowingTo = computed(() => (examsPerPage.value === 'all' ? filteredExams.value.length : Math.min(examsPage.value * examsPerPage.value, filteredExams.value.length)));
 const allSelected = computed(() => pagedExams.value.length > 0 && pagedExams.value.every((e) => selectedExamIds.value.has(e.id)));
 
 function toggleSort(key) {
@@ -576,13 +581,14 @@ const filteredGrades = computed(() => {
         return 0;
     });
 });
-const gradesTotalPages = computed(() => Math.max(1, Math.ceil(filteredGrades.value.length / gradesPerPage.value)));
+const gradesTotalPages = computed(() => (gradesPerPage.value === 'all' ? 1 : Math.max(1, Math.ceil(filteredGrades.value.length / gradesPerPage.value))));
 const pagedGrades = computed(() => {
+    if (gradesPerPage.value === 'all') return filteredGrades.value;
     const start = (gradesPage.value - 1) * gradesPerPage.value;
     return filteredGrades.value.slice(start, start + gradesPerPage.value);
 });
-const gradesShowingFrom = computed(() => (filteredGrades.value.length ? (gradesPage.value - 1) * gradesPerPage.value + 1 : 0));
-const gradesShowingTo = computed(() => Math.min(gradesPage.value * gradesPerPage.value, filteredGrades.value.length));
+const gradesShowingFrom = computed(() => (filteredGrades.value.length ? (gradesPerPage.value === 'all' ? 1 : (gradesPage.value - 1) * gradesPerPage.value + 1) : 0));
+const gradesShowingTo = computed(() => (gradesPerPage.value === 'all' ? filteredGrades.value.length : Math.min(gradesPage.value * gradesPerPage.value, filteredGrades.value.length)));
 const allGradesSelected = computed(() => pagedGrades.value.length > 0 && pagedGrades.value.every((g) => selectedGradeIds.value.has(g.id)));
 
 function toggleGradeSort(key) {
