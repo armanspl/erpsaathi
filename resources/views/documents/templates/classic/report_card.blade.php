@@ -42,6 +42,7 @@
     table.marks.annual td.subj { font-size: 7.5pt; }
     table.marks td.num { text-align: center; font-size: 9pt; }
     table.marks td.grade { text-align: center; font-weight: bold; background: {{ $accent_light }}; }
+    table.marks td.grade .grade-val { display: inline-block; width: 16pt; text-align: left; }
     table.marks td.empty { text-align: center; color: #666; }
     table.marks-summary { width: 100%; border-collapse: collapse; margin: 0 0 3pt; }
     table.marks-summary th, table.marks-summary td { border: 0.7pt solid #111; padding: 1.5pt 4pt; font-size: 8pt; text-align: center; }

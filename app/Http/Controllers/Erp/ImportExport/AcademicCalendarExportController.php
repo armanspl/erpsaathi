@@ -50,6 +50,7 @@ class AcademicCalendarExportController extends Controller
         ]);
 
         return response()->streamDownload(function () use ($spreadsheet) {
+            \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
             $writer = new Xlsx($spreadsheet);
             $writer->save('php://output');
             $spreadsheet->disconnectWorksheets();

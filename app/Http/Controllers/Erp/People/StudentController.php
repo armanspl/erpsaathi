@@ -9,6 +9,7 @@ use App\Models\AcademicSession;
 use App\Models\BookExpense;
 use App\Models\BookIssue;
 use App\Models\Certificate;
+use App\Models\CertificateType;
 use App\Models\FeePayment;
 use App\Models\IdCard;
 use App\Models\LibraryMember;
@@ -20,6 +21,7 @@ use App\Models\StudentDocument;
 use App\Models\StudentSessionHistory;
 use App\Models\StudentUdiseDetail;
 use App\Services\DefaultSchoolBranchService;
+use App\Services\TcFeeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -334,13 +336,39 @@ class StudentController extends Controller
 
     private function loadRelations(Student $student): Student
     {
-        return $student->load([
+        $student->load([
             'schoolClass:id,name', 'section:id,name,school_class_id', 'branch:id,name',
             'father:id,name,phone,email,occupation,qualification,annual_income,aadhaar_no,pan_no',
             'mother:id,name,phone,email,occupation,qualification,annual_income,aadhaar_no,pan_no',
             'guardian:id,name,phone,email,occupation,relationship',
             'additionalDetail', 'udiseDetail', 'latestSessionHistory', 'documents',
         ]);
+
+        $student->setAttribute('tc_certificate', $this->tcCertificateInfo($student));
+
+        return $student;
+    }
+
+    /** The student's Transfer Certificate, if one has ever been issued — powers the TC info shown on People > Students > view. */
+    private function tcCertificateInfo(Student $student): ?array
+    {
+        $tcType = CertificateType::query()->get()->first(fn (CertificateType $t) => app(TcFeeService::class)->isTransferCertificate($t));
+        if (! $tcType) {
+            return null;
+        }
+
+        $certificate = Certificate::where('certificate_type_id', $tcType->id)->where('student_id', $student->id)->first();
+        if (! $certificate) {
+            return null;
+        }
+
+        return [
+            'certificate_no' => $certificate->certificate_no,
+            'issue_date' => optional($certificate->issue_date)->format('Y-m-d'),
+            'downloaded_at' => optional($certificate->downloaded_at)->format('Y-m-d H:i'),
+            'download_count' => (int) $certificate->download_count,
+            'downloaded' => (bool) $certificate->downloaded_at,
+        ];
     }
 
     private function decodeCustomFieldValues(Request $request): void

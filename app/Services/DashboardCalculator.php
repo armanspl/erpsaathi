@@ -41,7 +41,9 @@ class DashboardCalculator
     private static function computeSummary(?AcademicSession $session, bool $allSessions): array
     {
         $today = now()->toDateString();
-        $students = self::scopedStudents($session, $allSessions)->with('schoolClass:id,name')->get();
+        $students = self::scopedStudents($session, $allSessions)
+            ->with(['schoolClass:id,name', 'udiseDetail:id,student_id,rte_ews_admission'])
+            ->get();
 
         $feeBundle = FeeReportCalculator::summaryWithClassStatus($session, $allSessions, $students);
         $feeReport = $feeBundle['summary'];
@@ -247,7 +249,7 @@ class DashboardCalculator
         return $query->pluck('id');
     }
 
-    /** Category × gender counts nested under each class. */
+    /** Category × gender counts nested under each class, plus an RTE/EWS admission breakout. */
     private static function categoryByClass($students, ?AcademicSession $session, bool $allSessions): array
     {
         return $students->groupBy(fn (Student $s) => self::historicalClassName($s, $session, $allSessions))
@@ -263,15 +265,30 @@ class DashboardCalculator
                     ->values()
                     ->all();
 
+                $rteRows = $classRows->filter(fn (Student $s) => self::isRteAdmission($s));
+                $rteBoys = $rteRows->where('gender', 'Male')->count();
+                $rteGirls = $rteRows->where('gender', 'Female')->count();
+                if ($rteBoys + $rteGirls > 0) {
+                    $categories[] = ['category' => 'RTE', 'boys' => $rteBoys, 'girls' => $rteGirls];
+                }
+
                 return [
                     'class' => $className,
                     'categories' => $categories,
                     'boys' => $classRows->where('gender', 'Male')->count(),
                     'girls' => $classRows->where('gender', 'Female')->count(),
+                    'rte_boys' => $rteBoys,
+                    'rte_girls' => $rteGirls,
                 ];
             })
             ->values()
             ->all();
+    }
+
+    /** UDISE "Admitted/enrolled under RTE/EWS?" flag — free-text (YES/NO/blank), so normalize loosely. */
+    private static function isRteAdmission(Student $s): bool
+    {
+        return strtoupper(trim((string) ($s->udiseDetail->rte_ews_admission ?? ''))) === 'YES';
     }
 
     /** Browsing a past session should show the class the student was in back then, not their current class — the same reasoning People > Students uses its sessionHistories snapshot for. */

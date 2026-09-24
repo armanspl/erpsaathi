@@ -641,14 +641,14 @@ const columns = [
     { key: 'status', label: 'Status', type: 'status' },
 ];
 
-const filters = [
+const filters = computed(() => [
     { key: 'search', label: 'Search', type: 'search' },
-    { key: 'class', label: 'Class', type: 'select', options: ['Nursery', 'LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'] },
-    { key: 'section', label: 'Section', type: 'select', options: ['A', 'B', 'C', 'D'] },
+    { key: 'class', label: 'Class', type: 'select', options: classes.value.map((c) => c.name) },
+    { key: 'section', label: 'Section', type: 'select', options: [...new Set(sections.value.map((s) => s.name))] },
     { key: 'status', label: 'Status', type: 'select', options: ['Active', 'Inactive'] },
     { key: 'gender', label: 'Gender', type: 'select', options: ['Male', 'Female'] },
     { key: 'transport', label: 'Transport', type: 'select', options: ['Yes', 'No'] },
-];
+]);
 
 const loading = ref(true);
 const saving = ref(false);
@@ -735,6 +735,12 @@ const tableRows = computed(() =>
             father: s.father?.name || '—',
             class: snap?.class_name || s.school_class?.name || '—',
             section: snap?.section_name || s.section?.name || '—',
+            // Filtering always matches the student's live class/section, never the free-text
+            // per-session history snapshot above (`class_name`/`section_name`), which was found
+            // to hold inconsistent abbreviations (e.g. "NUR" instead of "Nursery") for many
+            // students — matching against it silently filtered out real, correctly-classed students.
+            classCanonical: s.school_class?.name || '',
+            sectionCanonical: s.section?.name || '',
             mobile: s.mobile || '—',
             status: snap?.status || s.status,
             gender: s.gender,
@@ -840,8 +846,8 @@ const filteredRows = computed(() =>
             const q = filterValues.search.toLowerCase();
             if (!Object.values(row).join(' ').toLowerCase().includes(q)) return false;
         }
-        if (filterValues.class && row.class !== filterValues.class) return false;
-        if (filterValues.section && row.section !== filterValues.section) return false;
+        if (filterValues.class && row.classCanonical !== filterValues.class) return false;
+        if (filterValues.section && row.sectionCanonical !== filterValues.section) return false;
         if (filterValues.status && row.status !== filterValues.status) return false;
         if (filterValues.gender && row.gender !== filterValues.gender) return false;
         if (filterValues.transport && row.transport !== filterValues.transport) return false;

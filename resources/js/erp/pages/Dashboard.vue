@@ -132,6 +132,16 @@
                                     <td class="num is-new">{{ c.new_girls || 0 }}</td>
                                 </tr>
                             </tbody>
+                            <tfoot>
+                                <tr class="dash-table__summary">
+                                    <td class="name">Total</td>
+                                    <td class="num is-boy">{{ classStrengthTotals.boys }}</td>
+                                    <td class="num is-girl">{{ classStrengthTotals.girls }}</td>
+                                    <td class="num total">{{ classStrengthTotals.total }}</td>
+                                    <td class="num is-new">{{ classStrengthTotals.newBoys }}</td>
+                                    <td class="num is-new">{{ classStrengthTotals.newGirls }}</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </DashCard>
@@ -162,27 +172,44 @@
 
             <DashCard title="Category-wise (boys / girls)" to="/people/students">
                 <div v-if="!categoryByClass.length" class="dash-empty center">No category data yet.</div>
-                <div v-else class="dash-cat">
-                    <div v-for="row in categoryByClass" :key="row.class" class="dash-cat__class">
-                        <div class="dash-cat__title">
-                            <span class="name">{{ row.class }}</span>
-                            <span class="hint">{{ row.boys }}B · {{ row.girls }}G</span>
-                        </div>
-                        <div class="dash-cat__chips">
-                            <span
-                                v-for="cat in row.categories"
-                                :key="cat.category"
-                                class="dash-cat__chip"
-                                :style="{ '--cat-hue': categoryHue(cat.category) }"
-                            >
-                                <em>{{ cat.category }}</em>
-                                <strong class="is-boy">{{ cat.boys }}</strong>
-                                <span class="sep">/</span>
-                                <strong class="is-girl">{{ cat.girls }}</strong>
-                            </span>
+                <template v-else>
+                    <div class="dash-cat__summary">
+                        <span class="dash-cat__summary-item">
+                            <em>Total</em>
+                            <strong class="is-boy">{{ categorySummary.boys }}B</strong>
+                            <span class="sep">/</span>
+                            <strong class="is-girl">{{ categorySummary.girls }}G</strong>
+                        </span>
+                        <span v-if="categorySummary.rteBoys + categorySummary.rteGirls > 0" class="dash-cat__summary-item is-rte">
+                            <em>RTE</em>
+                            <strong class="is-boy">{{ categorySummary.rteBoys }}B</strong>
+                            <span class="sep">/</span>
+                            <strong class="is-girl">{{ categorySummary.rteGirls }}G</strong>
+                        </span>
+                    </div>
+                    <div class="dash-cat">
+                        <div v-for="row in categoryByClass" :key="row.class" class="dash-cat__class">
+                            <div class="dash-cat__title">
+                                <span class="name">{{ row.class }}</span>
+                                <span class="hint">{{ row.boys }}B · {{ row.girls }}G</span>
+                            </div>
+                            <div class="dash-cat__chips">
+                                <span
+                                    v-for="cat in row.categories"
+                                    :key="cat.category"
+                                    class="dash-cat__chip"
+                                    :class="{ 'is-rte': cat.category === 'RTE' }"
+                                    :style="{ '--cat-hue': categoryHue(cat.category) }"
+                                >
+                                    <em>{{ cat.category }}</em>
+                                    <strong class="is-boy">{{ cat.boys }}</strong>
+                                    <span class="sep">/</span>
+                                    <strong class="is-girl">{{ cat.girls }}</strong>
+                                </span>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </template>
             </DashCard>
 
             <div class="dash-grid dash-grid--3">
@@ -240,8 +267,23 @@ const todaySummary = ref({
 });
 const todayCashBankTotal = computed(() => Number(todaySummary.value.fee.cash || 0) + Number(todaySummary.value.fee.bank || 0));
 const classStrength = ref([]);
+const classStrengthTotals = computed(() => classStrength.value.reduce((acc, c) => {
+    acc.boys += Number(c.boys || 0);
+    acc.girls += Number(c.girls || 0);
+    acc.newBoys += Number(c.new_boys || 0);
+    acc.newGirls += Number(c.new_girls || 0);
+    acc.total = acc.boys + acc.girls;
+    return acc;
+}, { boys: 0, girls: 0, total: 0, newBoys: 0, newGirls: 0 }));
 const feeCollectionStatus = ref([]);
 const categoryByClass = ref([]);
+const categorySummary = computed(() => categoryByClass.value.reduce((acc, row) => {
+    acc.boys += Number(row.boys || 0);
+    acc.girls += Number(row.girls || 0);
+    acc.rteBoys += Number(row.rte_boys || 0);
+    acc.rteGirls += Number(row.rte_girls || 0);
+    return acc;
+}, { boys: 0, girls: 0, rteBoys: 0, rteGirls: 0 }));
 const recentAdmissions = ref([]);
 const pendingTasks = ref([]);
 const upcomingEvents = ref([]);
@@ -683,13 +725,22 @@ const quickActions = [
     font-size: 0.85rem;
 }
 .dash-table--tight {
+    table-layout: fixed;
     font-size: 0.78rem;
+}
+.dash-table--tight th:first-child,
+.dash-table--tight td:first-child {
+    width: 24%;
+}
+.dash-table--tight th.num,
+.dash-table--tight td.num {
+    width: 15.2%;
 }
 .dash-table th {
     position: sticky;
     top: 0;
     background: var(--erp-surface-solid, #121318);
-    padding: 0 0.2rem 0.55rem 0;
+    padding: 0 0.5rem 0.55rem 0;
     font-size: 0.62rem;
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -698,9 +749,13 @@ const quickActions = [
     text-align: left;
 }
 .dash-table td {
-    padding: 0.45rem 0.2rem 0.45rem 0;
+    padding: 0.45rem 0.5rem 0.45rem 0;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     color: var(--erp-muted, #9a958c);
+}
+.dash-table th:last-child,
+.dash-table td:last-child {
+    padding-right: 0;
 }
 .dash-table .name,
 .dash-fee .name,
@@ -712,59 +767,88 @@ const quickActions = [
 .dash-table .num { text-align: right; }
 .dash-table .total { color: var(--erp-gold-soft, #e2c98a); font-weight: 700; }
 .dash-table .is-new { color: #c6b4f0; }
+.dash-table__summary {
+    position: sticky;
+    bottom: 0;
+}
+.dash-table__summary td {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    border-top: 1px solid var(--erp-border, rgba(198, 167, 94, 0.28));
+    background: var(--erp-surface-solid, #121318);
+    font-weight: 800;
+}
+.dash-table__summary .name { color: var(--erp-gold, #c6a75e); }
+.dash-table__summary .total { color: var(--erp-gold-soft, #e2c98a); }
 
 .dash-fee {
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.65rem;
 }
 .dash-fee__legend {
     display: flex;
-    gap: 0.85rem;
-    margin-bottom: 0.15rem;
+    gap: 1.1rem;
+    margin-bottom: 0.2rem;
 }
 .dash-fee__legend .leg {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    font-size: 0.65rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: var(--erp-muted, #9a958c);
 }
 .dash-fee__legend .leg::before {
     content: '';
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 2px;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 3px;
 }
-.dash-fee__legend .is-collected::before { background: #4ecf8a; }
-.dash-fee__legend .is-due::before { background: #f0a070; }
-.dash-fee__row { min-width: 0; }
+.dash-fee__legend .is-collected::before { background: #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.55); }
+.dash-fee__legend .is-due::before { background: #f43f5e; box-shadow: 0 0 8px rgba(244, 63, 94, 0.55); }
+.dash-fee__row {
+    min-width: 0;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.7rem;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.dash-fee__row:hover {
+    background: rgba(255, 255, 255, 0.065);
+    border-color: rgba(198, 167, 94, 0.3);
+}
 .dash-fee__head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 0.5rem;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.35rem;
     font-size: 0.8rem;
+}
+.dash-fee__head .name {
+    font-size: 0.98rem;
+    font-weight: 700;
 }
 .dash-fee__amts {
     display: inline-flex;
-    gap: 0.55rem;
-    font-size: 0.7rem;
-    font-weight: 700;
+    gap: 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
 }
-.dash-fee__amts .is-collected { color: #7dcea0; }
-.dash-fee__amts .is-due { color: #f0a070; }
+.dash-fee__amts .is-collected { color: #34d399; }
+.dash-fee__amts .is-due { color: #f43f5e; }
 .dash-fee__stack {
     display: flex;
-    height: 0.45rem;
+    height: 0.65rem;
     overflow: hidden;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .dash-fee__stack .seg {
     display: block;
@@ -773,11 +857,46 @@ const quickActions = [
     transition: width 0.35s ease;
 }
 .dash-fee__stack .seg.is-collected {
-    background: linear-gradient(90deg, #2f9e68, #4ecf8a);
+    background: linear-gradient(90deg, #15803d, #34d399);
 }
 .dash-fee__stack .seg.is-due {
-    background: linear-gradient(90deg, #d47a45, #f0a070);
+    background: linear-gradient(90deg, #be123c, #f43f5e);
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.35);
 }
+
+.dash-cat__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--erp-border, rgba(198, 167, 94, 0.2));
+}
+.dash-cat__summary-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 800;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.25));
+}
+.dash-cat__summary-item em {
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    color: var(--erp-gold, #c6a75e);
+    margin-right: 0.1rem;
+}
+.dash-cat__summary-item.is-rte {
+    background: rgba(198, 167, 94, 0.14);
+    border-color: var(--erp-gold, #c6a75e);
+}
+.dash-cat__summary-item.is-rte em { color: var(--erp-gold-soft, #e2c98a); }
 
 .dash-cat {
     display: grid;
@@ -829,6 +948,11 @@ const quickActions = [
     color: hsl(var(--cat-hue, 40) 70% 72%);
 }
 .dash-cat__chip strong { font-weight: 700; }
+.dash-cat__chip.is-rte {
+    background: rgba(198, 167, 94, 0.16);
+    border-color: var(--erp-gold, #c6a75e);
+}
+.dash-cat__chip.is-rte em { color: var(--erp-gold-soft, #e2c98a); }
 
 .dash-feed,
 .dash-activity {

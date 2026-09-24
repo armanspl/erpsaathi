@@ -111,7 +111,7 @@ class ReportCardPdfService
             'remarks' => $row['remarks'] ?? 'GOOD / VERY GOOD / EXCELLENT',
             'co_scholastic_html' => $this->coScholasticHtml($row, $escape),
             'grading_html' => $this->gradingSystemHtml($grades, $escape),
-            'chart_html' => $this->barChartSvg($subjects),
+            'chart_html' => $this->subjectMarksChart($subjects),
             'class_teacher_signature' => "Class Teacher's Sign",
             'principal_signature' => "Principal's Sign",
             'stamp_html' => ! empty($school['school_stamp'])
@@ -158,7 +158,7 @@ class ReportCardPdfService
                     .'<td class="num">Ab</td>'
                     .'<td class="num">'.($max > 0 ? rtrim(rtrim(number_format($max, 2, '.', ''), '0'), '.') : '—').'</td>'
                     .'<td class="num">—</td>'
-                    .'<td class="grade">—</td>'
+                    .$this->gradeCellHtml('—', $escape)
                     .'</tr>';
             }
             $obtNum = $obt === null || $obt === '' ? null : (float) $obt;
@@ -173,7 +173,7 @@ class ReportCardPdfService
                 .'<td class="num">'.$fmt($obtNum).'</td>'
                 .'<td class="num">'.($max > 0 ? $fmt($max) : '—').'</td>'
                 .'<td class="num">'.($pct === null ? '—' : $pct).'</td>'
-                .'<td class="grade">'.$escape($grade).'</td>'
+                .$this->gradeCellHtml($grade, $escape)
                 .'</tr>';
         })->implode('');
 
@@ -256,7 +256,7 @@ class ReportCardPdfService
                 if ($isOverall) {
                     foreach ($group['children'] ?? [] as $child) {
                         if (($child['type'] ?? '') === 'grade') {
-                            $html .= '<td class="grade">'.$escape((string) ($s['grade'] ?? '—')).'</td>';
+                            $html .= $this->gradeCellHtml((string) ($s['grade'] ?? '—'), $escape);
                         } else {
                             // Overall Total is an average of Term-1 + Term-2 totals (see
                             // AnnualReportCalculator::forSession()), so it's shown with a fixed
@@ -282,7 +282,7 @@ class ReportCardPdfService
                         // Single-term reports (Term Result / Half Yearly) put Grade at the end
                         // of the one term block instead of a separate OVERALL group — see
                         // AcademicTermController::toPdfRow(), which appends this column.
-                        $html .= '<td class="grade">'.$escape((string) ($s['grade'] ?? '—')).'</td>';
+                        $html .= $this->gradeCellHtml((string) ($s['grade'] ?? '—'), $escape);
                     } else {
                         $html .= '<td class="num">—</td>';
                     }
@@ -417,6 +417,17 @@ class ReportCardPdfService
         return $present.' / '.$total.' ('.$pct.'%)';
     }
 
+    /**
+     * "A" vs "A+" centered in a plain <td> sit at different horizontal positions — a shorter
+     * string's centered midpoint isn't the same x as a longer string's. Wrapping the value in a
+     * fixed-width inline-block keeps every grade's box the same size, so 1- and 2-character
+     * grades line up at the same position while still reading as centered within the column.
+     */
+    private function gradeCellHtml(string $value, callable $escape): string
+    {
+        return '<td class="grade"><span class="grade-val">'.$escape($value).'</span></td>';
+    }
+
     private function gradingSystemHtml(Collection $grades, callable $escape): string
     {
         if ($grades->isEmpty()) {
@@ -456,7 +467,15 @@ class ReportCardPdfService
         return $html.'</table>';
     }
 
-    private function barChartSvg(Collection $subjects): string
+    /**
+     * Dompdf's SVG <text> support doesn't honour x/y positioning or text-anchor reliably — axis
+     * ticks and subject-abbreviation labels rendered as SVG text all collapsed onto the same spot
+     * and read as one garbled run (e.g. "0255075100EngHINURDMatGK-SciS.Ara"). Plain HTML/CSS
+     * (tables + colored cells) renders correctly in dompdf, so subject marks are shown as a
+     * horizontal bar list instead: full subject name, a proportional bar, and the obtained/max
+     * value — one row per subject, nothing overlapping.
+     */
+    private function subjectMarksChart(Collection $subjects): string
     {
         $items = $subjects->filter(fn ($s) => $s['marks_obtained'] !== null && $s['marks_obtained'] !== '')->values();
         if ($items->isEmpty()) {
@@ -465,52 +484,30 @@ class ReportCardPdfService
 
         $colors = ['#3b82f6', '#ef4444', '#22c55e', '#f97316', '#eab308', '#a855f7', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6'];
         $maxY = max(100, (float) $items->max(fn ($s) => (float) ($s['max_marks'] ?: 100)));
-        $chartW = 220;
-        $chartH = 76;
-        $padL = 22;
-        $padB = 22;
-        $padT = 4;
-        $plotW = $chartW - $padL - 8;
-        $plotH = $chartH - $padB - $padT;
-        $n = $items->count();
-        $gap = 4;
-        $barW = max(8, ($plotW - ($n + 1) * $gap) / $n);
 
-        $bars = '';
-        $labels = '';
-        $legend = '';
+        $numFmt = fn (float $n) => rtrim(rtrim(number_format($n, 1), '0'), '.');
+
+        $rows = '';
         foreach ($items as $i => $s) {
             $obt = (float) $s['marks_obtained'];
-            $h = $maxY > 0 ? ($obt / $maxY) * $plotH : 0;
-            $x = $padL + $gap + $i * ($barW + $gap);
-            $y = $padT + ($plotH - $h);
+            $max = (float) ($s['max_marks'] ?: 100);
+            $pct = $maxY > 0 ? max(0, min(100, ($obt / $maxY) * 100)) : 0;
             $color = $colors[$i % count($colors)];
-            $bars .= '<rect x="'.$x.'" y="'.$y.'" width="'.$barW.'" height="'.max(1, $h).'" fill="'.$color.'" />';
-            $short = mb_substr((string) ($s['subject_name'] ?? ''), 0, 3);
-            $labels .= '<text x="'.($x + $barW / 2).'" y="'.($chartH - 10).'" text-anchor="middle" font-size="6" fill="#333">'.htmlspecialchars($short, ENT_QUOTES).'</text>';
-            $legend .= '<div style="font-size:6.5pt;margin:0 0 1pt"><span style="display:inline-block;width:7pt;height:7pt;background:'.$color.';margin-right:3pt"></span>'
-                .htmlspecialchars((string) ($s['subject_name'] ?? ''), ENT_QUOTES).'</div>';
+            $name = htmlspecialchars((string) ($s['subject_name'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $value = $numFmt($obt).'/'.$numFmt($max);
+
+            $rows .= '<tr>'
+                .'<td style="border:none;padding:1.5pt 4pt 1.5pt 0;font-size:7pt;color:#374151;white-space:nowrap;text-align:right;width:56pt">'.$name.'</td>'
+                .'<td style="border:none;padding:1.5pt 0">'
+                    .'<table style="width:100%;border-collapse:collapse"><tr>'
+                        .'<td style="border:none;padding:0;background:'.$color.';width:'.$pct.'%;height:7pt;font-size:1pt;line-height:7pt">&nbsp;</td>'
+                        .'<td style="border:none;padding:0;width:'.(100 - $pct).'%;font-size:1pt;line-height:7pt">&nbsp;</td>'
+                    .'</tr></table>'
+                .'</td>'
+                .'<td style="border:none;padding:1.5pt 0 1.5pt 4pt;font-size:7pt;color:#111827;font-weight:bold;white-space:nowrap;width:30pt">'.$value.'</td>'
+                .'</tr>';
         }
 
-        $ticks = '';
-        foreach ([0, 25, 50, 75, 100] as $t) {
-            if ($t > $maxY) {
-                continue;
-            }
-            $ty = $padT + $plotH - ($t / $maxY) * $plotH;
-            $ticks .= '<line x1="'.($padL - 2).'" y1="'.$ty.'" x2="'.$padL.'" y2="'.$ty.'" stroke="#666" stroke-width="0.6" />';
-            $ticks .= '<text x="'.($padL - 4).'" y="'.($ty + 2).'" text-anchor="end" font-size="6" fill="#555">'.$t.'</text>';
-        }
-
-        $svg = '<svg width="'.$chartW.'" height="'.$chartH.'" viewBox="0 0 '.$chartW.' '.$chartH.'" xmlns="http://www.w3.org/2000/svg">'
-            .'<line x1="'.$padL.'" y1="'.$padT.'" x2="'.$padL.'" y2="'.($padT + $plotH).'" stroke="#333" stroke-width="0.8" />'
-            .'<line x1="'.$padL.'" y1="'.($padT + $plotH).'" x2="'.($chartW - 6).'" y2="'.($padT + $plotH).'" stroke="#333" stroke-width="0.8" />'
-            .$ticks.$bars.$labels
-            .'</svg>';
-
-        return '<table style="width:100%;border-collapse:collapse"><tr>'
-            .'<td style="border:none;vertical-align:middle">'.$svg.'</td>'
-            .'<td style="border:none;vertical-align:middle;width:78pt;padding-left:4pt">'.$legend.'</td>'
-            .'</tr></table>';
+        return '<table style="width:100%;border-collapse:collapse">'.$rows.'</table>';
     }
 }

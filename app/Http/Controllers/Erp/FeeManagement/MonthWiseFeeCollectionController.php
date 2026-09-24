@@ -141,6 +141,7 @@ class MonthWiseFeeCollectionController extends Controller
         $filename = 'month-wise-fee-collection-'.now()->format('Ymd-His').'.xlsx';
 
         return response()->streamDownload(function () use ($spreadsheet) {
+            \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
             (new Xlsx($spreadsheet))->save('php://output');
             $spreadsheet->disconnectWorksheets();
         }, $filename, [

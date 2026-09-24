@@ -260,6 +260,8 @@ class ExportController extends Controller
         }
 
         $spreadsheet = new Spreadsheet();
+        // Workbook-wide default font — every sheet/cell that doesn't set its own font name inherits this.
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial');
         $sheetIndex = 0;
 
         // Global workbook always opens on a Summary sheet (counts + money totals). It styles
@@ -298,6 +300,7 @@ class ExportController extends Controller
         $spreadsheet->setActiveSheetIndex(0);
 
         return response()->streamDownload(function () use ($spreadsheet) {
+            \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
             (new Xlsx($spreadsheet))->save('php://output');
         }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -787,94 +790,345 @@ class ExportController extends Controller
     }
 
     /**
-     * First sheet of a global workbook: a title banner, a "Sheets Overview" table (one row per
-     * data sheet with its row count + key money total, left-accented in that sheet's own tab
-     * color so it's easy to spot which summary row belongs to which sheet), a bold total-rows
-     * row, and — when the workbook has any money totals at all — a "Key Financial Totals" band
-     * with each figure shown as a large, prominent highlight card rather than buried in a table
-     * column. Fully self-styled (banner/section bands/cards), so it does not go through the
-     * generic single-table styleDataSheet().
+     * First sheet of a global workbook — a colorful "school at a glance" dashboard: a school banner,
+     * headline student cards (total / active / inactive), an active-vs-inactive × boys/girls table,
+     * class-wise and category-wise strength (with RTE) using in-cell bars, staff cards, financial
+     * highlight cards (collected, dues, expenses, salary, net, collection rate), a sheets overview,
+     * and a thank-you footer. Fully self-styled on a 6-column grid (A:F), so it does not go through
+     * the generic single-table styleDataSheet(). Student figures are counted live from the students
+     * table (unique students), not from the Student sheet, which lists one row per session record.
      *
      * @param  \Illuminate\Support\Collection<int, array{0: string, 1: array{0: array<int, string>, 1: array<int, array<int, mixed>>}}>  $sections
      */
     private function writeSummarySheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, $sections, string $sessionLabel): void
     {
         $sheet->setShowGridlines(false);
+        $sheet->getTabColor()->setRGB('4F46E5');
+        $sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_PORTRAIT)->setFitToWidth(1)->setFitToHeight(0);
+        $sheet->getSheetView()->setZoomScale(100);
+        foreach (['A' => 28, 'B' => 14, 'C' => 14, 'D' => 14, 'E' => 14, 'F' => 34] as $col => $width) {
+            $sheet->getColumnDimension($col)->setWidth($width);
+        }
 
-        $bannerHex = '1E293B';
-        $sectionHex = '334155';
-        $moneyBandHex = '047857';
-        $borderHex = 'E2E8F0';
-
+        $solid = fn (string $hex) => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $hex]];
         $row = 1;
 
-        // Every row below — including the banner/section bands and blank spacers — gets this
-        // same thin border, applied across the full A:D range (not just cell A), so a merged
-        // band's border isn't left set on only its first cell and missing on the rest.
-        $bandBorder = ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]];
+        $safe = function (callable $fn, $default = 0) {
+            try {
+                return $fn();
+            } catch (\Throwable) {
+                return $default;
+            }
+        };
 
-        // --- Title banner ---
-        $sheet->mergeCells("A{$row}:D{$row}");
-        $sheet->setCellValue("A{$row}", 'GLOBAL WORKBOOK — SUMMARY');
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-            'font' => ['bold' => true, 'size' => 15, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $bannerHex]],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
+        // ---------- Data ----------
+        $school = $safe(fn () => \App\Models\SchoolSetting::query()->first()?->school_name, null) ?: 'School';
+
+        $byStatusGender = $safe(fn () => Student::query()
+            ->selectRaw('status, gender, COUNT(*) as c')->groupBy('status', 'gender')->get(), collect());
+        $count = fn (string $status, ?string $gender) => (int) $byStatusGender
+            ->filter(fn ($r) => strcasecmp((string) $r->status, $status) === 0 && ($gender === null || strcasecmp((string) $r->gender, $gender) === 0))
+            ->sum('c');
+        $activeBoys = $count('Active', 'Male');
+        $activeGirls = $count('Active', 'Female');
+        $activeAll = $count('Active', null);
+        $inactiveBoys = $count('Inactive', 'Male');
+        $inactiveGirls = $count('Inactive', 'Female');
+        $inactiveAll = $count('Inactive', null);
+        $totalStudents = (int) $byStatusGender->sum('c');
+        $totalBoys = $activeBoys + $inactiveBoys;
+        $totalGirls = $activeGirls + $inactiveGirls;
+
+        $activeStudents = $safe(fn () => Student::query()->where('status', 'Active')
+            ->get(['id', 'school_class_id', 'gender', 'category']), collect());
+
+        $classNames = $safe(fn () => \App\Models\SchoolClass::query()->orderBy('sort_order')->orderBy('id')->pluck('name', 'id'), collect());
+        $classRows = [];
+        foreach ($classNames as $id => $name) {
+            $rows = $activeStudents->where('school_class_id', $id);
+            if ($rows->isEmpty()) {
+                continue;
+            }
+            $classRows[] = [$name, $rows->where('gender', 'Male')->count(), $rows->where('gender', 'Female')->count(), $rows->count()];
+        }
+        $unassigned = $activeStudents->filter(fn ($s) => ! $classNames->has($s->school_class_id));
+        if ($unassigned->isNotEmpty()) {
+            $classRows[] = ['Unassigned', $unassigned->where('gender', 'Male')->count(), $unassigned->where('gender', 'Female')->count(), $unassigned->count()];
+        }
+
+        $categoryRows = [];
+        foreach ($activeStudents->groupBy(fn ($s) => strtoupper(trim((string) $s->category)) ?: 'UNASSIGNED')->sortKeys() as $cat => $rows) {
+            $categoryRows[] = [$cat, $rows->where('gender', 'Male')->count(), $rows->where('gender', 'Female')->count(), $rows->count()];
+        }
+        $rteRows = $safe(fn () => Student::query()->where('status', 'Active')
+            ->whereHas('udiseDetail', fn ($q) => $q->whereRaw("UPPER(TRIM(rte_ews_admission)) = 'YES'"))
+            ->get(['id', 'gender']), collect());
+        $categorySubsetRows = [];
+        if ($rteRows->isNotEmpty()) {
+            $categorySubsetRows[] = ['→ RTE / EWS (included above)', $rteRows->where('gender', 'Male')->count(), $rteRows->where('gender', 'Female')->count(), $rteRows->count()];
+        }
+
+        $teachers = $safe(fn () => \App\Models\Teacher::query()->count());
+        $staff = $safe(fn () => \App\Models\Staff::query()->count());
+        $drivers = $safe(fn () => \App\Models\Driver::query()->count());
+
+        $money = [];
+        $duesTotal = null;
+        foreach ($sections as [$name, $secData]) {
+            [$header, $rows] = $secData;
+            [$label, $value] = $this->sectionMoneyTotal($name, $header, $rows);
+            if ($value !== null) {
+                $money[$name] = $value;
+            }
+            if ($name === 'stud-rec-sum' && ($i = array_search('DUES', $header, true)) !== false) {
+                // Only students who actually owe — negative balances (advances/overpayments) must not cancel real dues.
+                $duesTotal = round(array_sum(array_map(fn ($r) => max(0.0, (float) ($r[$i] ?? 0)), $rows)), 2);
+            }
+        }
+        $collected = $money['fee'] ?? null;
+        $expenses = $money['expense'] ?? null;
+        $salary = $money['salary'] ?? null;
+
+        // ---------- Layout helpers ----------
+        $spacer = function (int $height = 10) use (&$row, $sheet) {
+            $sheet->getRowDimension($row)->setRowHeight($height);
+            $row++;
+        };
+
+        $band = function (string $text, string $hex, int $size, int $height, bool $bold = true, string $fontHex = 'FFFFFF', string $align = Alignment::HORIZONTAL_CENTER) use (&$row, $sheet, $solid) {
+            $sheet->mergeCells("A{$row}:F{$row}");
+            $sheet->setCellValue("A{$row}", $text);
+            $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+                'font' => ['bold' => $bold, 'size' => $size, 'color' => ['rgb' => $fontHex]],
+                'fill' => $solid($hex),
+                'alignment' => ['horizontal' => $align, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => $align === Alignment::HORIZONTAL_LEFT ? 1 : 0],
+            ]);
+            $sheet->getRowDimension($row)->setRowHeight($height);
+            $row++;
+        };
+
+        $section = fn (string $title, string $hex) => $band($title, $hex, 12, 26, true, 'FFFFFF', Alignment::HORIZONTAL_LEFT);
+
+        // Three cards per row, each spanning two columns: colored label / big value / small caption.
+        $cards = function (array $items, ?string $format = null) use (&$row, $sheet, $solid, $spacer) {
+            $spans = [['A', 'B'], ['C', 'D'], ['E', 'F']];
+            foreach (array_chunk($items, 3) as $chunkIndex => $chunk) {
+                if ($chunkIndex > 0) {
+                    $spacer(6);
+                }
+                [$r1, $r2, $r3] = [$row, $row + 1, $row + 2];
+                foreach ($chunk as $i => $card) {
+                    [$a, $b] = $spans[$i];
+                    foreach ([$r1, $r2, $r3] as $r) {
+                        $sheet->mergeCells("{$a}{$r}:{$b}{$r}");
+                    }
+                    $sheet->setCellValue("{$a}{$r1}", $card['label']);
+                    $sheet->setCellValue("{$a}{$r2}", $card['value']);
+                    $sheet->setCellValue("{$a}{$r3}", $card['sub'] ?? '');
+                    $center = ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER];
+                    $sheet->getStyle("{$a}{$r1}:{$b}{$r1}")->applyFromArray([
+                        'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
+                        'fill' => $solid($card['hex']), 'alignment' => $center,
+                    ]);
+                    $sheet->getStyle("{$a}{$r2}:{$b}{$r2}")->applyFromArray([
+                        'font' => ['bold' => true, 'size' => 24, 'color' => ['rgb' => $card['hex']]],
+                        'fill' => $solid($card['tint']), 'alignment' => $center,
+                    ]);
+                    $sheet->getStyle("{$a}{$r3}:{$b}{$r3}")->applyFromArray([
+                        'font' => ['italic' => true, 'size' => 9, 'color' => ['rgb' => '475569']],
+                        'fill' => $solid($card['tint']), 'alignment' => $center,
+                    ]);
+                    $fmt = $card['format'] ?? $format ?? '#,##0';
+                    $sheet->getStyle("{$a}{$r2}")->getNumberFormat()->setFormatCode($fmt);
+                }
+                $sheet->getRowDimension($r1)->setRowHeight(22);
+                $sheet->getRowDimension($r2)->setRowHeight(42);
+                $sheet->getRowDimension($r3)->setRowHeight(20);
+                $row += 3;
+            }
+        };
+
+        $tableHeader = function (array $labels, string $hex) use (&$row, $sheet, $solid) {
+            $sheet->fromArray($labels, null, "A{$row}");
+            $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1E293B']],
+                'fill' => $solid($hex),
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            ]);
+            $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+            $sheet->getRowDimension($row)->setRowHeight(22);
+            $row++;
+        };
+
+        // Boys / Girls / Total / Share % / in-cell bar. $rows = [[label, boys, girls, total], ...]
+        $strengthTable = function (string $firstHeader, array $rows, string $headerHex, string $barHex, string $totalLabel, array $subsetRows = []) use (&$row, $sheet, $solid, $tableHeader) {
+            $tableHeader([$firstHeader, 'Boys', 'Girls', 'Total', 'Share %', 'Strength'], $headerHex);
+            $grand = max(1, array_sum(array_column($rows, 3)));
+            $maxTotal = max(1, max(array_column($rows, 3)));
+            $first = $row;
+            foreach ($rows as $i => [$label, $boys, $girls, $total]) {
+                $sheet->fromArray([$label, $boys, $girls, $total, $total / $grand, str_repeat('█', (int) max(1, round($total / $maxTotal * 26)))], null, "A{$row}");
+                if ($i % 2 === 1) {
+                    $sheet->getStyle("A{$row}:F{$row}")->applyFromArray(['fill' => $solid('F8FAFC')]);
+                }
+                $row++;
+            }
+            $last = $row - 1;
+            $sheet->getStyle("A{$first}:F{$last}")->applyFromArray([
+                'font' => ['size' => 10, 'color' => ['rgb' => '1F2937']],
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            ]);
+            $sheet->getStyle("A{$first}:A{$last}")->applyFromArray(['font' => ['bold' => true], 'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'indent' => 1]]);
+            $sheet->getStyle("B{$first}:B{$last}")->getFont()->getColor()->setRGB('1D4ED8');
+            $sheet->getStyle("C{$first}:C{$last}")->getFont()->getColor()->setRGB('BE185D');
+            $sheet->getStyle("D{$first}:D{$last}")->getFont()->setBold(true);
+            $sheet->getStyle("E{$first}:E{$last}")->getNumberFormat()->setFormatCode('0.0%');
+            $sheet->getStyle("F{$first}:F{$last}")->applyFromArray(['font' => ['size' => 8, 'color' => ['rgb' => $barHex]], 'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'indent' => 1]]);
+            for ($r = $first; $r <= $last; $r++) {
+                $sheet->getRowDimension($r)->setRowHeight(20);
+            }
+
+            $sheet->fromArray([$totalLabel, array_sum(array_column($rows, 1)), array_sum(array_column($rows, 2)), array_sum(array_column($rows, 3)), 1, ''], null, "A{$row}");
+            $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1E293B']],
+                'fill' => $solid('FEF3C7'),
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            ]);
+            $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+            $sheet->getStyle("E{$row}")->getNumberFormat()->setFormatCode('0.0%');
+            $sheet->getRowDimension($row)->setRowHeight(22);
+            $row++;
+
+            foreach ($subsetRows as [$label, $boys, $girls, $total]) {
+                $sheet->fromArray([$label, $boys, $girls, $total, $total / $grand, str_repeat('█', (int) max(1, round($total / $maxTotal * 26)))], null, "A{$row}");
+                $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+                    'font' => ['italic' => true, 'size' => 10, 'color' => ['rgb' => '6D28D9']],
+                    'fill' => $solid('F5F3FF'),
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                ]);
+                $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+                $sheet->getStyle("E{$row}")->getNumberFormat()->setFormatCode('0.0%');
+                $sheet->getRowDimension($row)->setRowHeight(20);
+                $row++;
+            }
+        };
+
+        $pct = fn (int $part, int $whole) => $whole > 0 ? round($part / $whole * 100, 1).'%' : '0%';
+
+        // ---------- Banner ----------
+        $band(mb_strtoupper($school), '1E1B4B', 20, 36);
+        $band('GLOBAL WORKBOOK — SUMMARY', '4338CA', 12, 24);
+        $band(
+            'Academic Session: '.$this->shortSessionLabel($sessionLabel).'     •     Exported: '.now()->format('d M Y, h:i A')
+                .(($by = Auth::guard('erp')->user()?->name) ? '     •     By: '.$by : ''),
+            'E0E7FF', 10, 22, false, '3730A3'
+        );
+        $spacer();
+
+        // ---------- Students at a glance ----------
+        $section('STUDENTS AT A GLANCE', '4F46E5');
+        $cards([
+            ['label' => 'TOTAL STUDENTS', 'value' => $totalStudents, 'sub' => "Boys {$totalBoys}  •  Girls {$totalGirls}", 'hex' => '4F46E5', 'tint' => 'EEF2FF'],
+            ['label' => 'ACTIVE STUDENTS', 'value' => $activeAll, 'sub' => "Boys {$activeBoys}  •  Girls {$activeGirls}", 'hex' => '059669', 'tint' => 'ECFDF5'],
+            ['label' => 'INACTIVE STUDENTS', 'value' => $inactiveAll, 'sub' => "Boys {$inactiveBoys}  •  Girls {$inactiveGirls}", 'hex' => 'DC2626', 'tint' => 'FEF2F2'],
         ]);
-        $sheet->getRowDimension($row)->setRowHeight(32);
-        $row++;
+        $spacer();
 
-        // --- Subtitle: session + export timestamp ---
-        $sheet->mergeCells("A{$row}:D{$row}");
-        $sheet->setCellValue("A{$row}", 'Academic Session: '.$this->shortSessionLabel($sessionLabel).'      •      Exported: '.now()->format('d M Y, H:i'));
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-            'font' => ['italic' => true, 'size' => 10, 'color' => ['rgb' => '64748B']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F1F5F9']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
-            'borders' => $bandBorder,
+        // ---------- Status × gender ----------
+        $section('ACTIVE vs INACTIVE — BOYS & GIRLS', '0EA5E9');
+        $tableHeader(['Status', 'Boys', 'Girls', 'Total', 'Boys %', 'Girls %'], 'E0F2FE');
+        $statusRows = [
+            ['Active', $activeBoys, $activeGirls, $activeAll, 'ECFDF5', '047857'],
+            ['Inactive', $inactiveBoys, $inactiveGirls, $inactiveAll, 'FEF2F2', 'B91C1C'],
+            ['All Students', $totalBoys, $totalGirls, $totalStudents, 'FEF3C7', '1E293B'],
+        ];
+        foreach ($statusRows as [$label, $boys, $girls, $total, $tint, $ink]) {
+            $sheet->fromArray([$label, $boys, $girls, $total, $total > 0 ? $boys / $total : 0, $total > 0 ? $girls / $total : 0], null, "A{$row}");
+            $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => $ink]],
+                'fill' => $solid($tint),
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            ]);
+            $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+            $sheet->getStyle("E{$row}:F{$row}")->getNumberFormat()->setFormatCode('0.0%');
+            $sheet->getRowDimension($row)->setRowHeight(24);
+            $row++;
+        }
+        $spacer();
+
+        // ---------- Class-wise / category-wise (active) ----------
+        if ($classRows !== []) {
+            $section('CLASS-WISE STRENGTH  (ACTIVE STUDENTS)', '059669');
+            $strengthTable('Class', $classRows, 'D1FAE5', '10B981', 'TOTAL ACTIVE');
+            $spacer();
+        }
+        if ($categoryRows !== []) {
+            $section('CATEGORY-WISE  (ACTIVE STUDENTS, INCL. RTE)', '7C3AED');
+            $strengthTable('Category', $categoryRows, 'EDE9FE', '8B5CF6', 'TOTAL', $categorySubsetRows);
+            $spacer();
+        }
+
+        // ---------- Our people ----------
+        $section('OUR SCHOOL FAMILY', 'EA580C');
+        $cards([
+            ['label' => 'TEACHERS', 'value' => $teachers, 'sub' => 'Shaping young minds', 'hex' => 'EA580C', 'tint' => 'FFF7ED'],
+            ['label' => 'STAFF MEMBERS', 'value' => $staff, 'sub' => 'Keeping everything running', 'hex' => '0D9488', 'tint' => 'F0FDFA'],
+            ['label' => 'DRIVERS', 'value' => $drivers, 'sub' => 'Safe journeys, every day', 'hex' => 'CA8A04', 'tint' => 'FEFCE8'],
         ]);
-        $sheet->getRowDimension($row)->setRowHeight(20);
-        $row++;
+        $spacer();
 
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray(['borders' => $bandBorder]);
-        $sheet->getRowDimension($row)->setRowHeight(8);
-        $row++;
+        // ---------- Financial highlights ----------
+        $moneyCards = [];
+        if ($collected !== null) {
+            $moneyCards[] = ['label' => 'FEE COLLECTED (₹)', 'value' => $this->moneyValue($collected), 'sub' => 'Total received this workbook', 'hex' => '059669', 'tint' => 'ECFDF5'];
+        }
+        if ($duesTotal !== null) {
+            $moneyCards[] = ['label' => 'PENDING DUES (₹)', 'value' => $this->moneyValue($duesTotal), 'sub' => 'Owed by students with balance due', 'hex' => 'D97706', 'tint' => 'FFFBEB'];
+        }
+        if ($collected !== null && $duesTotal !== null && ($collected + $duesTotal) > 0) {
+            $moneyCards[] = ['label' => 'COLLECTION RATE', 'value' => $collected / ($collected + $duesTotal), 'format' => '0.0%', 'sub' => 'Collected ÷ (collected + dues)', 'hex' => '2563EB', 'tint' => 'EFF6FF'];
+        }
+        if ($expenses !== null) {
+            $moneyCards[] = ['label' => 'EXPENSES (₹)', 'value' => $this->moneyValue($expenses), 'sub' => 'Total expenses recorded', 'hex' => 'DC2626', 'tint' => 'FEF2F2'];
+        }
+        if ($salary !== null) {
+            $moneyCards[] = ['label' => 'SALARY PAID (₹)', 'value' => $this->moneyValue($salary), 'sub' => 'Total salary (Bank sheet)', 'hex' => '7C3AED', 'tint' => 'F5F3FF'];
+        }
+        if ($collected !== null && ($expenses !== null || $salary !== null)) {
+            $net = $collected - ($expenses ?? 0) - ($salary ?? 0);
+            $moneyCards[] = [
+                'label' => $net >= 0 ? 'NET SURPLUS (₹)' : 'NET SHORTFALL (₹)',
+                'value' => $this->moneyValue($net),
+                'sub' => 'Collected − expenses − salary',
+                'hex' => $net >= 0 ? '0F766E' : 'B91C1C',
+                'tint' => $net >= 0 ? 'F0FDFA' : 'FEF2F2',
+            ];
+        }
+        if ($moneyCards !== []) {
+            $section('FINANCIAL HIGHLIGHTS', '047857');
+            $cards($moneyCards);
+            $spacer();
+        }
 
-        // --- Section: Sheets Overview ---
-        $sheet->mergeCells("A{$row}:D{$row}");
-        $sheet->setCellValue("A{$row}", 'SHEETS OVERVIEW');
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-            'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $sectionHex]],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
+        // ---------- Sheets overview ----------
+        $section('WHAT\'S INSIDE THIS WORKBOOK', '334155');
+        $sheet->fromArray(['Sheet', 'Rows', 'Key Total', 'Notes'], null, "A{$row}");
+        $sheet->mergeCells("D{$row}:F{$row}");
+        $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1E293B']],
+            'fill' => $solid('E2E8F0'),
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getRowDimension($row)->setRowHeight(22);
         $row++;
 
-        $sheet->fromArray(['Sheet', 'Rows', 'Key Total', 'Notes'], null, "A{$row}");
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '334155']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]],
-        ]);
-        $sheet->getRowDimension($row)->setRowHeight(20);
-        $row++;
-
         $firstDataRow = $row;
         $grandRows = 0;
-        $highlights = [];
-
-        foreach ($sections as [$name, $section]) {
-            [$header, $rows] = $section;
+        foreach ($sections as [$name, $sec]) {
+            [$header, $rows] = $sec;
             $count = count($rows);
             $grandRows += $count;
             [$totalLabel, $totalValue] = $this->sectionMoneyTotal($name, $header, $rows);
-            if ($totalValue !== null) {
-                $highlights[$totalLabel] = $totalValue;
-            }
 
             $sheet->setCellValue("A{$row}", self::sheetTitle($name));
             $sheet->setCellValue("B{$row}", $count);
@@ -884,85 +1138,42 @@ class ExportController extends Controller
                 $sheet->getStyle("C{$row}")->getNumberFormat()->setFormatCode($this->moneyFormatCode($normalized));
             }
             $sheet->setCellValue("D{$row}", $totalLabel ?? ($count === 0 ? 'No records' : ''));
-
+            $sheet->mergeCells("D{$row}:F{$row}");
             $sheet->getStyle("A{$row}")->getFont()->setBold(true)->getColor()->setRGB(self::SHEET_ACCENTS[$name] ?? '4F46E5');
             $row++;
         }
         $lastDataRow = $row - 1;
-
-        $sheet->getStyle("A{$firstDataRow}:D{$lastDataRow}")->applyFromArray([
+        $sheet->getStyle("A{$firstDataRow}:F{$lastDataRow}")->applyFromArray([
             'font' => ['size' => 10, 'color' => ['rgb' => '1F2937']],
             'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'horizontal' => Alignment::HORIZONTAL_CENTER],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]],
         ]);
-        $sheet->getStyle("A{$firstDataRow}:A{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle("A{$firstDataRow}:A{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
         $sheet->getStyle("C{$firstDataRow}:C{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle("D{$firstDataRow}:D{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-        for ($r = $firstDataRow + 1; $r <= $lastDataRow; $r += 2) {
-            $sheet->getStyle("A{$r}:D{$r}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F8FAFC');
-        }
-
-        // --- Total rows (bold, highlighted) ---
-        $sheet->setCellValue("A{$row}", 'TOTAL ROWS');
-        $sheet->setCellValue("B{$row}", $grandRows);
-        $sheet->setCellValue("D{$row}", 'All data sheets combined');
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1E293B']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FEF3C7']],
-            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'horizontal' => Alignment::HORIZONTAL_CENTER],
-            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => $borderHex]]],
-        ]);
-        $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-        $sheet->getStyle("D{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-        $row++;
-
-        $sheet->getStyle("A{$row}:D{$row}")->applyFromArray(['borders' => $bandBorder]);
-        $sheet->getRowDimension($row)->setRowHeight(8);
-        $row++;
-
-        // --- Section: Key Financial Totals (only when the workbook actually has money totals) ---
-        if ($highlights !== []) {
-            $sheet->mergeCells("A{$row}:D{$row}");
-            $sheet->setCellValue("A{$row}", 'KEY FINANCIAL TOTALS');
-            $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-                'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
-                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $moneyBandHex]],
-                'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER, 'indent' => 1],
-                'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'FFFFFF']]],
-            ]);
-            $sheet->getRowDimension($row)->setRowHeight(22);
-            $row++;
-
-            foreach ($highlights as $label => $value) {
-                $normalized = $this->moneyValue($value);
-
-                $sheet->mergeCells("A{$row}:C{$row}");
-                $sheet->setCellValue("A{$row}", $label);
-                $sheet->setCellValue("D{$row}", $normalized);
-
-                $sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'ECFDF5']],
-                    'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
-                    'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1FAE5']]],
-                ]);
-                $sheet->getStyle("A{$row}")->applyFromArray([
-                    'font' => ['size' => 11, 'color' => ['rgb' => '1F2937']],
-                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'indent' => 1],
-                ]);
-                $sheet->getStyle("D{$row}")->applyFromArray([
-                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => $moneyBandHex]],
-                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT, 'indent' => 1],
-                ]);
-                $sheet->getStyle("D{$row}")->getNumberFormat()->setFormatCode($this->moneyFormatCode($normalized));
-                $sheet->getRowDimension($row)->setRowHeight(24);
-                $row++;
+        $sheet->getStyle("D{$firstDataRow}:F{$lastDataRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+        for ($r = $firstDataRow; $r <= $lastDataRow; $r++) {
+            $sheet->getRowDimension($r)->setRowHeight(20);
+            if (($r - $firstDataRow) % 2 === 1) {
+                $sheet->getStyle("A{$r}:F{$r}")->applyFromArray(['fill' => $solid('F8FAFC')]);
             }
         }
 
-        $sheet->getColumnDimension('A')->setWidth(28);
-        $sheet->getColumnDimension('B')->setWidth(12);
-        $sheet->getColumnDimension('C')->setWidth(18);
-        $sheet->getColumnDimension('D')->setWidth(32);
+        $sheet->setCellValue("A{$row}", 'TOTAL ROWS');
+        $sheet->setCellValue("B{$row}", $grandRows);
+        $sheet->setCellValue("D{$row}", 'All data sheets combined');
+        $sheet->mergeCells("D{$row}:F{$row}");
+        $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => '1E293B']],
+            'fill' => $solid('FEF3C7'),
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'horizontal' => Alignment::HORIZONTAL_CENTER],
+        ]);
+        $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+        $sheet->getStyle("D{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT)->setIndent(1);
+        $sheet->getRowDimension($row)->setRowHeight(22);
+        $row++;
+        $spacer();
+
+        // ---------- Footer ----------
+        $band('♥  Thank you for trusting us — wishing '.$school.' a bright, happy and successful year ahead!  ♥', '4F46E5', 11, 30);
     }
 
     /**

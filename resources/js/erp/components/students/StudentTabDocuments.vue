@@ -38,6 +38,32 @@
                 </div>
             </div>
         </div>
+
+        <div v-if="tcCertificate">
+            <h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Transfer Certificate</h4>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800">
+                    <div class="flex items-center gap-2.5">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800">🔖</span>
+                        <div>
+                            <p class="text-sm font-medium text-slate-700 dark:text-slate-200">TC Sr. No.</p>
+                            <p class="text-xs text-slate-400">{{ tcCertificate.certificate_no || '—' }}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between rounded-lg border border-slate-100 p-3.5 dark:border-slate-800">
+                    <div class="flex items-center gap-2.5">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg" :class="tcCertificate.downloaded ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'">⬇️</span>
+                        <div>
+                            <p class="text-sm font-medium text-slate-700 dark:text-slate-200">TC Downloaded</p>
+                            <p class="text-xs text-slate-400">
+                                {{ tcCertificate.downloaded ? `Yes — ${tcCertificate.downloaded_at} (${tcCertificate.download_count}x)` : 'Not downloaded yet' }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -49,6 +75,7 @@ import { downloadStudentDocument } from '../../utils/downloadExport';
 const props = defineProps({ student: { type: Object, required: true } });
 
 const detail = computed(() => props.student.additional_detail || null);
+const tcCertificate = computed(() => props.student.tc_certificate || null);
 
 const statusFlags = computed(() => {
     const d = detail.value;

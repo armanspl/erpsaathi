@@ -717,7 +717,7 @@ class DocumentDataBuilder
             'student_name' => $overrides['name'] ?? $student->name,
             'admission_id' => $overrides['admission_no'] ?? $student->admission_no,
             'roll_number' => $overrides['roll_no'] ?? ($student->roll_no ?? ''),
-            'class' => $student->schoolClass->name ?? '',
+            'class' => $overrides['class'] ?? ($student->schoolClass->name ?? ''),
             'section' => $student->section->name ?? '',
             'gender' => $student->gender ?? '',
             'blood_group' => $student->blood_group ?? '',

@@ -760,12 +760,14 @@ Route::prefix('documents')->name('documents.')->group(function () {
     // Reads are available to any authenticated ERP user.
     Route::get('certificate-types', [CertificateTypeController::class, 'index'])->name('certificate-types.index');
     Route::get('certificates/recipients', [CertificateController::class, 'recipients'])->name('certificates.recipients');
+    Route::get('certificates/records', [CertificateController::class, 'records'])->name('certificates.records');
     Route::get('certificates/{certificateType}/zip', [CertificateController::class, 'downloadZip'])->name('certificates.zip');
     Route::get('certificates/{certificateType}/{student}/tc-checkout', [CertificateController::class, 'tcCheckout'])->name('certificates.tc-checkout');
     Route::post('certificates/{certificateType}/{student}/tc-pay', [CertificateController::class, 'tcPay'])->name('certificates.tc-pay');
     Route::get('certificates/{certificateType}/{student}/pdf', [CertificateController::class, 'downloadStudentPdf'])->name('certificates.student-pdf');
     Route::get('certificates/{certificateType}/{student}/prepare', [CertificateController::class, 'prepareData'])->name('certificates.prepare');
     Route::post('certificates/{certificateType}/{student}/prepare', [CertificateController::class, 'saveOverrides'])->name('certificates.prepare.save');
+    Route::get('certificates/{certificateType}/{student}/sr-no-check', [CertificateController::class, 'checkSrNo'])->name('certificates.sr-no-check');
     Route::get('id-cards', [IdCardController::class, 'index'])->name('id-cards.index');
     Route::get('id-cards/{idCard}/pdf', [IdCardController::class, 'downloadPdf'])->name('id-cards.pdf');
     Route::get('transport-cards', [TransportCardController::class, 'index'])->name('transport-cards.index');

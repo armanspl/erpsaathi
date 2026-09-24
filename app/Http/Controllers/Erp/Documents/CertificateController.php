@@ -71,6 +71,29 @@ class CertificateController extends Controller
         return response()->json($this->dataBuilder->certificate($certificateType, $certificate, $student, $certificate->overrides ?? []));
     }
 
+    /** Live "is this SR No already used by another certificate?" check for the Prepare drawer, as the user types. */
+    public function checkSrNo(Request $request, CertificateType $certificateType, Student $student)
+    {
+        $srNo = trim((string) $request->query('sr_no', ''));
+        if ($srNo === '') {
+            return response()->json(['taken' => false]);
+        }
+
+        $certificate = $this->certificateFor($certificateType, $student);
+        $existing = Certificate::where('certificate_no', $srNo)
+            ->where('id', '!=', $certificate->id)
+            ->with('student:id,name,admission_no')
+            ->first();
+
+        return response()->json([
+            'taken' => (bool) $existing,
+            'used_by' => $existing ? [
+                'student_name' => $existing->student->name ?? null,
+                'admission_no' => $existing->student->admission_no ?? null,
+            ] : null,
+        ]);
+    }
+
     /** Start TC process: create one-time TC fee if enabled and return dues breakdown. */
     public function tcCheckout(CertificateType $certificateType, Student $student)
     {
@@ -117,7 +140,8 @@ class CertificateController extends Controller
 
     public function downloadStudentPdf(Request $request, CertificateType $certificateType, Student $student): StreamedResponse
     {
-        if ($this->tcFees->isTransferCertificate($certificateType)) {
+        $isTc = $this->tcFees->isTransferCertificate($certificateType);
+        if ($isTc) {
             $this->tcFees->assertCanIssue($student);
         }
 
@@ -127,7 +151,46 @@ class CertificateController extends Controller
         $overrides = array_merge($certificate->overrides ?? [], $request->only(self::OVERRIDABLE_FIELDS));
         $data = $this->dataBuilder->certificate($certificateType, $certificate, $student, $overrides);
 
+        $this->markDownloaded($certificate);
+        if ($isTc) {
+            $this->markTcIssued($student);
+        }
+
         return $this->renderer->streamPdf('certificate', $data, $this->certificateFilename($certificate), $certificateType->template_id);
+    }
+
+    /** List of every issued certificate (any type), for the "Certificate Record" tab. */
+    public function records(Request $request)
+    {
+        $query = Certificate::query()
+            ->with([
+                'student:id,name,admission_no,school_class_id,section_id,status',
+                'student.schoolClass:id,name',
+                'student.section:id,name',
+                'certificateType:id,label,prefix',
+                'issuedBy:id,name',
+            ])
+            ->orderByDesc('created_at');
+
+        if ($request->filled('certificate_type_id')) {
+            $query->where('certificate_type_id', $request->integer('certificate_type_id'));
+        }
+
+        return response()->json($query->get()->map(fn (Certificate $c) => [
+            'id' => $c->id,
+            'certificate_no' => $c->certificate_no,
+            'type' => $c->certificateType->label ?? $c->type,
+            'student_id' => $c->student_id,
+            'student_name' => $c->student->name ?? null,
+            'admission_no' => $c->student->admission_no ?? null,
+            'school_class_name' => $c->student->schoolClass->name ?? null,
+            'section_name' => $c->student->section->name ?? null,
+            'student_status' => $c->student->status ?? null,
+            'issue_date' => optional($c->issue_date)->format('Y-m-d'),
+            'downloaded_at' => optional($c->downloaded_at)->format('Y-m-d H:i'),
+            'download_count' => (int) $c->download_count,
+            'issued_by' => $c->issuedBy->name ?? null,
+        ])->values());
     }
 
     public function downloadZip(Request $request, CertificateType $certificateType): StreamedResponse
@@ -144,7 +207,8 @@ class CertificateController extends Controller
 
         abort_if($students->isEmpty(), 404, 'No recipients found for this selection.');
 
-        if ($this->tcFees->isTransferCertificate($certificateType)) {
+        $isTc = $this->tcFees->isTransferCertificate($certificateType);
+        if ($isTc) {
             foreach ($students as $student) {
                 $this->tcFees->assertCanIssue($student);
             }
@@ -162,6 +226,11 @@ class CertificateController extends Controller
                 $certificateType->template_id
             );
             $zip->addFromString($this->certificateFilename($certificate), $binary);
+
+            $this->markDownloaded($certificate);
+            if ($isTc) {
+                $this->markTcIssued($student);
+            }
         }
         $zip->close();
 
@@ -218,6 +287,26 @@ class CertificateController extends Controller
         }
 
         return $certificate;
+    }
+
+    /** Records that this certificate's PDF was actually streamed out (not just prepared/mint). */
+    private function markDownloaded(Certificate $certificate): void
+    {
+        $certificate->update([
+            'downloaded_at' => now(),
+            'download_count' => $certificate->download_count + 1,
+        ]);
+    }
+
+    /** A downloaded Transfer Certificate means the student has left — flip status and the manual "TC Received" checkbox. */
+    private function markTcIssued(Student $student): void
+    {
+        if ($student->status === 'Active') {
+            $student->status = 'Inactive';
+            $student->save();
+        }
+
+        $student->additionalDetail()->updateOrCreate([], ['tc_received' => true]);
     }
 
     /** Convert legacy "TC-2026-0004" to "GAS/TC/2026/0004" when needed. */

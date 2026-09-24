@@ -104,6 +104,11 @@
                         <tr>
                             <th class="w-10 px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="allSelected" @change="toggleAll($event.target.checked)" /></th>
                             <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <button type="button" class="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-200" @click="toggleSort('school_class_name')">
+                                    Class<span class="text-[10px] opacity-70">{{ sortArrow('school_class_name') }}</span>
+                                </button>
+                            </th>
+                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <button type="button" class="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-200" @click="toggleSort('roll_no')">
                                     Roll No<span class="text-[10px] opacity-70">{{ sortArrow('roll_no') }}</span>
                                 </button>
@@ -113,15 +118,28 @@
                                     Admission ID<span class="text-[10px] opacity-70">{{ sortArrow('admission_no') }}</span>
                                 </button>
                             </th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student Name</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Father Name</th>
-                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Mother Name</th>
+                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <button type="button" class="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-200" @click="toggleSort('name')">
+                                    Student Name<span class="text-[10px] opacity-70">{{ sortArrow('name') }}</span>
+                                </button>
+                            </th>
+                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <button type="button" class="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-200" @click="toggleSort('father_name')">
+                                    Father Name<span class="text-[10px] opacity-70">{{ sortArrow('father_name') }}</span>
+                                </button>
+                            </th>
+                            <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <button type="button" class="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-200" @click="toggleSort('mother_name')">
+                                    Mother Name<span class="text-[10px] opacity-70">{{ sortArrow('mother_name') }}</span>
+                                </button>
+                            </th>
                             <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-for="r in displayedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="selectedIds.has(r.student_id)" @change="toggleOne(r.student_id, $event.target.checked)" /></td>
+                            <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.school_class_name ?? '—' }}<span v-if="r.section_name"> ({{ r.section_name }})</span></td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.roll_no ?? '—' }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ r.admission_no }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
@@ -145,7 +163,8 @@
                     <div v-for="r in displayedRows" :key="r.student_id" class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                         <div class="font-semibold text-slate-800 dark:text-slate-100">{{ r.name }}</div>
                         <p class="mt-1 text-xs text-slate-400">{{ r.admission_no }} · Roll {{ r.roll_no ?? '—' }}</p>
-                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Father: {{ r.father_name ?? '—' }}</p>
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Class: {{ r.school_class_name ?? '—' }}<span v-if="r.section_name"> ({{ r.section_name }})</span></p>
+                        <p class="text-sm text-slate-600 dark:text-slate-300">Father: {{ r.father_name ?? '—' }}</p>
                         <p class="text-sm text-slate-600 dark:text-slate-300">Mother: {{ r.mother_name ?? '—' }}</p>
                         <div class="mt-3 flex gap-2">
                             <button type="button" class="btn-outline flex-1 !py-1 !text-xs" @click="openOverride(r)">Edit fields</button>
@@ -178,6 +197,10 @@
                     <div>
                         <label class="form-label">Admission ID</label>
                         <input v-model="overrideForm.admission_no" type="text" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Class</label>
+                        <input v-model="overrideForm.class" type="text" class="form-input" />
                     </div>
                     <div>
                         <label class="form-label">Father name</label>
@@ -451,7 +474,7 @@ async function printSelected() {
 
 // --- Change fields for download ---
 const overrideRow = ref(null);
-const overrideForm = reactive({ name: '', roll_no: '', admission_no: '', father_name: '', mother_name: '' });
+const overrideForm = reactive({ name: '', roll_no: '', admission_no: '', class: '', father_name: '', mother_name: '' });
 const applyingOverride = ref(false);
 
 function openOverride(row) {
@@ -460,6 +483,7 @@ function openOverride(row) {
         name: row.name || '',
         roll_no: row.roll_no || '',
         admission_no: row.admission_no || '',
+        class: row.school_class_name || '',
         father_name: row.father_name || '',
         mother_name: row.mother_name || '',
     });

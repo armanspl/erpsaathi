@@ -73,6 +73,7 @@ class TabularExport
         }
 
         return response()->streamDownload(function () use ($spreadsheet) {
+            \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
             (new Xlsx($spreadsheet))->save('php://output');
         }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

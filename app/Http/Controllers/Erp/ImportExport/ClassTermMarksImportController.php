@@ -595,7 +595,7 @@ class ClassTermMarksImportController extends Controller
         $allSubjects = Subject::query()->get(['id', 'name']);
         $byLower = [];
         foreach ($allSubjects as $subject) {
-            $byLower[mb_strtolower(trim($subject->name))] = $subject;
+            $byLower[$this->normalizeHeader($subject->name)] = $subject;
         }
 
         $maxCol = max(array_keys($subjectRow + $componentRow) ?: [1]);
@@ -1418,7 +1418,7 @@ class ClassTermMarksImportController extends Controller
         $allSubjects = Subject::query()->get(['id', 'name']);
         $byLower = [];
         foreach ($allSubjects as $subject) {
-            $byLower[mb_strtolower(trim($subject->name))] = $subject;
+            $byLower[$this->normalizeHeader($subject->name)] = $subject;
         }
 
         if (! $hasComponent) {
@@ -1685,7 +1685,7 @@ class ClassTermMarksImportController extends Controller
         $allSubjects = Subject::query()->get(['id', 'name']);
         $byLower = [];
         foreach ($allSubjects as $subject) {
-            $byLower[mb_strtolower(trim($subject->name))] = $subject;
+            $byLower[$this->normalizeHeader($subject->name)] = $subject;
         }
 
         $columns = [];
@@ -1732,16 +1732,21 @@ class ClassTermMarksImportController extends Controller
         $targets = self::SUBJECT_ALIASES[$key] ?? $compactAliases[$aliasKey] ?? null;
         if ($targets) {
             foreach ($targets as $name) {
-                $lower = mb_strtolower($name);
+                $lower = $this->normalizeHeader($name);
                 if (isset($byLower[$lower])) {
                     return $byLower[$lower];
                 }
             }
-            $created = Subject::query()->firstOrCreate(
-                ['name' => $targets[0]],
-                ['code' => strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $targets[0]) ?? 'SUB', 0, 10))]
-            );
-            $byLower[mb_strtolower($created->name)] = $created;
+
+            $code = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $targets[0]) ?? 'SUB', 0, 10));
+            // The name-based lookups above can still miss an existing subject whose name is
+            // punctuated slightly differently than every known alias (e.g. DB has "S. St" while
+            // the alias list assumes "S.ST"/"SST"). `code` is unique, so a blind firstOrCreate
+            // keyed only on `name` would otherwise crash the whole import on that collision —
+            // check by code first.
+            $created = Subject::query()->where('code', $code)->first()
+                ?? Subject::query()->firstOrCreate(['name' => $targets[0]], ['code' => $code]);
+            $byLower[$this->normalizeHeader($created->name)] = $created;
 
             return $created;
         }

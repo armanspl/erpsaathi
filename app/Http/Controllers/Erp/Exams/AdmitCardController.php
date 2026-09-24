@@ -50,7 +50,7 @@ class AdmitCardController extends Controller
 
     public function downloadStudentPdf(Request $request, Exam $exam, Student $student): StreamedResponse
     {
-        $overrides = $request->only(['name', 'roll_no', 'admission_no', 'father_name', 'mother_name']);
+        $overrides = $request->only(['name', 'roll_no', 'admission_no', 'class', 'father_name', 'mother_name']);
         $data = $this->dataBuilder->admitCard($exam, $student, $overrides);
 
         // Individual row download is always one full A4 admit card.

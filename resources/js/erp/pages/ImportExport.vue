@@ -122,6 +122,11 @@
                         <p v-if="importResult.stats.sheets_ignored?.length" class="mt-1">Skipped sheets: {{ importResult.stats.sheets_ignored.join(', ') }}</p>
                         <p v-if="importResult.stats.attendance_records_written != null">Attendance day-records written: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.attendance_records_written }}</strong></p>
                         <p v-if="importResult.stats.session">Session: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.session }}</strong></p>
+                        <p v-if="importResult.stats.term">Term: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.term }}</strong></p>
+                        <p v-if="importResult.stats.class">Class: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.class }}</strong></p>
+                        <p v-if="importResult.stats.exams?.length" class="mt-1">Exams updated: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.exams.join(', ') }}</strong></p>
+                        <p v-if="importResult.stats.marks_written != null">Marks cells written: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.marks_written }}</strong></p>
+                        <p v-if="importResult.stats.grades_written">Co-scholastic grades written: <strong class="text-slate-700 dark:text-slate-200">{{ importResult.stats.grades_written }}</strong></p>
                         <p v-if="importResult.stats.sheets_skipped_no_class?.length" class="mt-1 text-amber-600">No matching class: {{ importResult.stats.sheets_skipped_no_class.join('; ') }}</p>
                     </div>
                     <div v-if="importResult.failed_rows?.length" class="overflow-hidden rounded-lg border border-slate-100 dark:border-slate-800">

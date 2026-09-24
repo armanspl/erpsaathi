@@ -12,6 +12,26 @@
             </div>
         </div>
 
+        <div class="flex gap-1 border-b border-slate-200 dark:border-slate-800">
+            <button
+                type="button"
+                class="whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition"
+                :class="mainTab === 'generate' ? 'border-b-2 border-primary-600 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'"
+                @click="mainTab = 'generate'"
+            >
+                Generate
+            </button>
+            <button
+                type="button"
+                class="whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition"
+                :class="mainTab === 'record' ? 'border-b-2 border-primary-600 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'"
+                @click="openRecordTab"
+            >
+                Certificate Record
+            </button>
+        </div>
+
+        <template v-if="mainTab === 'generate'">
         <div class="flex flex-wrap items-center gap-2">
             <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="!canDownload || zipScope === 'all'" @click="downloadZip('all')">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
@@ -137,6 +157,68 @@
                 </table>
             </div>
         </div>
+        </template>
+
+        <template v-else>
+            <div class="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-3.5 dark:border-slate-800">
+                    <label class="form-label !mb-0">Certificate type</label>
+                    <select v-model="recordTypeFilter" class="form-input !w-auto" @change="loadRecords">
+                        <option :value="null">All types</option>
+                        <option v-for="t in types" :key="t.id" :value="t.id">{{ t.label }}</option>
+                    </select>
+                </div>
+                <div v-if="recordsLoading" class="px-6 py-16 text-center text-sm text-slate-400">Loading...</div>
+                <div v-else-if="!records.length" class="px-6 py-16 text-center text-sm text-slate-400">No certificates have been issued yet.</div>
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full min-w-[880px] text-left text-sm">
+                        <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
+                            <tr>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Certificate No</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student Status</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Issue Date</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Downloaded</th>
+                                <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Times</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-for="rec in records" :key="rec.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ rec.certificate_no }}</td>
+                                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ rec.type }}</td>
+                                <td class="px-4 py-3">
+                                    <p class="font-medium text-slate-800 dark:text-slate-100">{{ rec.student_name }}</p>
+                                    <p class="text-xs text-slate-400">{{ rec.admission_no }}</p>
+                                </td>
+                                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ rec.school_class_name }}<span v-if="rec.section_name"> ({{ rec.section_name }})</span></td>
+                                <td class="px-4 py-3">
+                                    <span
+                                        class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                                        :class="{
+                                            'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400': rec.student_status === 'Active' || !rec.student_status,
+                                            'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300': rec.student_status === 'Inactive',
+                                            'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400': rec.student_status === 'Transferred',
+                                        }"
+                                    >
+                                        {{ rec.student_status || 'Active' }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ rec.issue_date || '—' }}</td>
+                                <td class="px-4 py-3">
+                                    <span v-if="rec.downloaded_at" class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                        {{ rec.downloaded_at }}
+                                    </span>
+                                    <span v-else class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">Not downloaded</span>
+                                </td>
+                                <td class="px-4 py-3 text-right text-slate-500 dark:text-slate-400">{{ rec.download_count }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </template>
 
         <!-- Create certificate type -->
         <div v-if="createTypeOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -333,7 +415,18 @@
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="form-label">SR. No.</label>
-                            <input v-model="prepareForm.sr_no" type="text" class="form-input" />
+                            <input
+                                v-model="prepareForm.sr_no"
+                                type="text"
+                                class="form-input"
+                                :class="srNoTaken ? '!border-rose-400 focus:!ring-rose-400' : ''"
+                                @input="onSrNoInput"
+                                @blur="checkSrNoNow"
+                            />
+                            <p v-if="srNoChecking" class="mt-1 text-xs text-slate-400">Checking...</p>
+                            <p v-else-if="srNoTaken" class="mt-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                                Already used{{ srNoTakenBy ? ` by ${srNoTakenBy.student_name} (${srNoTakenBy.admission_no})` : '' }} — choose a different SR. No.
+                            </p>
                         </div>
                         <div>
                             <label class="form-label">Book No.</label>
@@ -577,6 +670,28 @@ const ROLES = [
 
 function roleLabel(key) {
     return ROLES.find((r) => r.key === key)?.label || key;
+}
+
+const mainTab = ref('generate');
+const records = ref([]);
+const recordsLoading = ref(false);
+const recordTypeFilter = ref(null);
+
+function openRecordTab() {
+    mainTab.value = 'record';
+    loadRecords();
+}
+
+async function loadRecords() {
+    recordsLoading.value = true;
+    try {
+        const params = {};
+        if (recordTypeFilter.value) params.certificate_type_id = recordTypeFilter.value;
+        const { data } = await client.get('/documents/certificates/records', { params });
+        records.value = data;
+    } finally {
+        recordsLoading.value = false;
+    }
 }
 
 const filtersOpen = ref(true);
@@ -925,9 +1040,51 @@ const prepareRow = ref(null);
 const prepareForm = reactive({});
 const prepareTypeLabel = computed(() => types.value.find((t) => t.id === filters.certificate_type_id)?.label || 'certificate');
 
+// --- SR. No. live duplicate check ---
+const srNoChecking = ref(false);
+const srNoTaken = ref(false);
+const srNoTakenBy = ref(null);
+let srNoCheckTimer = null;
+
+function onSrNoInput() {
+    srNoTaken.value = false;
+    srNoTakenBy.value = null;
+    clearTimeout(srNoCheckTimer);
+    srNoCheckTimer = setTimeout(checkSrNoNow, 400);
+}
+
+async function checkSrNoNow() {
+    clearTimeout(srNoCheckTimer);
+    const srNo = (prepareForm.sr_no || '').trim();
+    if (!srNo || !prepareRow.value) {
+        srNoTaken.value = false;
+        srNoTakenBy.value = null;
+        return;
+    }
+    srNoChecking.value = true;
+    try {
+        const { data } = await client.get(
+            `/documents/certificates/${filters.certificate_type_id}/${prepareRow.value.student_id}/sr-no-check`,
+            { params: { sr_no: srNo } },
+        );
+        srNoTaken.value = !!data.taken;
+        srNoTakenBy.value = data.used_by || null;
+        if (srNoTaken.value) {
+            pushToast(
+                `SR. No. "${srNo}" is already used${srNoTakenBy.value ? ` by ${srNoTakenBy.value.student_name} (${srNoTakenBy.value.admission_no})` : ''} — choose a different one.`,
+                'error',
+            );
+        }
+    } finally {
+        srNoChecking.value = false;
+    }
+}
+
 async function openPrepare(row) {
     prepareRow.value = row;
     Object.keys(prepareForm).forEach((k) => delete prepareForm[k]);
+    srNoTaken.value = false;
+    srNoTakenBy.value = null;
     prepareOpen.value = true;
     preparing.value = true;
     try {
@@ -958,6 +1115,10 @@ async function persistPrepareOverrides() {
 
 async function downloadFromPrepare() {
     if (!prepareRow.value) return;
+    if (srNoTaken.value) {
+        pushToast('SR. No. is already used by another certificate — choose a different one.', 'error');
+        return;
+    }
     downloadingPrepare.value = true;
     try {
         // Downloading also saves — no need to click "Save" separately first.
@@ -977,6 +1138,10 @@ async function downloadFromPrepare() {
 
 async function savePrepare() {
     if (!prepareRow.value) return;
+    if (srNoTaken.value) {
+        pushToast('SR. No. is already used by another certificate — choose a different one.', 'error');
+        return;
+    }
     savingPrepare.value = true;
     try {
         await persistPrepareOverrides();

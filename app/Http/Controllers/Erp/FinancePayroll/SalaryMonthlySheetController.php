@@ -179,6 +179,7 @@ class SalaryMonthlySheetController extends Controller
         $sheet->getStyle("J6:M{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
 
         return response()->streamDownload(function () use ($spreadsheet) {
+            \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
             (new Xlsx($spreadsheet))->save('php://output');
         }, "salary-sheet-{$period}.xlsx", [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
