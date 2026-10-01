@@ -277,7 +277,12 @@ class DocumentRenderService
         foreach ($dataList as $data) {
             $full = $this->html($template, $data);
             if ($sharedStyles === '' && preg_match('/<style[^>]*>(.*?)<\/style>/is', $full, $sm)) {
-                $sharedStyles = $sm[1];
+                // Strip the template's own @page rule — it's usually a non-zero margin (e.g. the
+                // report card's "6mm 5mm"), which would cascade in after (and so override) the
+                // zero-margin @page below, shrinking the printable area below the .sheet div's
+                // forced full-page height and spilling every single page onto a second, near-
+                // blank one.
+                $sharedStyles = preg_replace('/@page\s*\{[^}]*\}/i', '', $sm[1]);
             }
             if (preg_match('/<body[^>]*>(.*)<\/body>/is', $full, $m)) {
                 $pages[] = $m[1];
@@ -290,14 +295,19 @@ class DocumentRenderService
         $last = count($pages) - 1;
         foreach ($pages as $i => $body) {
             $break = $i < $last ? 'page-break-after: always;' : '';
-            $sheets .= '<div class="sheet" style="'.$break.'">'.$body.'</div>';
+            // "stacked-doc-page", not "sheet" — several templates (report_card among them) wrap
+            // their own body in a top-level <div class="sheet">, which would otherwise pick up
+            // this wrapper's own forced width/height too (same class, so same CSS rule) nested a
+            // second time inside this page's wrapper, overflowing every page by the inner sheet's
+            // own border/padding and spilling onto a near-blank extra page per document.
+            $sheets .= '<div class="stacked-doc-page" style="'.$break.'">'.$body.'</div>';
         }
 
         $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>
             @page { size: '.$w.'mm '.$h.'mm; margin: 0; }
             * { box-sizing: border-box; }
             body { margin: 0; padding: 0; }
-            .sheet { width: '.$w.'mm; height: '.$h.'mm; overflow: hidden; }
+            .stacked-doc-page { width: '.$w.'mm; height: '.$h.'mm; overflow: hidden; }
             '.$sharedStyles.'
         </style></head><body>'.$sheets.'</body></html>';
 

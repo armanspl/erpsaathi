@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
 use App\Services\ExamResultCalculator;
+use App\Support\SelectedRowsFilter;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\Request;
@@ -56,8 +57,19 @@ class ExamResultController extends Controller
 
     public function downloadSheetPdf(Request $request, Exam $exam): StreamedResponse
     {
+        $rows = SelectedRowsFilter::apply($this->rowsFor($request, $exam), $request);
+
+        // Specific students checked on the Exam Results page → the same report-card template
+        // "Actions > Download" uses for one student, stacked into a single multi-page PDF, not
+        // the plain tabular class sheet below (that's only for "download everyone, no selection").
+        if ($request->filled('student_ids')) {
+            abort_if($rows === [], 404, 'No results found for the selected students.');
+            $dataList = array_map(fn ($row) => $this->dataBuilder->reportCard($exam, $row), $rows);
+
+            return $this->renderer->streamPdfStacked('report_card', $dataList, 'exam-results-selected-'.$exam->id.'.pdf');
+        }
+
         // Class result sheet stays a tabular export (not a single-student template).
-        $rows = $this->rowsFor($request, $exam);
         $escape = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $school = $this->dataBuilder->schoolContext();
 
@@ -114,7 +126,7 @@ class ExamResultController extends Controller
 
     public function downloadZip(Request $request, Exam $exam): StreamedResponse
     {
-        $rows = $this->rowsFor($request, $exam);
+        $rows = SelectedRowsFilter::apply($this->rowsFor($request, $exam), $request);
         abort_if(empty($rows), 404, 'No results found for the selected filters.');
 
         $zipPath = tempnam(sys_get_temp_dir(), 'results-zip-');

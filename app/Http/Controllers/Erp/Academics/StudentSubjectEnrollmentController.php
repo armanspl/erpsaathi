@@ -101,7 +101,9 @@ class StudentSubjectEnrollmentController extends Controller
             'subject_id' => 'required|exists:subjects,id',
             'academic_session_id' => 'required|exists:academic_sessions,id',
             'religion' => 'nullable|string|max:100',
+            'enrolled' => 'nullable|boolean',
         ]);
+        $enrolled = $data['enrolled'] ?? true;
 
         $students = Student::where('status', 'Active')
             ->where('school_class_id', $data['school_class_id'])
@@ -109,16 +111,25 @@ class StudentSubjectEnrollmentController extends Controller
             ->when(! empty($data['religion']), fn ($q) => $q->where('religion', $data['religion']))
             ->get(['id', 'school_class_id']);
 
-        foreach ($students as $student) {
-            StudentSubjectEnrollment::updateOrCreate([
-                'student_id' => $student->id,
-                'subject_id' => $data['subject_id'],
-                'academic_session_id' => $data['academic_session_id'],
-            ], [
-                'school_class_id' => $student->school_class_id,
-            ]);
+        if ($enrolled) {
+            foreach ($students as $student) {
+                StudentSubjectEnrollment::updateOrCreate([
+                    'student_id' => $student->id,
+                    'subject_id' => $data['subject_id'],
+                    'academic_session_id' => $data['academic_session_id'],
+                ], [
+                    'school_class_id' => $student->school_class_id,
+                ]);
+            }
+        } else {
+            // "Deselect all" for a subject column — clears every matching student's enrollment
+            // row rather than merely hiding it, consistent with assign()'s single-student clear.
+            StudentSubjectEnrollment::where('subject_id', $data['subject_id'])
+                ->where('academic_session_id', $data['academic_session_id'])
+                ->whereIn('student_id', $students->pluck('id'))
+                ->delete();
         }
 
-        return response()->json(['success' => true, 'assigned' => $students->count()]);
+        return response()->json(['success' => true, 'assigned' => $students->count(), 'enrolled' => $enrolled]);
     }
 }

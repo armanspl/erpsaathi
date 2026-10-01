@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Services\AnnualReportCalculator;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
+use App\Support\SelectedRowsFilter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -100,7 +101,7 @@ class AnnualReportController extends Controller
             $data['branch_id'] ?? null,
             $data['section_id'] ?? null
         );
-        $rows = $payload['rows'];
+        $rows = SelectedRowsFilter::apply($payload['rows'], $request);
         abort_if($rows === [], 404, 'No annual results to download.');
 
         $exam = $this->anchorExam($session);

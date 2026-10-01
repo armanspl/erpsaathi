@@ -9,6 +9,7 @@ use App\Models\Exam;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
 use App\Services\TermResultCalculator;
+use App\Support\SelectedRowsFilter;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\Request;
@@ -261,7 +262,22 @@ class AcademicTermController extends Controller
             $data['branch_id'] ?? null,
             $data['section_id'] ?? null
         );
-        $rows = $payload['rows'];
+        $rows = SelectedRowsFilter::apply($payload['rows'], $request);
+
+        // Specific students checked on the Exam Results page → the same report-card template
+        // "Actions > Download" uses for one student, stacked into a single multi-page PDF, not
+        // the plain tabular class sheet below (that's only for "download everyone, no selection").
+        if ($request->filled('student_ids')) {
+            abort_if($rows === [], 404, 'No term results found for the selected students.');
+            $exam = $this->anchorExam($term);
+            $dataList = array_map(
+                fn ($row) => $this->dataBuilder->reportCard($exam, $this->toPdfRow($row, $payload['columns'], $term)),
+                $rows
+            );
+
+            return $this->renderer->streamPdfStacked('report_card', $dataList, 'term-results-selected-'.$term->id.'.pdf');
+        }
+
         $columns = $payload['columns'];
         $escape = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $school = $this->dataBuilder->schoolContext();
@@ -320,7 +336,7 @@ class AcademicTermController extends Controller
             $data['branch_id'] ?? null,
             $data['section_id'] ?? null
         );
-        $rows = $payload['rows'];
+        $rows = SelectedRowsFilter::apply($payload['rows'], $request);
         abort_if($rows === [], 404, 'No term results to download.');
 
         $exam = $this->anchorExam($term);

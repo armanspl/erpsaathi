@@ -568,6 +568,10 @@ class StudentMasterImportService
             'dob' => ExcelDateParser::parse($row['dob'] ?? null),
             'blood_group' => ($row['blood_group'] ?? '') ?: null,
             'category' => ($row['category'] ?? '') ?: null,
+            // This school's "Minority Group" column holds the student's religion (Muslim/Hindu/
+            // etc.) — same source value written to both the student's own religion field and
+            // student_udise_details.minority_group (see upsertUdiseDetail()) below.
+            'religion' => ($row['minority_group'] ?? '') ?: null,
             'aadhar_no' => ($row['aadhaar_no'] ?? '') ?: null,
             'mobile' => ($row['mobile'] ?? '') ?: null,
             'email' => ($row['email'] ?? '') ?: null,

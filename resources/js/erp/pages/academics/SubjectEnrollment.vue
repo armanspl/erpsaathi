@@ -63,6 +63,14 @@
 
             <!-- Roster -->
             <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="border-b border-slate-100 p-3 dark:border-slate-800">
+                    <input
+                        v-model="search"
+                        type="text"
+                        class="form-input max-w-xs"
+                        placeholder="Search by name or admission no..."
+                    />
+                </div>
                 <table class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
@@ -70,7 +78,19 @@
                             <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Student</th>
                             <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Religion</th>
                             <th v-for="s in optionalSubjects" :key="s.id" class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                {{ s.name }}<span v-if="s.elective_group" class="block font-normal normal-case text-slate-400">{{ s.elective_group }}</span>
+                                <div class="flex flex-col gap-1">
+                                    <span>{{ s.name }}<span v-if="s.elective_group" class="block font-normal normal-case text-slate-400">{{ s.elective_group }}</span></span>
+                                    <label class="inline-flex items-center gap-1 font-normal normal-case text-slate-400">
+                                        <input
+                                            type="checkbox"
+                                            class="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                            :checked="isSubjectFullySelected(s)"
+                                            :disabled="!students.length || !!columnSaving[s.id]"
+                                            @change="toggleSelectAllForSubject(s, $event.target.checked)"
+                                        />
+                                        Select all
+                                    </label>
+                                </div>
                             </th>
                         </tr>
                     </thead>
@@ -78,7 +98,10 @@
                         <tr v-if="!students.length">
                             <td :colspan="3 + optionalSubjects.length" class="px-4 py-10 text-center text-slate-400">No active students in this class{{ filters.section_id ? ' / section' : '' }}.</td>
                         </tr>
-                        <tr v-for="row in students" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <tr v-else-if="!filteredStudents.length">
+                            <td :colspan="3 + optionalSubjects.length" class="px-4 py-10 text-center text-slate-400">No students match "{{ search }}".</td>
+                        </tr>
+                        <tr v-for="row in filteredStudents" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ row.roll_no ?? '—' }}</td>
                             <td class="px-4 py-3">
                                 <div class="font-medium text-slate-800 dark:text-slate-100">{{ row.name }}</div>
@@ -117,6 +140,8 @@ const optionalSubjects = ref([]);
 const religions = ref([]);
 const students = ref([]);
 const rowSaving = reactive({});
+const columnSaving = reactive({});
+const search = ref('');
 
 const bulk = reactive({ subject_id: null, religion: '' });
 const bulkSaving = ref(false);
@@ -124,6 +149,18 @@ const bulkSaving = ref(false);
 const sectionsForClass = computed(() => classes.value.find((c) => c.id === filters.school_class_id)?.sections || []);
 const bulkMatchCount = computed(() => students.value.filter((s) => !bulk.religion || s.religion === bulk.religion).length);
 const hasElectiveGroups = computed(() => optionalSubjects.value.some((s) => s.elective_group));
+
+// Search only narrows which rows are shown in the roster table below — "Bulk assign" and each
+// subject column's "Select all" still act on the whole class/section roster, not just the
+// currently-searched rows, since those are meant as "set up this whole class" actions.
+const filteredStudents = computed(() => {
+    const q = search.value.trim().toLowerCase();
+    if (!q) return students.value;
+
+    return students.value.filter((s) =>
+        (s.name || '').toLowerCase().includes(q) || (s.admission_no || '').toLowerCase().includes(q)
+    );
+});
 
 async function loadClasses() {
     const data = await fetchAcademicsLookups();
@@ -136,6 +173,7 @@ function onClassChange() {
 }
 
 async function load() {
+    search.value = '';
     if (!filters.school_class_id) {
         optionalSubjects.value = [];
         students.value = [];
@@ -178,6 +216,40 @@ async function toggleEnrollment(row, subject, checked) {
         pushToast(e?.response?.data?.message || 'Could not update enrollment.', 'error');
     } finally {
         delete rowSaving[key];
+    }
+}
+
+function isSubjectFullySelected(subject) {
+    return students.value.length > 0 && students.value.every((s) => s.enrolled_subject_ids.includes(subject.id));
+}
+
+// Header "Select all" checkbox for one subject column — enrolls (or clears) every student
+// currently in this class/section roster in one request, same endpoint the "Bulk assign" panel
+// above uses, just without a religion filter and able to run in reverse to clear a column too.
+async function toggleSelectAllForSubject(subject, checked) {
+    if (!academicSession.value) {
+        pushToast('No active academic session — cannot enroll.', 'error');
+        return;
+    }
+    columnSaving[subject.id] = true;
+    try {
+        await client.post('/academics/subject-enrollment/bulk-assign', {
+            school_class_id: filters.school_class_id,
+            section_id: filters.section_id || undefined,
+            subject_id: subject.id,
+            academic_session_id: academicSession.value.id,
+            enrolled: checked,
+        });
+        students.value.forEach((row) => {
+            row.enrolled_subject_ids = checked
+                ? (row.enrolled_subject_ids.includes(subject.id) ? row.enrolled_subject_ids : [...row.enrolled_subject_ids, subject.id])
+                : row.enrolled_subject_ids.filter((id) => id !== subject.id);
+        });
+        pushToast(checked ? `Enrolled everyone in ${subject.name}.` : `Cleared everyone from ${subject.name}.`, 'success');
+    } catch (e) {
+        pushToast(e?.response?.data?.message || 'Could not update enrollment for the whole column.', 'error');
+    } finally {
+        delete columnSaving[subject.id];
     }
 }
 

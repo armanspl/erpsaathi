@@ -93,15 +93,22 @@
                     {{ exam.published_at ? 'Published' : 'Live' }}
                 </span>
             </p>
-            <div class="flex gap-2">
-                <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="!rows.length || zipping" @click="downloadZip">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
-                    {{ zipping ? 'Zipping...' : 'Download all ZIP' }}
-                </button>
-                <button type="button" class="btn-primary inline-flex items-center gap-1.5" :disabled="!rows.length || downloading" @click="downloadSheet">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
-                    {{ downloading ? 'Downloading...' : 'Download' }}
-                </button>
+            <div class="flex flex-wrap items-center gap-3">
+                <label v-if="rows.length" class="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                    <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="allSelected" @change="toggleSelectAll" />
+                    Select all
+                    <span v-if="selectedIds.size">({{ selectedIds.size }} selected)</span>
+                </label>
+                <div class="flex gap-2">
+                    <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="!rows.length || zipping" @click="downloadZip">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                        {{ zipping ? 'Zipping...' : (selectedIds.size ? `Download Selected ZIP (${selectedIds.size})` : 'Download all ZIP') }}
+                    </button>
+                    <button type="button" class="btn-primary inline-flex items-center gap-1.5" :disabled="!rows.length || downloading" @click="downloadSheet">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                        {{ downloading ? 'Downloading...' : (selectedIds.size ? `Download Selected (${selectedIds.size})` : 'Download') }}
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -130,6 +137,7 @@
                 <table v-if="viewMode === 'table' && resultType === 'individual'" class="w-full min-w-[860px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
+                            <th class="w-10 px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="allSelected" @change="toggleSelectAll" /></th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('roll_no')">Roll No {{ sortArrow('roll_no') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Admission ID {{ sortArrow('admission_no') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student Name {{ sortArrow('name') }}</th>
@@ -142,6 +150,7 @@
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-for="r in sortedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                            <td class="px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="selectedIds.has(r.student_id)" @change="toggleSelect(r.student_id)" /></td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.roll_no ?? '—' }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ r.admission_no }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
@@ -167,6 +176,7 @@
                 <table v-else-if="viewMode === 'table'" class="w-full min-w-[720px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
+                            <th class="w-10 px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="allSelected" @change="toggleSelectAll" /></th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('roll_no')">Roll No {{ sortArrow('roll_no') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('admission_no')">Admission ID {{ sortArrow('admission_no') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student Name {{ sortArrow('name') }}</th>
@@ -179,6 +189,7 @@
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-for="r in sortedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                            <td class="px-4 py-3"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-primary-600" :checked="selectedIds.has(r.student_id)" @change="toggleSelect(r.student_id)" /></td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.roll_no ?? '—' }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ r.admission_no }}</td>
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
@@ -203,9 +214,12 @@
                 <div v-else class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
                     <div v-for="r in sortedRows" :key="r.student_id" class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                         <div class="flex items-start justify-between">
-                            <div>
-                                <div class="font-semibold text-slate-800 dark:text-slate-100">{{ r.name }}</div>
-                                <p class="mt-1 text-xs text-slate-400">{{ r.admission_no }} · Roll {{ r.roll_no ?? '—' }}</p>
+                            <div class="flex items-start gap-2">
+                                <input type="checkbox" class="mt-1 h-4 w-4 rounded border-slate-300 text-primary-600" :checked="selectedIds.has(r.student_id)" @change="toggleSelect(r.student_id)" />
+                                <div>
+                                    <div class="font-semibold text-slate-800 dark:text-slate-100">{{ r.name }}</div>
+                                    <p class="mt-1 text-xs text-slate-400">{{ r.admission_no }} · Roll {{ r.roll_no ?? '—' }}</p>
+                                </div>
                             </div>
                             <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset" :class="statusBadgeClass(r.result === 'Pass' ? 'Active' : 'Inactive')">{{ r.result }}</span>
                         </div>
@@ -354,6 +368,21 @@ const downloading = ref(false);
 const sortKey = ref('roll_no');
 const sortDir = ref('asc');
 
+// Row selection for "Download" / "Download ZIP" — empty selection means "everyone currently
+// listed" (today's behaviour, unchanged); checking specific rows scopes both buttons to just
+// those students, and "Select all" is just a shortcut to checking every row.
+const selectedIds = ref(new Set());
+const allSelected = computed(() => rows.value.length > 0 && selectedIds.value.size === rows.value.length);
+function toggleSelect(studentId) {
+    const next = new Set(selectedIds.value);
+    if (next.has(studentId)) next.delete(studentId);
+    else next.add(studentId);
+    selectedIds.value = next;
+}
+function toggleSelectAll() {
+    selectedIds.value = allSelected.value ? new Set() : new Set(rows.value.map((r) => r.student_id));
+}
+
 function toggleSort(key) {
     if (sortKey.value === key) {
         sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
@@ -500,10 +529,13 @@ function sectionsForClass(classId) {
     return sections.value.filter((s) => s.school_class_id === classId);
 }
 
-function filterParams() {
+/** @param {boolean} withSelection include `student_ids` when rows are checked — only the
+ *  sheet-PDF and ZIP downloads want this; the per-row download and the results fetch don't. */
+function filterParams(withSelection = false) {
     const params = { branch_id: filters.branch_id };
     if (filters.school_class_id) params.school_class_id = filters.school_class_id;
     if (filters.section_id) params.section_id = filters.section_id;
+    if (withSelection && selectedIds.value.size) params.student_ids = Array.from(selectedIds.value);
     return params;
 }
 
@@ -529,6 +561,7 @@ function setResultType(type) {
     rows.value = [];
     termColumns.value = [];
     annualColumns.value = [];
+    selectedIds.value = new Set();
     if (type === 'term' && !filters.term_id && terms.value.length) {
         filters.term_id = terms.value[0].id;
     }
@@ -574,6 +607,7 @@ function onClassChange() {
 
 async function load() {
     reportCard.value = null;
+    selectedIds.value = new Set();
     if (!allFiltersSet.value) {
         rows.value = [];
         return;
@@ -628,10 +662,10 @@ async function downloadSheet() {
     downloading.value = true;
     try {
         if (resultType.value === 'individual') {
-            await downloadPdf(`/exams/${filters.exam_id}/results/pdf`, `exam-results-${filters.exam_id}.pdf`, filterParams());
+            await downloadPdf(`/exams/${filters.exam_id}/results/pdf`, `exam-results-${filters.exam_id}.pdf`, filterParams(true));
         } else if (resultType.value === 'term' || resultType.value === 'half_yearly') {
             const prefix = resultType.value === 'half_yearly' ? 'half-yearly-results' : 'term-results';
-            await downloadPdf(`/exams/terms/${filters.term_id}/results/pdf`, `${prefix}-${filters.term_id}.pdf`, filterParams());
+            await downloadPdf(`/exams/terms/${filters.term_id}/results/pdf`, `${prefix}-${filters.term_id}.pdf`, filterParams(true));
         } else {
             // Annual has no class sheet — download ZIP of report cards instead
             await downloadZip();
@@ -660,7 +694,7 @@ async function downloadZip() {
             url = '/exams/annual-report/zip';
             filename = 'annual-report-cards.zip';
         }
-        const response = await client.get(url, { params: filterParams(), responseType: 'blob' });
+        const response = await client.get(url, { params: filterParams(true), responseType: 'blob' });
         triggerBlobDownload(new Blob([response.data], { type: 'application/zip' }), filename);
     } catch (e) {
         pushToast('Could not generate ZIP for the selected filters.', 'error');
