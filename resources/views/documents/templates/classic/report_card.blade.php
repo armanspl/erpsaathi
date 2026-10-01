@@ -3,88 +3,88 @@
 <head>
 <meta charset="utf-8">
 <style>
-    @page { margin: 6mm 8mm; size: A4 portrait; }
+    @page { margin: 6mm 5mm; size: A4 portrait; }
     * { box-sizing: border-box; }
     body { font-family: DejaVu Serif, Times New Roman, serif; font-size: 10pt; color: #111; margin: 0; }
-    .sheet { border: 1.2pt solid #111; padding: 5pt 8pt 6pt; }
-    .top-meta { width: 100%; border-collapse: collapse; margin-bottom: 2pt; font-size: 8pt; }
+    .sheet { border: 1.2pt solid #111; padding: 7pt 10pt 8pt; }
+    .top-meta { width: 100%; border-collapse: collapse; margin-bottom: 3pt; font-size: 8.5pt; }
     .top-meta td { border: none; padding: 0; }
-    .brand-table { width: 100%; border-collapse: collapse; margin-bottom: 2pt; }
+    .brand-table { width: 100%; border-collapse: collapse; margin-bottom: 4pt; }
     .brand-table td { border: none; vertical-align: middle; padding: 0; }
-    .logo { width: 44pt; height: 44pt; object-fit: contain; }
+    .logo { width: 50pt; height: 50pt; object-fit: contain; }
     .logo-fallback {
-        width: 44pt; height: 44pt; border-radius: 50%; background: {{ $accent_color }}; color: #fff;
-        text-align: center; line-height: 44pt; font-size: 13pt; font-weight: bold;
+        width: 50pt; height: 50pt; border-radius: 50%; background: {{ $accent_color }}; color: #fff;
+        text-align: center; line-height: 50pt; font-size: 14pt; font-weight: bold;
     }
-    .school-name { font-size: 15pt; font-weight: bold; margin: 0; letter-spacing: 0.3pt; text-transform: uppercase; text-align: center; }
-    .school-line { font-size: 8pt; font-weight: bold; margin: 0; text-transform: uppercase; text-align: center; }
-    .title-row { width: 100%; border-collapse: collapse; margin: 3pt 0; }
+    .school-name { font-size: 18pt; font-weight: bold; margin: 0; letter-spacing: 0.3pt; text-transform: uppercase; text-align: center; }
+    .school-line { font-size: 9.5pt; font-weight: bold; margin: 1pt 0 0; text-transform: uppercase; text-align: center; }
+    .title-row { width: 100%; border-collapse: collapse; margin: 4pt 0; }
     .title-row td { border: none; vertical-align: middle; padding: 0; }
     .title-box {
         display: inline-block; background: {{ $accent_light }}; border: 0.8pt solid #111;
-        padding: 1.5pt 12pt; font-weight: bold; font-size: 10pt;
+        padding: 2pt 14pt; font-weight: bold; font-size: 10.5pt;
     }
-    .session { text-align: right; font-size: 9pt; font-weight: bold; }
-    .student { width: 100%; border-collapse: collapse; border: 0.9pt solid #111; margin-bottom: 3pt; }
-    .student > tr > td { border: none; padding: 1.5pt 6pt; vertical-align: top; width: 50%; }
+    .session { text-align: right; font-size: 9.5pt; font-weight: bold; }
+    .student { width: 100%; border-collapse: collapse; border: 0.9pt solid #111; margin-bottom: 4pt; }
+    .student > tr > td { border: none; padding: 2pt 8pt; vertical-align: top; width: 50%; }
     .info-table { width: 100%; border-collapse: collapse; }
-    .info-table td { border: none; padding: 0.5pt 0; font-size: 9pt; vertical-align: top; }
-    .info-table td.lbl { width: 76pt; white-space: nowrap; }
+    .info-table td { border: none; padding: 1pt 0; font-size: 9.5pt; vertical-align: top; }
+    .info-table td.lbl { width: 84pt; white-space: nowrap; }
     .info-table td.colon { width: 6pt; }
     .info-table td.val { font-weight: bold; text-transform: uppercase; }
-    table.marks { width: 100%; border-collapse: collapse; margin-bottom: 3pt; }
-    table.marks th, table.marks td { border: 0.7pt solid #111; padding: 2.5pt 4pt; }
-    table.marks th { background: {{ $accent_color }}; color: #fff; font-size: 8.5pt; text-align: center; }
-    table.marks th.band { background: {{ $accent_dark }}; font-size: 9pt; }
+    table.marks { width: 100%; border-collapse: collapse; margin-bottom: 4pt; }
+    table.marks th, table.marks td { border: 0.7pt solid #111; padding: 3pt 5pt; }
+    table.marks th { background: {{ $accent_color }}; color: #fff; font-size: 9pt; text-align: center; }
+    table.marks th.band { background: {{ $accent_dark }}; font-size: 9.5pt; }
     table.marks.annual th { font-size: 6.5pt; padding: 1.5pt 1.5pt; }
     table.marks.annual td { font-size: 7.5pt; padding: 1.5pt 1.5pt; }
-    table.marks td.subj { font-weight: bold; text-transform: uppercase; font-size: 9pt; }
+    table.marks td.subj { font-weight: bold; text-transform: uppercase; font-size: 9.5pt; }
     table.marks.annual td.subj { font-size: 7.5pt; }
-    table.marks td.num { text-align: center; font-size: 9pt; }
+    table.marks td.num { text-align: center; font-size: 9.5pt; }
     table.marks td.grade { text-align: center; font-weight: bold; background: {{ $accent_light }}; }
     table.marks td.grade .grade-val { display: inline-block; width: 16pt; text-align: left; }
     table.marks td.empty { text-align: center; color: #666; }
-    table.marks-summary { width: 100%; border-collapse: collapse; margin: 0 0 3pt; }
-    table.marks-summary th, table.marks-summary td { border: 0.7pt solid #111; padding: 1.5pt 4pt; font-size: 8pt; text-align: center; }
+    table.marks-summary { width: 100%; border-collapse: collapse; margin: 0 0 4pt; }
+    table.marks-summary th, table.marks-summary td { border: 0.7pt solid #111; padding: 2pt 5pt; font-size: 8.5pt; text-align: center; }
     table.marks-summary th { background: {{ $accent_color }}; color: #fff; }
     table.marks-summary td.subj { font-weight: bold; text-align: left; }
-    .mid { width: 100%; border-collapse: collapse; margin-bottom: 3pt; }
+    .mid { width: 100%; border-collapse: collapse; margin-bottom: 4pt; }
     .mid > td { border: none; vertical-align: top; padding: 0; }
-    .mid-left { width: 58%; padding-right: 6pt; }
+    .mid-left { width: 58%; padding-right: 8pt; }
     .mid-right { width: 42%; }
     .box { border: 0.9pt solid #111; }
-    .box-pad { padding: 3pt 7pt; }
-    .h-blue { color: {{ $accent_color }}; font-weight: bold; font-size: 9pt; margin: 0 0 1.5pt; }
-    table.co-grid { width: 100%; border-collapse: collapse; margin-bottom: 3pt; }
-    table.co-grid th, table.co-grid td { border: 0.7pt solid #111; padding: 1.5pt 6pt; font-size: 8pt; }
+    .box-pad { padding: 4pt 9pt; }
+    .h-blue { color: {{ $accent_color }}; font-weight: bold; font-size: 9.5pt; margin: 0 0 2pt; }
+    table.co-grid { width: 100%; border-collapse: collapse; margin-bottom: 4pt; }
+    table.co-grid th, table.co-grid td { border: 0.7pt solid #111; padding: 2pt 7pt; font-size: 8.5pt; }
     table.co-grid th { color: {{ $accent_color }}; font-weight: bold; text-align: center; vertical-align: middle; }
     table.co-grid th.area-head { text-align: left; }
     table.co-grid td.area { font-weight: bold; text-transform: uppercase; }
     table.co-grid td.grade { text-align: center; font-weight: bold; }
     .remarks-box { text-align: center; }
-    .remarks-opts { font-weight: bold; font-size: 9pt; margin-top: 1pt; }
-    .sum-box { border: 0.9pt solid #111; padding: 2pt 7pt; margin-bottom: 2pt; font-size: 8.5pt; font-weight: bold; }
+    .remarks-opts { font-weight: bold; font-size: 9.5pt; margin-top: 1.5pt; }
+    .sum-box { border: 0.9pt solid #111; padding: 2.5pt 9pt; margin-bottom: 3pt; font-size: 9pt; font-weight: bold; }
     .sum-val { color: {{ $accent_color }}; text-decoration: underline; }
     .sum-grade { display: inline-block; background: {{ $accent_light }}; padding: 0 6pt; color: {{ $accent_color }}; text-decoration: none; }
-    .bottom { width: 100%; border-collapse: collapse; margin-bottom: 3pt; }
+    .bottom { width: 100%; border-collapse: collapse; margin-bottom: 4pt; }
     .bottom td { border: none; vertical-align: top; padding: 0; }
-    .bottom-left { width: 42%; padding-right: 6pt; }
+    .bottom-left { width: 42%; padding-right: 8pt; }
     .bottom-right { width: 58%; }
     .grade-title {
         display: inline-block; background: {{ $accent_light }}; border: 0.7pt solid #111;
-        padding: 1pt 10pt; color: {{ $accent_color }}; font-weight: bold; font-size: 8.5pt; margin-bottom: 2pt;
+        padding: 1.5pt 12pt; color: {{ $accent_color }}; font-weight: bold; font-size: 9pt; margin-bottom: 2pt;
     }
-    .grade-grid { width: 100%; border-collapse: collapse; font-size: 8pt; }
-    .grade-grid td { border: none; padding: 1pt 2pt; }
+    .grade-grid { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+    .grade-grid td { border: none; padding: 1.5pt 2pt; }
     .g-range { color: #15803d; font-weight: bold; }
     .g-letter { color: #7e22ce; font-weight: bold; }
-    .chart-title { text-align: center; font-weight: bold; font-size: 9pt; margin: 1pt 0 2pt; }
-    .sig-row { width: 100%; border-collapse: collapse; border-top: 0.9pt solid #111; margin-top: 3pt; padding-top: 3pt; }
-    .sig-row td { border: none; width: 50%; vertical-align: bottom; padding-top: 16pt; font-weight: bold; font-size: 9.5pt; }
+    .chart-title { text-align: center; font-weight: bold; font-size: 9.5pt; margin: 1pt 0 3pt; }
+    .sig-row { width: 100%; border-collapse: collapse; border-top: 0.9pt solid #111; margin-top: 4pt; padding-top: 3pt; }
+    .sig-row td { border: none; width: 50%; vertical-align: bottom; padding-top: 22pt; font-weight: bold; font-size: 10pt; }
     .sig-row td.right { text-align: right; }
-    .sig-img { max-height: 30pt; max-width: 90pt; margin-bottom: 2pt; }
-    .sig-space { height: 22pt; }
-    .stamp { max-height: 34pt; max-width: 34pt; margin-bottom: 2pt; }
+    .sig-img { max-height: 32pt; max-width: 100pt; margin-bottom: 2pt; }
+    .sig-space { height: 26pt; }
+    .stamp { max-height: 38pt; max-width: 38pt; margin-bottom: 2pt; }
 
     /* "None" PDF colour: header bands normally fill with accent_color/accent_dark and hardcode
        white text on top, so just greying accent_color would still leave white-on-grey headers.

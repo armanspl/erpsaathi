@@ -11,6 +11,7 @@ use App\Models\Mark;
 use App\Models\SchoolClass;
 use App\Models\Student;
 use App\Services\SpreadsheetImportReader;
+use App\Services\StudentSubjectEnrollmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +34,14 @@ class MarkController extends Controller
             ->get()
             ->groupBy('student_id');
 
+        // Optional subjects (e.g. Urdu/Sanskrit) only apply to students explicitly enrolled in
+        // them — everyone else's cell for that subject is shown disabled, not left as an
+        // editable box that would (wrongly) count toward their total. See StudentSubjectEnrollmentService.
+        $optionalSubjectIds = StudentSubjectEnrollmentService::optionalSubjectIdsByClass([$data['school_class_id']])
+            ->get($data['school_class_id'], collect());
+        $sessionId = AcademicSession::fromRequest($request, true)?->id;
+        $enrolledIdsByStudent = StudentSubjectEnrollmentService::enrolledSubjectIdsByStudent($students->pluck('id')->all(), $sessionId);
+
         return response()->json([
             ...$context,
             'subjects' => $subjects->map(fn (ExamSchedule $s) => [
@@ -40,8 +49,15 @@ class MarkController extends Controller
                 'subject_id' => $s->subject_id,
                 'name' => $s->subject->name,
                 'max_marks' => (float) $s->max_marks,
+                'is_optional' => $optionalSubjectIds->contains($s->subject_id),
             ]),
-            'students' => $students->map(fn (Student $student) => $this->presentStudentRow($student, $subjects, $marks->get($student->id, collect())))->values(),
+            'students' => $students->map(fn (Student $student) => $this->presentStudentRow(
+                $student,
+                $subjects,
+                $marks->get($student->id, collect()),
+                $optionalSubjectIds,
+                $enrolledIdsByStudent->get($student->id, collect())
+            ))->values(),
         ]);
     }
 
@@ -87,8 +103,11 @@ class MarkController extends Controller
         ]);
 
         $subjects = $this->sheetSubjects($data['exam_id'], $data['school_class_id'])->keyBy('subject_id');
+        $optionalSubjectIds = StudentSubjectEnrollmentService::optionalSubjectIdsByClass([$data['school_class_id']])
+            ->get($data['school_class_id'], collect());
+        $sessionId = Exam::find($data['exam_id'])?->academic_session_id;
 
-        DB::transaction(function () use ($data, $subjects) {
+        DB::transaction(function () use ($data, $subjects, $optionalSubjectIds, $sessionId) {
             foreach ($data['records'] as $record) {
                 foreach ($record['marks'] ?? [] as $subjectId => $value) {
                     $schedule = $subjects->get((int) $subjectId);
@@ -106,6 +125,12 @@ class MarkController extends Controller
                         ['exam_schedule_id' => $schedule->id, 'student_id' => $record['student_id']],
                         ['marks_obtained' => $value]
                     );
+                    // Entering a mark for an optional subject is itself an explicit choice —
+                    // make sure it's reflected as an enrollment (admin can always override this
+                    // way, not only through the dedicated enrollment screen).
+                    if ($optionalSubjectIds->contains((int) $subjectId)) {
+                        StudentSubjectEnrollmentService::ensureEnrolled((int) $record['student_id'], (int) $subjectId, (int) $data['school_class_id'], $sessionId);
+                    }
                 }
             }
         });
@@ -168,14 +193,19 @@ class MarkController extends Controller
         $students = $this->rosterStudents($data)->get();
         $marks = Mark::whereIn('exam_schedule_id', $subjects->pluck('id'))->whereIn('student_id', $students->pluck('id'))->get()->groupBy('student_id');
 
+        $optionalSubjectIds = StudentSubjectEnrollmentService::optionalSubjectIdsByClass([$data['school_class_id']])
+            ->get($data['school_class_id'], collect());
+        $sessionId = AcademicSession::fromRequest($request, true)?->id;
+        $enrolledIdsByStudent = StudentSubjectEnrollmentService::enrolledSubjectIdsByStudent($students->pluck('id')->all(), $sessionId);
+
         $header = ['Admission No', 'Roll No', 'Student Name', ...$subjects->map(fn ($s) => $s->subject->name)->all(), 'Total', '%', 'Grade'];
 
-        return response()->streamDownload(function () use ($students, $subjects, $marks, $header) {
+        return response()->streamDownload(function () use ($students, $subjects, $marks, $header, $optionalSubjectIds, $enrolledIdsByStudent) {
             $out = fopen('php://output', 'w');
             fwrite($out, "\xEF\xBB\xBF");
             fputcsv($out, $header);
             foreach ($students as $student) {
-                $row = $this->presentStudentRow($student, $subjects, $marks->get($student->id, collect()));
+                $row = $this->presentStudentRow($student, $subjects, $marks->get($student->id, collect()), $optionalSubjectIds, $enrolledIdsByStudent->get($student->id, collect()));
                 $line = [$student->admission_no, $student->roll_no, $student->name];
                 foreach ($subjects as $s) {
                     $line[] = $row['marks'][$s->subject_id] ?? '';
@@ -344,16 +374,28 @@ class MarkController extends Controller
         return SchoolClass::findOrFail($schoolClassId)->subjects()->orderBy('name')->pluck('name')->all();
     }
 
-    private function presentStudentRow(Student $student, $subjects, $studentMarks): array
+    private function presentStudentRow(Student $student, $subjects, $studentMarks, $optionalSubjectIds = null, $enrolledSubjectIds = null): array
     {
+        $optionalSubjectIds ??= collect();
+        $enrolledSubjectIds ??= collect();
+
         $marksBySubject = $studentMarks->keyBy('exam_schedule_id');
         $marksBySubjectId = [];
+        $notEnrolledSubjectIds = [];
         $total = 0.0;
         $maxTotal = 0.0;
         $anyEntered = false;
 
         foreach ($subjects as $schedule) {
             $mark = $marksBySubject->get($schedule->id);
+            $applies = StudentSubjectEnrollmentService::applies($schedule->subject_id, $optionalSubjectIds, $enrolledSubjectIds, (bool) $mark);
+            if (! $applies) {
+                $notEnrolledSubjectIds[] = $schedule->subject_id;
+                $marksBySubjectId[$schedule->subject_id] = null;
+
+                continue;
+            }
+
             $maxTotal += (float) $schedule->max_marks;
             if ($mark) {
                 $marksBySubjectId[$schedule->subject_id] = (float) $mark->marks_obtained;
@@ -373,6 +415,7 @@ class MarkController extends Controller
             'roll_no' => $student->roll_no,
             'name' => $student->name,
             'marks' => $marksBySubjectId,
+            'not_enrolled_subject_ids' => $notEnrolledSubjectIds,
             'total' => $anyEntered ? round($total, 2) : 0,
             'percentage' => $anyEntered ? $percentage : 0,
             'grade' => $grade,

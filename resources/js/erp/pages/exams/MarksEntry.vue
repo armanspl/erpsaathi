@@ -127,6 +127,7 @@
                                 <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Student Name {{ sortArrow('name') }}</th>
                                 <th v-for="subj in sheet.subjects" :key="subj.id" class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     {{ subj.name }}
+                                    <span v-if="subj.is_optional" class="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold normal-case text-amber-700 dark:bg-amber-500/20 dark:text-amber-400" title="Optional subject — applies only to enrolled students">Optional</span>
                                     <button type="button" class="ml-1 text-rose-400 hover:text-rose-600" title="Remove subject" @click="removeSubject(subj)">×</button>
                                 </th>
                                 <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('total')">Total {{ sortArrow('total') }}</th>
@@ -142,11 +143,13 @@
                                 <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ row.name }}</td>
                                 <td v-for="subj in sheet.subjects" :key="subj.id" class="px-4 py-3">
                                     <input
+                                        v-if="!row.not_enrolled_subject_ids?.includes(subj.subject_id)"
                                         v-model.number="draft[row.id][subj.subject_id]"
                                         type="number" min="0" :max="subj.max_marks"
                                         class="form-input !w-20 !py-1"
                                         @input="recompute(row.id)"
                                     />
+                                    <span v-else class="inline-flex h-8 w-20 items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-300 dark:border-slate-700 dark:text-slate-600" title="Student not enrolled in this optional subject">not enrolled</span>
                                 </td>
                                 <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">{{ computedRows[row.id]?.total ?? 0 }}</td>
                                 <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ computedRows[row.id]?.percentage ?? 0 }}%</td>
@@ -435,10 +438,13 @@ function onTermChange() {
 function recompute(studentId) {
     if (!sheet.value) return;
     const marks = draft[studentId] || {};
+    const row = sheet.value.students.find((s) => s.id === studentId);
+    const notEnrolled = row?.not_enrolled_subject_ids || [];
     let total = 0;
     let maxTotal = 0;
     let any = false;
     sheet.value.subjects.forEach((subj) => {
+        if (notEnrolled.includes(subj.subject_id)) return;
         maxTotal += Number(subj.max_marks);
         const v = marks[subj.subject_id];
         if (v !== null && v !== '' && v !== undefined) {

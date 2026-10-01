@@ -106,13 +106,34 @@
 
         <!-- Manage Subjects -->
         <SlideOver :open="subjectsDrawerOpen" :title="`Subjects — Class ${activeClass?.name}`" @close="subjectsDrawerOpen = false">
-            <div class="grid grid-cols-2 gap-2">
-                <label v-for="subject in allSubjects" :key="subject.id" class="flex items-center gap-2 rounded-lg border border-slate-100 p-2.5 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
-                    <input v-model="selectedSubjectIds" type="checkbox" :value="subject.id" class="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500" />
-                    {{ subject.name }} <span class="text-xs text-slate-400">({{ subject.code }})</span>
-                </label>
+            <div class="space-y-2">
+                <div v-for="subject in allSubjects" :key="subject.id" class="rounded-lg border border-slate-100 p-2.5 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                    <label class="flex items-center gap-2">
+                        <input v-model="selectedSubjectIds" type="checkbox" :value="subject.id" class="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500" />
+                        {{ subject.name }} <span class="text-xs text-slate-400">({{ subject.code }})</span>
+                    </label>
+                    <div v-if="selectedSubjectIds.includes(subject.id)" class="mt-2 flex flex-wrap items-center gap-3 pl-6 text-xs text-slate-500 dark:text-slate-400">
+                        <label class="flex items-center gap-1.5">
+                            <input v-model="subjectMeta[subject.id].is_optional" type="checkbox" class="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500" />
+                            Optional / Elective
+                        </label>
+                        <input
+                            v-if="subjectMeta[subject.id].is_optional"
+                            v-model="subjectMeta[subject.id].elective_group"
+                            type="text"
+                            placeholder="Group (e.g. Language) — label only, see note below"
+                            class="form-input !w-56 !py-1 !text-xs"
+                        />
+                    </div>
+                </div>
             </div>
             <p v-if="!allSubjects.length" class="py-4 text-center text-sm text-slate-400">No subjects created yet. Add subjects first.</p>
+            <p class="mt-3 text-xs text-slate-400">
+                Optional subjects (e.g. Urdu / Sanskrit) only apply to students individually enrolled in them — see
+                <span class="font-medium">Academics → Subject Enrollment</span>. Subjects left unchecked here stay compulsory for every student in the class.
+                <br /><br />
+                <span class="font-medium">Group is a label only.</span> Giving Urdu and Sanskrit the same group (e.g. "Language") just displays them together — it does <span class="font-semibold">not</span> stop a student from being enrolled in both, and does not enforce "choose one." Use Subject Enrollment to control who's actually enrolled in what.
+            </p>
             <template #footer>
                 <button type="button" class="btn-outline" @click="subjectsDrawerOpen = false">Cancel</button>
                 <button type="button" class="btn-primary" :disabled="saving" @click="saveSubjectAssignment">{{ saving ? 'Saving...' : 'Save Assignment' }}</button>
@@ -281,16 +302,30 @@ async function removeSection(section) {
 // --- Class-Subject assignment ---
 const subjectsDrawerOpen = ref(false);
 const selectedSubjectIds = ref([]);
+const subjectMeta = reactive({});
 
 function openSubjects(schoolClass) {
     activeClass.value = schoolClass;
-    selectedSubjectIds.value = (schoolClass.subjects || []).map((s) => s.id);
+    const assigned = schoolClass.subjects || [];
+    selectedSubjectIds.value = assigned.map((s) => s.id);
+    allSubjects.value.forEach((s) => {
+        const current = assigned.find((a) => a.id === s.id);
+        subjectMeta[s.id] = {
+            is_optional: !!current?.pivot?.is_optional,
+            elective_group: current?.pivot?.elective_group || '',
+        };
+    });
     subjectsDrawerOpen.value = true;
 }
 async function saveSubjectAssignment() {
     saving.value = true;
     try {
-        await client.put(`/academics/classes/${activeClass.value.id}/subjects`, { subject_ids: selectedSubjectIds.value });
+        const subjects = selectedSubjectIds.value.map((id) => ({
+            subject_id: id,
+            is_optional: !!subjectMeta[id]?.is_optional,
+            elective_group: subjectMeta[id]?.is_optional ? (subjectMeta[id]?.elective_group || null) : null,
+        }));
+        await client.put(`/academics/classes/${activeClass.value.id}/subjects`, { subjects });
         pushToast('Subject assignment saved.', 'success');
         subjectsDrawerOpen.value = false;
         invalidateAcademicsLookups();

@@ -18,6 +18,8 @@ import DatabaseBackup from '../pages/settings/DatabaseBackup.vue';
 import Branches from '../pages/academics/Branches.vue';
 import ClassesSections from '../pages/academics/ClassesSections.vue';
 import Subjects from '../pages/academics/Subjects.vue';
+import SubjectEnrollment from '../pages/academics/SubjectEnrollment.vue';
+import ClassRoutine from '../pages/academics/ClassRoutine.vue';
 import Users from '../pages/people/Users.vue';
 import Parents from '../pages/people/Parents.vue';
 import Teachers from '../pages/people/Teachers.vue';
@@ -149,6 +151,8 @@ const FLAGSHIP_ROUTES = {
     '/academics/branches': Branches,
     '/academics/classes-and-sections': ClassesSections,
     '/academics/subjects': Subjects,
+    '/academics/subject-enrollment': SubjectEnrollment,
+    '/academics/class-routine': ClassRoutine,
     '/academics/homework': Homework,
     '/academics/academic-calendar': AcademicCalendar,
     '/people/users': Users,

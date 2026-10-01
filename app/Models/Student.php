@@ -142,6 +142,12 @@ class Student extends Model implements AuthenticatableContract
         return $this->hasMany(StudentSessionHistory::class);
     }
 
+    /** Optional/elective subjects this student is enrolled in, per academic session — see StudentSubjectEnrollmentService. */
+    public function subjectEnrollments(): HasMany
+    {
+        return $this->hasMany(StudentSubjectEnrollment::class);
+    }
+
     /**
      * Match a selected branch, and also include students with no branch set.
      * Imports/legacy rows often leave branch_id null on single-campus schools.

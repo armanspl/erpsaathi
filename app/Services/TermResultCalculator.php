@@ -90,8 +90,10 @@ class TermResultCalculator
             ->groupBy('student_id');
 
         $scheduleIndex = [];
+        $scheduleIdToSubjectId = [];
         foreach ($schedules as $schedule) {
             $scheduleIndex[$schedule->exam_id.'|'.$schedule->school_class_id.'|'.$schedule->subject_id] = $schedule;
+            $scheduleIdToSubjectId[$schedule->id] = $schedule->subject_id;
         }
 
         $subjectsByClass = $schedules->groupBy('school_class_id')->map(function (Collection $rows) {
@@ -104,11 +106,24 @@ class TermResultCalculator
         $grades = GradeSystem::orderByDesc('min_percentage')->get();
         $termIndex = self::termIndex($term);
 
+        // Optional subjects only count for students actually enrolled in them (or who already
+        // have a mark against them) — see StudentSubjectEnrollmentService.
+        $optionalIdsByClass = \App\Services\StudentSubjectEnrollmentService::optionalSubjectIdsByClass($schedules->pluck('school_class_id')->unique()->values()->all());
+        $enrolledIdsByStudent = \App\Services\StudentSubjectEnrollmentService::enrolledSubjectIdsByStudent($students->pluck('id')->all(), $term->academic_session_id);
+
         $rows = $students->map(function (Student $student) use (
-            $marks, $subjectsByClass, $scheduleIndex, $exams, $grades, $term, $columns, $termIndex
+            $marks, $subjectsByClass, $scheduleIndex, $scheduleIdToSubjectId, $exams, $grades, $term, $columns, $termIndex, $optionalIdsByClass, $enrolledIdsByStudent
         ) {
             $studentMarks = $marks->get($student->id, collect());
-            $subjects = $subjectsByClass->get($student->school_class_id, collect());
+            $optionalIds = $optionalIdsByClass->get($student->school_class_id, collect());
+            $enrolledIds = $enrolledIdsByStudent->get($student->id, collect());
+            $subjects = $subjectsByClass->get($student->school_class_id, collect())
+                ->filter(function (array $subject) use ($studentMarks, $scheduleIdToSubjectId, $optionalIds, $enrolledIds) {
+                    $sid = (int) $subject['subject_id'];
+                    $hasMark = $studentMarks->contains(fn ($m) => ($scheduleIdToSubjectId[$m->exam_schedule_id] ?? null) === $sid);
+
+                    return \App\Services\StudentSubjectEnrollmentService::applies($sid, $optionalIds, $enrolledIds, $hasMark);
+                });
 
             $subjectRows = [];
             $obtained = 0.0;

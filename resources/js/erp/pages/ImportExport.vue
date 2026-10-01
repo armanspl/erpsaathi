@@ -418,6 +418,22 @@ watch(
     { immediate: true },
 );
 
+// Class Routine's import needs a session/branch picked and a review grid before saving, and its
+// export is per-routine (not a single "export everything" dump) — both live on their own page
+// (Academics → Class Routine), not the generic one-shot upload/download flow here. This card is
+// just a discovery shortcut into that page's own Import/Export controls.
+watch(
+    typeParam,
+    (type) => {
+        if (type === 'class-routine-import') {
+            router.replace({ path: '/academics/class-routine', query: { action: 'import' } });
+        } else if (type === 'class-routine-export') {
+            router.replace({ path: '/academics/class-routine', query: { action: 'export' } });
+        }
+    },
+    { immediate: true },
+);
+
 // The whole Import & Export sidebar group shares this one route (only `type` in the
 // query differs), so Vue Router reuses this component instance across navigations —
 // re-sync local state from the query on every change instead of only at setup.

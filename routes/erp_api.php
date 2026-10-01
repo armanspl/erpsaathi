@@ -4,10 +4,12 @@ use App\Http\Controllers\Erp\AcademicSessionController;
 use App\Http\Controllers\Erp\AiAssistantController;
 use App\Http\Controllers\Erp\Academics\AcademicsLookupController;
 use App\Http\Controllers\Erp\Academics\BranchController;
+use App\Http\Controllers\Erp\Academics\ClassRoutineController;
 use App\Http\Controllers\Erp\Academics\ClassSubjectController;
 use App\Http\Controllers\Erp\Academics\HomeworkController;
 use App\Http\Controllers\Erp\Academics\SchoolClassController;
 use App\Http\Controllers\Erp\Academics\SectionController;
+use App\Http\Controllers\Erp\Academics\StudentSubjectEnrollmentController;
 use App\Http\Controllers\Erp\Academics\SubjectController;
 use App\Http\Controllers\Erp\Account\ApiTokenController;
 use App\Http\Controllers\Erp\Account\PasswordController;
@@ -201,9 +203,16 @@ Route::prefix('academics')->name('academics.')->group(function () {
     Route::get('classes', [SchoolClassController::class, 'index'])->name('classes.index');
     Route::get('sections', [SectionController::class, 'index'])->name('sections.index');
     Route::get('subjects', [SubjectController::class, 'index'])->name('subjects.index');
+    Route::get('subject-enrollment/roster', [StudentSubjectEnrollmentController::class, 'roster'])->name('subject-enrollment.roster');
     Route::get('homeworks', [HomeworkController::class, 'index'])->name('homeworks.index');
     Route::get('homework-items/{homeworkItem}/attachment', [HomeworkController::class, 'downloadAttachment'])->name('homework-items.attachment');
     Route::get('academic-calendar', [AcademicCalendarController::class, 'index'])->name('academic-calendar.index');
+    Route::middleware('erp.permission:academics.class-routine.view')->group(function () {
+        Route::get('class-routine/lookups', [ClassRoutineController::class, 'lookups'])->name('class-routine.lookups');
+        Route::get('class-routine', [ClassRoutineController::class, 'index'])->name('class-routine.index');
+        Route::get('class-routine/{classRoutine}', [ClassRoutineController::class, 'show'])->name('class-routine.show');
+    });
+    Route::middleware('erp.permission:academics.class-routine.export')->get('class-routine/{classRoutine}/export', [ClassRoutineController::class, 'export'])->name('class-routine.export');
 
     // Writes — page-level (legacy academics.manage still grants via PermissionResolver).
     Route::middleware('erp.permission:academics.branches.create')->post('branches', [BranchController::class, 'store'])->name('branches.store');
@@ -219,6 +228,10 @@ Route::prefix('academics')->name('academics.')->group(function () {
         Route::put('sections/{section}', [SectionController::class, 'update'])->name('sections.update');
     });
     Route::middleware('erp.permission:academics.classes-and-sections.assign')->put('classes/{schoolClass}/subjects', [ClassSubjectController::class, 'sync'])->name('classes.subjects.sync');
+    Route::middleware('erp.permission:academics.subject-enrollment.assign')->group(function () {
+        Route::put('subject-enrollment/assign', [StudentSubjectEnrollmentController::class, 'assign'])->name('subject-enrollment.assign');
+        Route::post('subject-enrollment/bulk-assign', [StudentSubjectEnrollmentController::class, 'bulkAssign'])->name('subject-enrollment.bulk-assign');
+    });
     Route::middleware('erp.permission:academics.classes-and-sections.delete')->group(function () {
         Route::delete('classes/{schoolClass}', [SchoolClassController::class, 'destroy'])->name('classes.destroy');
         Route::delete('sections/{section}', [SectionController::class, 'destroy'])->name('sections.destroy');
@@ -235,6 +248,11 @@ Route::prefix('academics')->name('academics.')->group(function () {
     Route::middleware('erp.permission:academics.academic-calendar.create')->post('academic-calendar', [AcademicCalendarController::class, 'store'])->name('academic-calendar.store');
     Route::middleware('erp.permission:academics.academic-calendar.edit')->put('academic-calendar/{academicCalendar}', [AcademicCalendarController::class, 'update'])->name('academic-calendar.update');
     Route::middleware('erp.permission:academics.academic-calendar.delete')->delete('academic-calendar/{academicCalendar}', [AcademicCalendarController::class, 'destroy'])->name('academic-calendar.destroy');
+
+    Route::middleware('erp.permission:academics.class-routine.create')->post('class-routine', [ClassRoutineController::class, 'store'])->name('class-routine.store');
+    Route::middleware('erp.permission:academics.class-routine.import')->post('class-routine/import-preview', [ClassRoutineController::class, 'importPreview'])->name('class-routine.import-preview');
+    Route::middleware('erp.permission:academics.class-routine.edit')->put('class-routine/{classRoutine}', [ClassRoutineController::class, 'update'])->name('class-routine.update');
+    Route::middleware('erp.permission:academics.class-routine.delete')->delete('class-routine/{classRoutine}', [ClassRoutineController::class, 'destroy'])->name('class-routine.destroy');
 });
 
 Route::prefix('people')->name('people.')->group(function () {

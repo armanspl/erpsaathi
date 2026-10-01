@@ -21,6 +21,6 @@ class SchoolClass extends Model
 
     public function subjects(): BelongsToMany
     {
-        return $this->belongsToMany(Subject::class, 'class_subject');
+        return $this->belongsToMany(Subject::class, 'class_subject')->withPivot(['is_optional', 'elective_group']);
     }
 }

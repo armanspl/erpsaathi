@@ -25,6 +25,7 @@ class ImportTemplateService
         'employee-master',
         'salary-monthly',
         'exam-schedule',
+        'class-routine',
     ];
 
     public function download(string $type): StreamedResponse
@@ -43,6 +44,7 @@ class ImportTemplateService
             'employee-master' => $this->employeeMaster(),
             'salary-monthly' => $this->salaryMonthly(),
             'exam-schedule' => $this->examSchedule(),
+            'class-routine' => $this->classRoutine(),
         };
 
         $filename = "import-template-{$type}.xlsx";
@@ -352,6 +354,82 @@ class ImportTemplateService
         $sheet->fromArray(['2026-09-15', '1st', 'ENG', 'ENG', 'ENG', 'ENG', 'HIN', 'MATH', 'SCI', 'SST', 'ENG', 'MATH', 'SCI'], null, 'A2');
         $sheet->fromArray(['2026-09-15', '2nd', 'MATH', 'MATH', 'MATH', 'HIN', 'ENG', 'ENG', 'MATH', 'ENG', 'HIN', 'SCI', 'MATH'], null, 'A3');
         $sheet->fromArray(['2026-09-16', '1st', 'EVS', 'EVS', 'EVS', 'MATH', 'MATH', 'HIN', 'ENG', 'MATH', 'SCI', 'ENG', 'ENG'], null, 'A4');
+
+        return $ss;
+    }
+
+    /**
+     * Two day-group sheets ("MON..." → Mon/Tue/Wed, "THU..." → Thu/Fri/Sat — see
+     * ClassRoutineImportParser), each with a teacher-colour legend (A-C) and a class grid (E
+     * onward: class name merged over a SUB/TEACH row pair, one column per period, remarks last).
+     * Matches the shape the school's own printed routine already uses, so a real file re-imports
+     * exactly like this sample does.
+     */
+    private function classRoutine(): Spreadsheet
+    {
+        $ss = new Spreadsheet();
+        $ss->removeSheetByIndex(0);
+
+        $teachers = [
+            ['name' => 'TEACHER A', 'color' => 'FF9999'],
+            ['name' => 'TEACHER B', 'color' => '99CCFF'],
+            ['name' => 'TEACHER C', 'color' => '99FF99'],
+        ];
+        $classRows = [
+            ['label' => 'NURS', 'subjects' => ['ENGLISH', 'HINDI', 'MATHS'], 'teacherIdx' => [0, 1, 2]],
+            ['label' => 'I', 'subjects' => ['HINDI', 'MATHS', 'EVS'], 'teacherIdx' => [1, 2, 0]],
+        ];
+
+        foreach (['MON-TUE-WED' => 'MON / TUES / WED', 'THU-FRI-SAT' => 'THU / FRI / SAT'] as $sheetName => $title) {
+            $sheet = $ss->createSheet();
+            $sheet->setTitle($sheetName);
+
+            $sheet->setCellValue('A1', $title);
+            $sheet->mergeCells('A1:N1');
+            $sheet->getStyle('A1')->getFont()->setBold(true);
+            $sheet->getStyle('A1')->getAlignment()->setHorizontal('center');
+
+            $sheet->fromArray(['#', 'TEACHERS', 'PERIOD', '', 'CLASS', 'PERIOD', 1, 2, 3, 4, 5, 6, 7, 'REMARKS'], null, 'A2');
+            $this->styleHeaderRow($sheet, 'A2:N2');
+
+            foreach ($teachers as $i => $t) {
+                $row = 3 + $i;
+                $sheet->setCellValue('A'.$row, $i + 1);
+                $sheet->setCellValue('B'.$row, $t['name']);
+                $sheet->getStyle('B'.$row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($t['color']);
+                $sheet->getStyle('B'.$row)->getFont()->setBold(true);
+                $sheet->setCellValue('C'.$row, '=COUNTIF($G$3:$M$'.(2 + count($classRows) * 2).',B'.$row.')');
+            }
+
+            $row = 3;
+            foreach ($classRows as $class) {
+                $subRow = $row;
+                $teachRow = $row + 1;
+                $sheet->setCellValue('E'.$subRow, $class['label']);
+                $sheet->mergeCells('E'.$subRow.':E'.$teachRow);
+                $sheet->getStyle('E'.$subRow)->getFont()->setBold(true);
+                $sheet->getStyle('E'.$subRow.':E'.$teachRow)->getAlignment()->setHorizontal('center')->setVertical('center');
+                $sheet->setCellValue('F'.$subRow, 'SUB');
+                $sheet->setCellValue('F'.$teachRow, 'TEACH');
+
+                $periodCols = ['G', 'H', 'I'];
+                foreach ($periodCols as $i => $col) {
+                    $sheet->setCellValue($col.$subRow, $class['subjects'][$i] ?? '');
+                    $teacher = $teachers[$class['teacherIdx'][$i] ?? 0];
+                    $sheet->setCellValue($col.$teachRow, $teacher['name']);
+                    $sheet->getStyle($col.$teachRow)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($teacher['color']);
+                    $sheet->getStyle($col.$teachRow)->getFont()->setBold(true);
+                }
+
+                $row += 2;
+            }
+
+            foreach (range('A', 'N') as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+        }
+
+        $ss->setActiveSheetIndex(0);
 
         return $ss;
     }

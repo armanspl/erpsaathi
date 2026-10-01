@@ -25,12 +25,13 @@ const rawMenu = [
             'Student UDISE Export',
             'Attendance Import', 'Attendance Export', 'Exam Marks Import', 'Exam Marks Export',
             'Academic Calendar Import', 'Academic Calendar Export',
+            'Class Routine Import', 'Class Routine Export',
         ],
     },
     {
         label: 'Academics',
         icon: '🎓',
-        children: ['Branches', 'Academic Sessions', 'Classes & Sections', 'Subjects', 'Homework', 'Academic Calendar'],
+        children: ['Branches', 'Academic Sessions', 'Classes & Sections', 'Subjects', 'Subject Enrollment', 'Class Routine', 'Homework', 'Academic Calendar'],
     },
     {
         label: 'Admissions',

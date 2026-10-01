@@ -19,6 +19,7 @@ class Teacher extends Model
         'email',
         'school_class_id',
         'status',
+        'color',
         'salary',
         'custom_field_values',
         'signature_path',

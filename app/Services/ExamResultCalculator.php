@@ -39,32 +39,46 @@ class ExamResultCalculator
         $marks = Mark::whereIn('exam_schedule_id', $schedules->pluck('id'))->get()->groupBy('student_id');
         $grades = GradeSystem::orderByDesc('min_percentage')->get();
 
-        $rows = $students->map(function (Student $student) use ($marks, $schedulesByClass, $grades) {
+        // Optional subjects (e.g. Urdu/Sanskrit) only count toward a student who is actually
+        // enrolled in them — otherwise every non-enrolled student's percentage would be deflated
+        // by a subject's max_marks they never had a chance to score in. See StudentSubjectEnrollmentService.
+        $optionalIdsByClass = StudentSubjectEnrollmentService::optionalSubjectIdsByClass($schedulesByClass->keys()->all());
+        $enrolledIdsByStudent = StudentSubjectEnrollmentService::enrolledSubjectIdsByStudent($students->pluck('id')->all(), $exam->academic_session_id);
+
+        $rows = $students->map(function (Student $student) use ($marks, $schedulesByClass, $grades, $optionalIdsByClass, $enrolledIdsByStudent) {
             $classSchedules = $schedulesByClass->get($student->school_class_id, collect());
             $studentMarks = $marks->get($student->id, collect());
+            $optionalIds = $optionalIdsByClass->get($student->school_class_id, collect());
+            $enrolledIds = $enrolledIdsByStudent->get($student->id, collect());
 
             $obtained = 0.0;
             $maxTotal = 0.0;
-            $subjects = $classSchedules->map(function (ExamSchedule $s) use ($studentMarks, &$obtained, &$maxTotal) {
-                $mark = $studentMarks->firstWhere('exam_schedule_id', $s->id);
-                $absent = (bool) ($mark?->is_absent);
-                $obt = $absent ? null : ($mark?->marks_obtained !== null ? (float) $mark->marks_obtained : null);
-                // Absent: preserve status, do not count as zero toward obtained or max.
-                if (! $absent) {
-                    $maxTotal += (float) $s->max_marks;
-                    if ($obt !== null) {
-                        $obtained += $obt;
-                    }
-                }
+            $subjects = $classSchedules
+                ->filter(function (ExamSchedule $s) use ($studentMarks, $optionalIds, $enrolledIds) {
+                    $hasMark = $studentMarks->contains(fn ($m) => $m->exam_schedule_id === $s->id);
 
-                return [
-                    'subject_id' => $s->subject_id,
-                    'subject_name' => $s->subject->name,
-                    'marks_obtained' => $obt,
-                    'max_marks' => (float) $s->max_marks,
-                    'is_absent' => $absent,
-                ];
-            })->values();
+                    return StudentSubjectEnrollmentService::applies($s->subject_id, $optionalIds, $enrolledIds, $hasMark);
+                })
+                ->map(function (ExamSchedule $s) use ($studentMarks, &$obtained, &$maxTotal) {
+                    $mark = $studentMarks->firstWhere('exam_schedule_id', $s->id);
+                    $absent = (bool) ($mark?->is_absent);
+                    $obt = $absent ? null : ($mark?->marks_obtained !== null ? (float) $mark->marks_obtained : null);
+                    // Absent: preserve status, do not count as zero toward obtained or max.
+                    if (! $absent) {
+                        $maxTotal += (float) $s->max_marks;
+                        if ($obt !== null) {
+                            $obtained += $obt;
+                        }
+                    }
+
+                    return [
+                        'subject_id' => $s->subject_id,
+                        'subject_name' => $s->subject->name,
+                        'marks_obtained' => $obt,
+                        'max_marks' => (float) $s->max_marks,
+                        'is_absent' => $absent,
+                    ];
+                })->values();
 
             $percentage = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 2) : 0;
             $grade = $grades->first(fn (GradeSystem $g) => $percentage >= $g->min_percentage && $percentage <= $g->max_percentage);

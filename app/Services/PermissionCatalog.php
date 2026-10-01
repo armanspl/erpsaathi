@@ -219,6 +219,11 @@ class PermissionCatalog
                         'path' => '/academics/subjects',
                         'actions' => ['view' => 'View', 'create' => 'Create', 'edit' => 'Edit', 'delete' => 'Delete'],
                     ],
+                    'subject-enrollment' => [
+                        'label' => 'Subject Enrollment',
+                        'path' => '/academics/subject-enrollment',
+                        'actions' => ['view' => 'View', 'assign' => 'Assign Students'],
+                    ],
                     'homework' => [
                         'label' => 'Homework',
                         'path' => '/academics/homework',
@@ -234,6 +239,18 @@ class PermissionCatalog
                         'label' => 'Academic Calendar',
                         'path' => '/academics/academic-calendar',
                         'actions' => ['view' => 'View', 'create' => 'Create', 'edit' => 'Edit', 'delete' => 'Delete'],
+                    ],
+                    'class-routine' => [
+                        'label' => 'Class Routine',
+                        'path' => '/academics/class-routine',
+                        'actions' => [
+                            'view' => 'View',
+                            'create' => 'Create',
+                            'edit' => 'Edit',
+                            'delete' => 'Delete',
+                            'import' => 'Import Excel',
+                            'export' => 'Export Excel',
+                        ],
                     ],
                 ],
             ],
