@@ -588,7 +588,7 @@ class ClassTermMarksImportController extends Controller
      *
      * @param  array<int, string>  $subjectRow
      * @param  array<int, string>  $componentRow
-     * @return list<array{subject: Subject, pt_col: ?int, pt_term: ?int, nb_col: ?int, nb_term: ?int, sea_col: ?int, sea_term: ?int, board_col: ?int, board_kind: ?string, board_term: ?int}>
+     * @return list<array{subject: Subject, pt_col: ?int, pt_term: ?int, pt_max: ?float, nb_col: ?int, nb_term: ?int, nb_max: ?float, sea_col: ?int, sea_term: ?int, sea_max: ?float, board_col: ?int, board_kind: ?string, board_term: ?int, board_max: ?float}>
      */
     private function buildWideSubjectBlocks(array $subjectRow, array $componentRow): array
     {
@@ -604,7 +604,9 @@ class ClassTermMarksImportController extends Controller
 
         for ($c = 1; $c <= $maxCol; $c++) {
             $top = $subjectRow[$c] ?? '';
-            $sub = $this->stripHeaderNoise($componentRow[$c] ?? '');
+            $rawComponent = $componentRow[$c] ?? '';
+            $sub = $this->stripHeaderNoise($rawComponent);
+            $colMax = $this->extractHeaderMaxMarks($rawComponent);
 
             $isIdentity = $top !== '' && (
                 in_array($top, self::SKIP_HEADER_KEYS, true)
@@ -624,10 +626,10 @@ class ClassTermMarksImportController extends Controller
                     }
                     $current = [
                         'subject' => $subject,
-                        'pt_col' => null, 'pt_term' => null,
-                        'nb_col' => null, 'nb_term' => null,
-                        'sea_col' => null, 'sea_term' => null,
-                        'board_col' => null, 'board_kind' => null, 'board_term' => null,
+                        'pt_col' => null, 'pt_term' => null, 'pt_max' => null,
+                        'nb_col' => null, 'nb_term' => null, 'nb_max' => null,
+                        'sea_col' => null, 'sea_term' => null, 'sea_max' => null,
+                        'board_col' => null, 'board_kind' => null, 'board_term' => null, 'board_max' => null,
                     ];
                 }
             }
@@ -639,29 +641,37 @@ class ClassTermMarksImportController extends Controller
             if ($sub === 'pt1') {
                 $current['pt_col'] = $c;
                 $current['pt_term'] = 1;
+                $current['pt_max'] = $colMax;
             } elseif ($sub === 'pt2') {
                 $current['pt_col'] = $c;
                 $current['pt_term'] = 2;
+                $current['pt_max'] = $colMax;
             } elseif ($sub === 'nb1') {
                 $current['nb_col'] = $c;
                 $current['nb_term'] = 1;
+                $current['nb_max'] = $colMax;
             } elseif ($sub === 'nb2') {
                 $current['nb_col'] = $c;
                 $current['nb_term'] = 2;
+                $current['nb_max'] = $colMax;
             } elseif ($sub === 'sea1') {
                 $current['sea_col'] = $c;
                 $current['sea_term'] = 1;
+                $current['sea_max'] = $colMax;
             } elseif ($sub === 'sea2') {
                 $current['sea_col'] = $c;
                 $current['sea_term'] = 2;
+                $current['sea_max'] = $colMax;
             } elseif ($sub === 'hy') {
                 $current['board_col'] = $c;
                 $current['board_kind'] = 'hy';
                 $current['board_term'] = 1;
+                $current['board_max'] = $colMax;
             } elseif (str_starts_with($sub, 'annu')) {
                 $current['board_col'] = $c;
                 $current['board_kind'] = 'annual';
                 $current['board_term'] = 2;
+                $current['board_max'] = $colMax;
             }
             // 'tot' columns (TOT(20)/TOT(100)) are computed sums — intentionally not matched above.
         }
@@ -688,6 +698,21 @@ class ClassTermMarksImportController extends Controller
         $s = preg_replace('/\s+/', '', $s) ?? $s;
 
         return trim($s);
+    }
+
+    /**
+     * Reads the per-column max marks out of a component header like "hy (50)" — subjects like
+     * Drawing are often worth fewer marks than the rest (e.g. HY (50) vs the usual HY (80)), and
+     * that number must win over the sheet-wide default so OVERALL MARKS/PERCENTAGE/GRADE on the
+     * report card are computed against the real total, not an inflated one.
+     */
+    private function extractHeaderMaxMarks(string $normalized): ?float
+    {
+        if (preg_match('/\((\d+(?:\.\d+)?)\)/', $normalized, $m)) {
+            return (float) $m[1];
+        }
+
+        return null;
     }
 
     /**
@@ -815,8 +840,14 @@ class ClassTermMarksImportController extends Controller
                     'nb' => $block['nb_col'],
                     'sea' => $block['sea_col'],
                 ];
+                $maxes = [
+                    'pt' => $block['pt_max'],
+                    'nb' => $block['nb_max'],
+                    'sea' => $block['sea_max'],
+                ];
                 if ($block['board_col']) {
                     $cols[$block['board_kind']] = $block['board_col'];
+                    $maxes[$block['board_kind']] = $block['board_max'];
                 }
 
                 foreach ($cols as $kind => $col) {
@@ -824,6 +855,9 @@ class ClassTermMarksImportController extends Controller
                         continue;
                     }
                     $examInfo = $exams[$kind];
+                    // The column header's own "(50)" beats the sheet-wide default — some
+                    // subjects (e.g. Drawing) are deliberately worth fewer marks than the rest.
+                    $columnMax = $maxes[$kind] ?? $examInfo['default_max'];
                     $cacheKey = $examInfo['exam']->id.'-'.$class->id.'-'.$subject->id;
                     if (! isset($scheduleCache[$cacheKey])) {
                         $schedule = ExamSchedule::query()->firstOrNew([
@@ -831,7 +865,7 @@ class ClassTermMarksImportController extends Controller
                             'school_class_id' => $class->id,
                             'subject_id' => $subject->id,
                         ]);
-                        $schedule->max_marks = $examInfo['default_max'];
+                        $schedule->max_marks = $columnMax;
                         if (! $schedule->exists) {
                             $schedule->date = now()->toDateString();
                         }
@@ -846,7 +880,7 @@ class ClassTermMarksImportController extends Controller
                         continue;
                     }
                     if (! $parsedMark['absent'] && $parsedMark['value'] !== null && $parsedMark['value'] > (float) $schedule->max_marks) {
-                        $schedule->max_marks = max((float) $schedule->max_marks, $parsedMark['value'], $examInfo['default_max']);
+                        $schedule->max_marks = max((float) $schedule->max_marks, $parsedMark['value'], $columnMax);
                         $schedule->save();
                     }
 

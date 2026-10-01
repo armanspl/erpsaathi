@@ -468,7 +468,7 @@ class TemplateCatalog
             'school_phone_line' => 'MOB. 98765 43210',
             'registration_no' => 'REG-2020-0142',
             'udise_code' => '09071234567',
-            'session_year' => '2026-2027',
+            'session_year' => '2026-27',
             'exam_title' => 'Annual Examination Report Card',
             'exam_band_title' => 'ANNUAL EXAMINATION (500 Marks)',
             'student_name' => 'Aarav Sharma',
@@ -498,18 +498,18 @@ class TemplateCatalog
             'rank' => '2',
             'attendance' => '208 / 222',
             'remarks' => 'GOOD / VERY GOOD / EXCELLENT',
-            'co_scholastic_html' => '<table class="co-grid"><tr><th class="area-head" rowspan="2">Co-Scholastic Area</th><th class="remarks-head" colspan="2">Remarks</th></tr><tr><th class="term-head">Term-1</th><th class="term-head">Term-2</th></tr>'
-                .'<tr><td class="area">WORK EDUCATION</td><td class="grade">A</td><td class="grade">A</td></tr>'
-                .'<tr><td class="area">DRAWING &amp; ART</td><td class="grade">A</td><td class="grade">A</td></tr>'
-                .'<tr><td class="area">SPORTS</td><td class="grade">A</td><td class="grade">A</td></tr></table>',
+            'co_scholastic_html' => '<table class="co-grid"><tr><th class="area-head" rowspan="2">Co-Scholastic Areas</th><th class="remarks-head" colspan="2">Remarks</th></tr><tr><th class="term-head">Term-1</th><th class="term-head">Term-2</th></tr>'
+                .'<tr><td class="area">WORK EDUCATION</td><td class="grade">Excellent</td><td class="grade">Excellent</td></tr>'
+                .'<tr><td class="area">DRAWING &amp; ART</td><td class="grade">Excellent</td><td class="grade">Excellent</td></tr>'
+                .'<tr><td class="area">SPORTS</td><td class="grade">Excellent</td><td class="grade">Excellent</td></tr></table>',
             'grading_html' => '<table class="grade-grid"><tr><td class="g-range">91-100</td><td class="g-letter">A1</td><td style="width:10pt"></td><td class="g-range">51-60</td><td class="g-letter">C1</td></tr>'
                 .'<tr><td class="g-range">81-90</td><td class="g-letter">A2</td><td style="width:10pt"></td><td class="g-range">41-50</td><td class="g-letter">C2</td></tr>'
                 .'<tr><td class="g-range">71-80</td><td class="g-letter">B1</td><td style="width:10pt"></td><td class="g-range">33-40</td><td class="g-letter">D</td></tr>'
                 .'<tr><td class="g-range">61-70</td><td class="g-letter">B2</td><td style="width:10pt"></td><td class="g-range">32 BELOW</td><td class="g-letter">E</td></tr></table>',
             'chart_html' => '<div style="text-align:center;color:#888;font-size:8.5pt;padding:16pt 0">Sample chart preview</div>',
             'class_teacher_signature' => "Class Teacher's Sign",
-            'principal_signature' => "Principal's Sign",
-            'principal_sign_html' => '<div class="sig-space"></div>',
+            'principal_signature' => '',
+            'principal_sign_html' => '<table style="width:100pt;margin-left:auto;border-collapse:collapse"><tr><td style="border:none;padding:0;text-align:center"><div class="sig-space"></div><div>Principal\'s Sign</div></td></tr></table>',
             'stamp_html' => '',
             'school_logo' => '',
             'school_stamp' => '',

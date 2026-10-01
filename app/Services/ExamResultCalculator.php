@@ -81,7 +81,11 @@ class ExamResultCalculator
                 })->values();
 
             $percentage = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 2) : 0;
-            $grade = $grades->first(fn (GradeSystem $g) => $percentage >= $g->min_percentage && $percentage <= $g->max_percentage);
+            // $grades is ordered highest-min-percentage first, so the first band whose floor the
+            // percentage clears is the right one — also checking max_percentage leaves gaps
+            // between whole-number bands (e.g. 80-89 then 90-100) that a 2-decimal percentage
+            // like 89.87 falls straight through, showing no grade at all.
+            $grade = $grades->first(fn (GradeSystem $g) => $percentage >= $g->min_percentage);
 
             return [
                 'student_id' => $student->id,

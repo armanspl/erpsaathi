@@ -203,7 +203,6 @@
         <td class="right">
             {!! $stamp_html !!}
             {!! $principal_sign_html !!}
-            <div>{{ $principal_signature }}</div>
         </td>
     </tr></table>
 </div>

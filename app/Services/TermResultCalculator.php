@@ -96,8 +96,24 @@ class TermResultCalculator
             $scheduleIdToSubjectId[$schedule->id] = $schedule->subject_id;
         }
 
-        $subjectsByClass = $schedules->groupBy('school_class_id')->map(function (Collection $rows) {
-            return $rows->unique('subject_id')->values()->map(fn (ExamSchedule $s) => [
+        // Which subjects show up as rows at all: prefer the board exam's own schedule (e.g. the
+        // Half Yearly Exam) over the union of every exam in the term, per class. Internal
+        // components (PT/NB/SEA) are sometimes scheduled with a finer subject split than the
+        // board exam (e.g. separate Science / S. ST instead of the board's combined EVS) —
+        // unioning them in would add extra rows the board exam never tested, so the term/Half
+        // Yearly Result PDF would show subjects the matching Individual Exam PDF doesn't. Falls
+        // back to the union for any class the board exam has no schedule for at all (e.g. a term
+        // made up of only internal exams), so that class isn't left with zero subjects.
+        $examsById = $exams->keyBy('id');
+        $hasBoardExam = $exams->contains(fn (Exam $e) => ! $e->is_internal_component);
+
+        $subjectsByClass = $schedules->groupBy('school_class_id')->map(function (Collection $classSchedules) use ($examsById, $hasBoardExam) {
+            $boardSchedules = $hasBoardExam
+                ? $classSchedules->filter(fn (ExamSchedule $s) => ! ($examsById[$s->exam_id]->is_internal_component ?? false))
+                : collect();
+            $source = $boardSchedules->isNotEmpty() ? $boardSchedules : $classSchedules;
+
+            return $source->unique('subject_id')->values()->map(fn (ExamSchedule $s) => [
                 'subject_id' => $s->subject_id,
                 'subject_name' => $s->subject->name ?? 'Subject',
             ]);
@@ -144,12 +160,20 @@ class TermResultCalculator
                 foreach ($exams as $exam) {
                     $idx = $exam->id.'|'.$student->school_class_id.'|'.$sid;
                     $schedule = $scheduleIndex[$idx] ?? null;
-                    $max = $schedule
-                        ? (float) $schedule->max_marks
-                        : $exam->defaultSubjectMaxMarks();
-                    $mark = $schedule
-                        ? $studentMarks->firstWhere('exam_schedule_id', $schedule->id)
-                        : null;
+
+                    // No schedule at all means this subject was never set up for this specific
+                    // exam (e.g. Drawing often only has a Half Yearly paper, no PT/NB/SEA
+                    // component) — skip it entirely rather than padding the subject's max with
+                    // this exam's own default, which silently inflated OVERALL MARKS/PERCENTAGE
+                    // for every subject missing one or more components.
+                    if (! $schedule) {
+                        $cells['exam_'.$exam->id] = null;
+
+                        continue;
+                    }
+
+                    $max = (float) $schedule->max_marks;
+                    $mark = $studentMarks->firstWhere('exam_schedule_id', $schedule->id);
                     $absent = (bool) ($mark?->is_absent);
                     $obt = (! $absent && $mark?->marks_obtained !== null) ? (float) $mark->marks_obtained : null;
 
@@ -184,8 +208,12 @@ class TermResultCalculator
                 }
 
                 $pct = ($any && $subjMax > 0) ? round(($subjObt / $subjMax) * 100, 2) : null;
+                // $grades is ordered highest-min-percentage first, so the first band whose floor
+                // the percentage clears is the right one — checking max_percentage too leaves
+                // gaps between whole-number bands (e.g. 80-89 then 90-100) that a 2-decimal
+                // percentage like 89.87 falls straight through, showing no grade at all.
                 $grade = $pct !== null
-                    ? ($grades->first(fn ($g) => $pct >= (float) $g->min_percentage && $pct <= (float) $g->max_percentage)?->grade)
+                    ? ($grades->first(fn ($g) => $pct >= (float) $g->min_percentage)?->grade)
                     : null;
 
                 $subjectRows[] = [
@@ -202,7 +230,7 @@ class TermResultCalculator
             }
 
             $percentage = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 2) : 0.0;
-            $grade = $grades->first(fn ($g) => $percentage >= (float) $g->min_percentage && $percentage <= (float) $g->max_percentage);
+            $grade = $grades->first(fn ($g) => $percentage >= (float) $g->min_percentage);
 
             return [
                 'format' => 'term',

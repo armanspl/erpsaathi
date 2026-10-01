@@ -29,7 +29,7 @@ class ReportCardPdfService
             ->find($row['student_id'] ?? null);
 
         $session = AcademicSession::fromRequest(request(), true);
-        $sessionName = $session?->name ?: ($school['session_year'] ?? '');
+        $sessionName = $this->shortSessionLabel($session?->name ?: ($school['session_year'] ?? ''));
 
         $escape = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $subjects = collect($row['subjects'] ?? []);
@@ -109,20 +109,35 @@ class ReportCardPdfService
             'rank' => (string) ($row['rank'] ?? '—'),
             'attendance' => $this->attendanceSummary((int) ($row['student_id'] ?? 0), $session),
             'remarks' => $row['remarks'] ?? 'GOOD / VERY GOOD / EXCELLENT',
-            'co_scholastic_html' => $this->coScholasticHtml($row, $escape),
+            'co_scholastic_html' => $this->coScholasticHtml($row, $grades, $escape),
             'grading_html' => $this->gradingSystemHtml($grades, $escape),
             'chart_html' => $this->subjectMarksChart($subjects),
             'class_teacher_signature' => "Class Teacher's Sign",
-            'principal_signature' => "Principal's Sign",
+            // Left empty: the "Principal's Sign" label now lives inside principal_sign_html
+            // itself (see below), in the same centered block as the image, so the two can
+            // never drift apart. The old standalone <div>{{ principal_signature }}</div> line
+            // still exists in already-created templates' stored HTML — it just renders nothing.
+            'principal_signature' => '',
             'stamp_html' => ! empty($school['school_stamp'])
                 ? '<img class="stamp" src="'.$school['school_stamp'].'" alt="Stamp" />'
                 : '',
             'class_teacher_sign_html' => $classTeacher?->signature_path
                 ? '<img class="sig-img" src="'.$this->dataBuilder->resolveStoredImage($classTeacher->signature_path).'" alt="Class Teacher" />'
                 : '<div class="sig-space"></div>',
-            'principal_sign_html' => ! empty($school['principal_signature_image'])
-                ? '<img class="sig-img" src="'.$school['principal_signature_image'].'" alt="Principal" />'
-                : '<div class="sig-space"></div>',
+            // A small fixed-width table, pinned to the right edge via margin-left:auto — not
+            // centered within the whole right-hand column (that drifted left/center depending
+            // on surrounding content) and not a plain block div (a block's own box ignores an
+            // ancestor's text-align — only its content obeys its own). margin-left:auto on an
+            // explicitly-sized table reliably pins it to the right regardless of what the
+            // ancestor cell's own CSS says, so it stays put across every report card template,
+            // old or new. Image and label are one unit inside it, centered with each other.
+            'principal_sign_html' => '<table style="width:100pt;margin-left:auto;border-collapse:collapse"><tr>'
+                .'<td style="border:none;padding:0;width:auto;text-align:center;vertical-align:top;font-weight:inherit;font-size:inherit">'
+                .(! empty($school['principal_signature_image'])
+                    ? '<img class="sig-img" src="'.$school['principal_signature_image'].'" alt="Principal" />'
+                    : '<div class="sig-space"></div>')
+                .'<div>Principal\'s Sign</div>'
+                .'</td></tr></table>',
         ]);
     }
 
@@ -163,8 +178,12 @@ class ReportCardPdfService
             }
             $obtNum = $obt === null || $obt === '' ? null : (float) $obt;
             $pct = ($obtNum !== null && $max > 0) ? round(($obtNum / $max) * 100, 1) : null;
+            // $grades is ordered highest-min-percentage first, so the first band whose floor the
+            // percentage clears is the right one — also checking max_percentage leaves gaps
+            // between whole-number bands (e.g. 80-89 then 90-100) that a 1-decimal percentage
+            // like 89.9 falls straight through, showing no grade at all.
             $grade = $pct !== null
-                ? ($grades->first(fn ($g) => $pct >= (float) $g->min_percentage && $pct <= (float) $g->max_percentage)?->grade ?? '—')
+                ? ($grades->first(fn ($g) => $pct >= (float) $g->min_percentage)?->grade ?? '—')
                 : '—';
             $fmt = fn (?float $n) => $n === null ? '—' : rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.');
 
@@ -320,14 +339,18 @@ class ReportCardPdfService
     }
 
     /**
-     * A bordered "Co-Scholastic Area | Remarks" grid, with one Remarks sub-column per term
+     * A bordered "Co-Scholastic Areas | Remarks" grid, with one Remarks sub-column per term
      * when per-term grades are available (Annual report), or a single flat Remarks column
      * when they aren't (Individual exam / single-term reports have no per-term co-scholastic
      * data at all — see AnnualReportCalculator, the only calculator that populates it).
      *
+     * Each cell shows a textual remark (e.g. "Excellent") looked up from Grade System's
+     * `remarks` column by matching the stored grade letter, falling back to the raw grade
+     * as-typed when it doesn't match any configured grade (free-text entries).
+     *
      * @param  array<string, mixed>  $row
      */
-    private function coScholasticHtml(array $row, callable $escape): string
+    private function coScholasticHtml(array $row, Collection $grades, callable $escape): string
     {
         $areaLabels = CoScholasticGrade::AREAS;
         $items = $row['co_scholastic'] ?? [];
@@ -337,14 +360,21 @@ class ReportCardPdfService
         $termCount = count($termNames);
 
         if ($termCount === 0) {
-            $thead = '<tr><th class="area-head">Co-Scholastic Area</th><th class="remarks-head">Remarks</th></tr>';
+            $thead = '<tr><th class="area-head">Co-Scholastic Areas</th><th class="remarks-head">Remarks</th></tr>';
         } else {
-            $thead = '<tr><th class="area-head" rowspan="2">Co-Scholastic Area</th><th class="remarks-head" colspan="'.$termCount.'">Remarks</th></tr><tr>';
+            $thead = '<tr><th class="area-head" rowspan="2">Co-Scholastic Areas</th><th class="remarks-head" colspan="'.$termCount.'">Remarks</th></tr><tr>';
             foreach ($termNames as $name) {
                 $thead .= '<th class="term-head">'.$escape($name).'</th>';
             }
             $thead .= '</tr>';
         }
+
+        $remarkFor = function (string $grade) use ($grades) {
+            $match = $grades->first(fn ($g) => strcasecmp(trim((string) $g->grade), $grade) === 0);
+            $remark = $match?->remarks ? trim((string) $match->remarks) : '';
+
+            return $remark !== '' ? $remark : $grade;
+        };
 
         $bodyRows = '';
         foreach ($areaLabels as $key => $label) {
@@ -355,13 +385,23 @@ class ReportCardPdfService
             } else {
                 foreach ($terms as $t) {
                     $g = trim((string) ($t['grade'] ?? ''));
-                    $bodyRows .= '<td class="grade">'.($g !== '' ? $escape($g) : '—').'</td>';
+                    $bodyRows .= '<td class="grade">'.($g !== '' ? $escape($remarkFor($g)) : '—').'</td>';
                 }
             }
             $bodyRows .= '</tr>';
         }
 
         return '<table class="co-grid">'.$thead.$bodyRows.'</table>';
+    }
+
+    /** "2026-2027" → "2026-27"; anything not matching that shape is left untouched. */
+    private function shortSessionLabel(string $name): string
+    {
+        if (preg_match('/^(\d{4})-(\d{4})$/', trim($name), $m)) {
+            return $m[1].'-'.substr($m[2], 2, 2);
+        }
+
+        return $name;
     }
 
     /**

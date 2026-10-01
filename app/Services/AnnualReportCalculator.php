@@ -157,8 +157,12 @@ class AnnualReportCalculator
                 $pct = ($overall !== null && $overallMaxSubject > 0)
                     ? round(($overall / $overallMaxSubject) * 100, 2)
                     : null;
+                // $grades is ordered highest-min-percentage first, so the first band whose floor
+                // the percentage clears is the right one — also checking max_percentage leaves
+                // gaps between whole-number bands (e.g. 80-89 then 90-100) that a 2-decimal
+                // percentage like 89.87 falls straight through, showing no grade at all.
                 $grade = $pct !== null
-                    ? ($grades->first(fn ($g) => $pct >= (float) $g->min_percentage && $pct <= (float) $g->max_percentage)?->grade)
+                    ? ($grades->first(fn ($g) => $pct >= (float) $g->min_percentage)?->grade)
                     : null;
 
                 $subjectRows[] = [
@@ -174,7 +178,7 @@ class AnnualReportCalculator
             }
 
             $percentage = $overallMax > 0 ? round(($overallObtained / $overallMax) * 100, 2) : 0.0;
-            $grade = $grades->first(fn ($g) => $percentage >= (float) $g->min_percentage && $percentage <= (float) $g->max_percentage);
+            $grade = $grades->first(fn ($g) => $percentage >= (float) $g->min_percentage);
 
             $co = self::presentCoScholastic($coByStudent->get($student->id, collect()), $terms);
 

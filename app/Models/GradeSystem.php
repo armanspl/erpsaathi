@@ -25,8 +25,12 @@ class GradeSystem extends Model
 
     public static function forPercentage(float $percentage): ?self
     {
+        // Ordered by highest min_percentage first, so the first band whose floor the percentage
+        // clears is the right one — also requiring max_percentage >= percentage leaves gaps
+        // between whole-number bands (e.g. 80-89 then 90-100) that a fractional percentage like
+        // 89.87 falls straight through, returning no grade at all.
         return static::where('min_percentage', '<=', $percentage)
-            ->where('max_percentage', '>=', $percentage)
+            ->orderByDesc('min_percentage')
             ->first();
     }
 }
