@@ -339,59 +339,64 @@ class ReportCardPdfService
     }
 
     /**
-     * A bordered "Co-Scholastic Areas | Remarks" grid, with one Remarks sub-column per term
-     * when per-term grades are available (Annual report), or a single flat Remarks column
-     * when they aren't (Individual exam / single-term reports have no per-term co-scholastic
-     * data at all — see AnnualReportCalculator, the only calculator that populates it).
-     *
-     * Each cell shows a textual remark (e.g. "Excellent") looked up from Grade System's
-     * `remarks` column by matching the stored grade letter, falling back to the raw grade
-     * as-typed when it doesn't match any configured grade (free-text entries).
+     * Co-Scholastic Areas "Remarks" column — not manually entered per student, derived from
+     * grades already computed elsewhere on this same card:
+     * - Work Education mirrors the card's own Overall Grade.
+     * - Drawing & Art mirrors the student's "Drawing" subject grade, or "A" when this result
+     *   doesn't include a Drawing subject at all.
+     * - Sports is always "A" — nothing in the system grades sports, so there's no value to
+     *   derive it from.
+     * Applies identically to every result type (Individual Exam, Term/Half Yearly, Annual) —
+     * all of them set $row['grade'] and $row['subjects'], which is all this needs.
      *
      * @param  array<string, mixed>  $row
      */
     private function coScholasticHtml(array $row, Collection $grades, callable $escape): string
     {
-        $areaLabels = CoScholasticGrade::AREAS;
-        $items = $row['co_scholastic'] ?? [];
-        $byArea = is_array($items) ? collect($items)->keyBy('area') : collect();
+        $overallGrade = trim((string) ($row['grade'] ?? ''));
+        $values = [
+            'work_education' => $overallGrade !== '' ? $overallGrade : 'A',
+            'drawing_art' => $this->subjectGrade($row, 'drawing', $grades) ?? 'A',
+            'sports' => 'A',
+        ];
 
-        $termNames = collect($byArea->first()['terms'] ?? [])->map(fn ($t) => (string) ($t['term_name'] ?? 'Term'))->all();
-        $termCount = count($termNames);
-
-        if ($termCount === 0) {
-            $thead = '<tr><th class="area-head">Co-Scholastic Areas</th><th class="remarks-head">Remarks</th></tr>';
-        } else {
-            $thead = '<tr><th class="area-head" rowspan="2">Co-Scholastic Areas</th><th class="remarks-head" colspan="'.$termCount.'">Remarks</th></tr><tr>';
-            foreach ($termNames as $name) {
-                $thead .= '<th class="term-head">'.$escape($name).'</th>';
-            }
-            $thead .= '</tr>';
-        }
-
-        $remarkFor = function (string $grade) use ($grades) {
-            $match = $grades->first(fn ($g) => strcasecmp(trim((string) $g->grade), $grade) === 0);
-            $remark = $match?->remarks ? trim((string) $match->remarks) : '';
-
-            return $remark !== '' ? $remark : $grade;
-        };
+        $thead = '<tr><th class="area-head">Co-Scholastic Areas</th><th class="remarks-head">Remarks</th></tr>';
 
         $bodyRows = '';
-        foreach ($areaLabels as $key => $label) {
-            $bodyRows .= '<tr><td class="area">'.$escape(mb_strtoupper($label)).'</td>';
-            $terms = $byArea->get($key)['terms'] ?? [];
-            if ($termCount === 0) {
-                $bodyRows .= '<td class="grade">—</td>';
-            } else {
-                foreach ($terms as $t) {
-                    $g = trim((string) ($t['grade'] ?? ''));
-                    $bodyRows .= '<td class="grade">'.($g !== '' ? $escape($remarkFor($g)) : '—').'</td>';
-                }
-            }
-            $bodyRows .= '</tr>';
+        foreach (CoScholasticGrade::AREAS as $key => $label) {
+            $bodyRows .= '<tr><td class="area">'.$escape(mb_strtoupper($label)).'</td>'
+                .'<td class="grade">'.$escape($values[$key] ?? 'A').'</td></tr>';
         }
 
         return '<table class="co-grid">'.$thead.$bodyRows.'</table>';
+    }
+
+    /**
+     * Case-insensitive substring match on subject name within the row's subject list, returning
+     * its grade — the grade already computed on the row when present (Term/Half Yearly/Annual
+     * rows carry one per subject), or computed here from marks/max via the grade bands when it
+     * isn't (Individual Exam rows only carry raw marks per subject, no precomputed grade).
+     */
+    private function subjectGrade(array $row, string $needle, Collection $grades): ?string
+    {
+        $match = collect($row['subjects'] ?? [])
+            ->first(fn ($s) => str_contains(mb_strtolower((string) ($s['subject_name'] ?? '')), $needle));
+        if (! $match) {
+            return null;
+        }
+        if (! empty($match['grade'])) {
+            return (string) $match['grade'];
+        }
+
+        $obt = $match['marks_obtained'] ?? null;
+        $max = (float) ($match['max_marks'] ?? 0);
+        if ($obt === null || $obt === '' || $max <= 0) {
+            return null;
+        }
+
+        $pct = round(((float) $obt / $max) * 100, 2);
+
+        return $grades->first(fn ($g) => $pct >= (float) $g->min_percentage)?->grade;
     }
 
     /** "2026-2027" → "2026-27"; anything not matching that shape is left untouched. */
