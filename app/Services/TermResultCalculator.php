@@ -291,7 +291,7 @@ class TermResultCalculator
             $testMax = (int) round($internals->sum(fn (Exam $e) => $e->defaultSubjectMaxMarks()));
             $cols[] = [
                 'key' => 'test_'.$term->id,
-                'label' => 'TEST-'.$termIndex.' ('.$testMax.')',
+                'label' => 'TOTAL ('.$testMax.')',
                 'type' => 'test_total',
                 'role' => 'test',
             ];

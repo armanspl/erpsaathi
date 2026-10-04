@@ -214,6 +214,7 @@ class TemplateCatalog
             ['result', 'Result', false],
             ['rank', 'Class rank', false],
             ['attendance', 'Attendance', false],
+            ['summary_rows_html', 'Attendance/marks/percentage/grade/rank summary boxes HTML', true],
             ['remarks', 'Remarks', false],
             ['co_scholastic_html', 'Co-scholastic area grid HTML', true],
             ['grading_html', 'Grading system HTML', false],
@@ -497,6 +498,11 @@ class TemplateCatalog
             'result' => 'Pass',
             'rank' => '2',
             'attendance' => '208 / 222',
+            'summary_rows_html' => '<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr><td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">ATTENDANCE:</td><td style="border:none;padding:0;text-align:left"><span class="sum-val">208 / 222</span></td></tr></table></div>'
+                .'<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr><td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">OVERALL MARKS:</td><td style="border:none;padding:0;text-align:left"><span class="sum-val">452 / 500</span></td></tr></table></div>'
+                .'<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr><td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">OVERALL PERCENTAGE:</td><td style="border:none;padding:0;text-align:left"><span class="sum-val">90.4 %</span></td></tr></table></div>'
+                .'<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr><td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">OVERALL GRADE:</td><td style="border:none;padding:0;text-align:left"><span class="sum-grade">A1</span></td></tr></table></div>'
+                .'<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr><td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">CLASS RANK:</td><td style="border:none;padding:0;text-align:left"><span class="sum-val">2</span></td></tr></table></div>',
             'remarks' => 'GOOD / VERY GOOD / EXCELLENT',
             'co_scholastic_html' => '<table class="co-grid"><tr><th class="area-head" rowspan="2">Co-Scholastic Areas</th><th class="remarks-head" colspan="2">Remarks</th></tr><tr><th class="term-head">Term-1</th><th class="term-head">Term-2</th></tr>'
                 .'<tr><td class="area">WORK EDUCATION</td><td class="grade">Excellent</td><td class="grade">Excellent</td></tr>'

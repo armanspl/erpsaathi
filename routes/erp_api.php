@@ -89,6 +89,7 @@ use App\Http\Controllers\Erp\ImportExport\StudentPenImportController;
 use App\Http\Controllers\Erp\ImportExport\AttendanceImportController;
 use App\Http\Controllers\Erp\ImportExport\ClassTermMarksImportController;
 use App\Http\Controllers\Erp\ImportExport\ClassTermMarksExportController;
+use App\Http\Controllers\Erp\ImportExport\ExamCrossListExportController;
 use App\Http\Controllers\Erp\ImportExport\GlobalWorkbookImportController;
 use App\Http\Controllers\Erp\ImportExport\AcademicCalendarImportController;
 use App\Http\Controllers\Erp\ImportExport\AcademicCalendarExportController;
@@ -883,6 +884,7 @@ Route::prefix('import-export')->name('import-export.')->middleware('demo.no_impo
     // Reads are available to any authenticated ERP user.
     Route::get('export/academic-calendar', [AcademicCalendarExportController::class, 'download'])->name('export.academic-calendar');
     Route::get('export/exam-marks', [ClassTermMarksExportController::class, 'download'])->name('export.exam-marks');
+    Route::get('export/exam-cross-list', [ExamCrossListExportController::class, 'download'])->name('export.exam-cross-list');
     Route::get('export/{entity}', [ExportController::class, 'download'])->name('export.download');
     Route::get('templates/{type}', [ImportTemplateController::class, 'download'])->name('templates.download');
     Route::get('logs', [ImportExportLogController::class, 'index'])->name('logs.index');

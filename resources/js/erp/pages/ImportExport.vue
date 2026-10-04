@@ -178,6 +178,14 @@
                 </div>
             </div>
 
+            <div v-else-if="activeExportEntity === 'exam-cross-list'" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <h3 class="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Exam Cross List Export</h3>
+                <p class="mb-4 text-xs text-slate-400">Consolidated class result sheet — one row per student with subject-wise marks, total, %age, rank and attendance.</p>
+                <div class="max-w-xl rounded-xl border border-slate-100 p-3 dark:border-slate-800">
+                    <ExamCrossListExportPanel :exporting="!!exportingKey" @export="onExamCrossListExport" />
+                </div>
+            </div>
+
             <div v-else-if="exportEntityMeta" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex items-center justify-between gap-3">
                     <div class="flex items-center gap-2.5">
@@ -279,10 +287,12 @@ import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from '../components/common/Breadcrumb.vue';
 import StudentExportPanel from '../components/export/StudentExportPanel.vue';
 import StudentUdiseExportPanel from '../components/export/StudentUdiseExportPanel.vue';
+import ExamCrossListExportPanel from '../components/export/ExamCrossListExportPanel.vue';
 import client from '../api/client';
 import { erpStore } from '../store';
 import { pushToast } from '../utils/toast';
 import { downloadExport, downloadImportTemplate } from '../utils/downloadExport';
+import { triggerBlobDownload } from '../utils/documentPdf';
 
 const ENTITIES = [
     { key: 'global', label: 'Global Workbook', icon: '📊', slug: 'global-workbook' },
@@ -298,6 +308,7 @@ const EXTRA_IMPORT_ENTITIES = [];
 // Export-only entities (not shown on the Import tab entity picker).
 const EXTRA_EXPORT_ENTITIES = [
     { key: 'student-udise', label: 'Student UDISE', icon: '📋', slug: 'student-udise' },
+    { key: 'exam-cross-list', label: 'Exam Cross List', icon: '📋', slug: 'exam-cross-list' },
 ];
 
 // Dedicated Student Master import removed — use Global Workbook (Student Master sheet) instead.
@@ -319,6 +330,7 @@ const EXPORT_ENTITY_TO_MENU_KEY = {
     global: 'global-workbook-export',
     attendance: 'attendance-export',
     'exam-marks': 'exam-marks-export',
+    'exam-cross-list': 'exam-cross-list-export',
     'academic-calendar': 'academic-calendar-export',
 };
 
@@ -569,6 +581,24 @@ async function onStudentUdiseExport({ format, status, sessions, columns }) {
     }
 }
 
+async function onExamCrossListExport({ school_class_id, section_id, academic_term_id }) {
+    exportingKey.value = 'exam-cross-list';
+    try {
+        const response = await client.get('/import-export/export/exam-cross-list', {
+            params: { school_class_id, section_id, academic_term_id },
+            responseType: 'blob',
+        });
+        const disposition = response.headers['content-disposition'] || '';
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        triggerBlobDownload(new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), match ? match[1] : 'exam-cross-list.xlsx');
+        pushToast('Exam Cross List exported.', 'success');
+    } catch (e) {
+        pushToast('Could not export the Exam Cross List — check that the class/term have results.', 'error');
+    } finally {
+        exportingKey.value = null;
+    }
+}
+
 // --- Logs tab ---
 const logs = ref([]);
 const logsLoading = ref(false);
@@ -588,6 +618,7 @@ const ENTITY_LABELS = {
     attendance: 'Attendance',
     'exam-marks': 'Exam Marks',
     'class-term-marks': 'Exam Marks',
+    'exam-cross-list': 'Exam Cross List',
 };
 function entityLabel(entityKey) {
     return ENTITY_LABELS[entityKey] || entityKey;

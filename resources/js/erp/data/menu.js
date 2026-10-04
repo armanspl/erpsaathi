@@ -24,6 +24,7 @@ const rawMenu = [
             'Global Workbook Import', 'Global Workbook Export', 'Student Export',
             'Student UDISE Export',
             'Attendance Import', 'Attendance Export', 'Exam Marks Import', 'Exam Marks Export',
+            'Exam Cross List Export',
             'Academic Calendar Import', 'Academic Calendar Export',
             'Class Routine Import', 'Class Routine Export',
         ],

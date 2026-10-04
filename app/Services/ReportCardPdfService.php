@@ -70,13 +70,16 @@ class ReportCardPdfService
             ? mb_strtoupper((string) ($row['mapping_name'] ?? 'Annual Examination'))
             : (mb_strtoupper($exam->name).' ('.($maxTotal > 0 ? $fmt($maxTotal) : '—').' Marks)');
 
-        return array_merge($school, $this->dataBuilder->accentPalette($exam->pdf_accent_color), [
+        $accentPalette = $this->dataBuilder->accentPalette($exam->pdf_accent_color);
+        $isMono = $exam->pdf_accent_color === 'none';
+
+        return array_merge($school, $accentPalette, [
             // "None" isn't just a grey accent_color — the header bands fill with accent_color/
             // accent_dark and hardcode white text on top, so a dark-grey fill would just swap
             // "coloured header" for "grey header", still with white lettering. This class lets
             // the template's CSS drop the fill entirely and force black text instead (see
             // `.sheet.mono` rules in the classic/modern report_card templates).
-            'mono_class' => $exam->pdf_accent_color === 'none' ? 'mono' : '',
+            'mono_class' => $isMono ? 'mono' : '',
             'exam_title' => $title,
             'exam_band_title' => $bandTitle,
             'student_name' => $row['name'] ?? '',
@@ -108,8 +111,16 @@ class ReportCardPdfService
             'result' => $row['result'] ?? '',
             'rank' => (string) ($row['rank'] ?? '—'),
             'attendance' => $this->attendanceSummary((int) ($row['student_id'] ?? 0), $session),
+            'summary_rows_html' => $this->summaryRowsHtml(
+                $this->attendanceSummary((int) ($row['student_id'] ?? 0), $session),
+                $fmt($obtained).' / '.$fmt($maxTotal),
+                $fmt($percentage).' %',
+                (string) ($row['grade'] ?? '—'),
+                (string) ($row['rank'] ?? '—'),
+                $escape
+            ),
             'remarks' => $row['remarks'] ?? 'GOOD / VERY GOOD / EXCELLENT',
-            'co_scholastic_html' => $this->coScholasticHtml($row, $grades, $escape),
+            'co_scholastic_html' => $this->coScholasticHtml($row, $grades, $accentPalette['accent_color'], $isMono, $escape),
             'grading_html' => $this->gradingSystemHtml($grades, $escape),
             'chart_html' => $this->subjectMarksChart($subjects),
             'class_teacher_signature' => "Class Teacher's Sign",
@@ -210,7 +221,7 @@ class ReportCardPdfService
     private function singleExamTheadHtml(string $bandTitle, callable $escape): string
     {
         return '<tr><th class="band" colspan="1">Scholastic Area</th><th class="band" colspan="4">'.$escape($bandTitle).'</th></tr>'
-            .'<tr><th>Subject</th><th>Obtained</th><th>Max</th><th>%</th><th>Grade</th></tr>';
+            .'<tr><th>Subjects</th><th>Obtained</th><th>Max</th><th>%</th><th>Grade</th></tr>';
     }
 
     /** @param  list<array<string, mixed>>  $columns */
@@ -231,7 +242,7 @@ class ReportCardPdfService
             return '';
         }
         $top = '<tr><th class="band">Scholastic Area</th>';
-        $bottom = '<tr><th>Subject</th>';
+        $bottom = '<tr><th>Subjects</th>';
         foreach ($columns as $group) {
             $children = $group['children'] ?? [];
             $span = max(1, count($children));
@@ -351,7 +362,7 @@ class ReportCardPdfService
      *
      * @param  array<string, mixed>  $row
      */
-    private function coScholasticHtml(array $row, Collection $grades, callable $escape): string
+    private function coScholasticHtml(array $row, Collection $grades, string $accentColor, bool $isMono, callable $escape): string
     {
         $overallGrade = trim((string) ($row['grade'] ?? ''));
         $values = [
@@ -360,15 +371,58 @@ class ReportCardPdfService
             'sports' => 'A',
         ];
 
-        $thead = '<tr><th class="area-head">Co-Scholastic Areas</th><th class="remarks-head">Remarks</th></tr>';
+        // Header fill mirrors the marks table's own coloured header — white text on the
+        // accent colour, or black text with no fill in "None"/mono mode. Set inline rather
+        // than via the template's own CSS so it takes effect on already-created report card
+        // templates immediately, not just newly-seeded ones.
+        $headStyle = $isMono
+            ? 'background:#ffffff;color:#000000'
+            : 'background:'.$escape($accentColor).';color:#ffffff';
+        $thead = '<tr><th class="area-head" style="'.$headStyle.'">Co-Scholastic Areas</th>'
+            .'<th class="remarks-head" style="'.$headStyle.'">Grade</th></tr>';
 
         $bodyRows = '';
         foreach (CoScholasticGrade::AREAS as $key => $label) {
+            // The fixed-width box is centered within the column (so the group of grades reads
+            // as centered overall), but the text inside each box is left-aligned — "A" and "A+"
+            // are different widths, so centering the text itself would start each one at a
+            // different x position; this keeps every value starting at the same spot within its
+            // own (equally sized, equally centered) box. Same technique as the marks table's own
+            // Grade column.
             $bodyRows .= '<tr><td class="area">'.$escape(mb_strtoupper($label)).'</td>'
-                .'<td class="grade">'.$escape($values[$key] ?? 'A').'</td></tr>';
+                .'<td class="grade" style="text-align:center"><span style="display:inline-block;width:16pt;text-align:left">'
+                .$escape($values[$key] ?? 'A').'</span></td></tr>';
         }
 
         return '<table class="co-grid">'.$thead.$bodyRows.'</table>';
+    }
+
+    /**
+     * ATTENDANCE / OVERALL MARKS / OVERALL PERCENTAGE / OVERALL GRADE / CLASS RANK — five
+     * bordered boxes, each built as its own fixed-width-label two-column mini table instead of
+     * plain "LABEL: value" text. Every box shares the same label-column width, so every value
+     * starts at the same x position across all five boxes regardless of label length (plain
+     * text meant "CLASS RANK:" pushed its value much further left than "OVERALL PERCENTAGE:" did).
+     */
+    private function summaryRowsHtml(string $attendance, string $totalMarks, string $percentage, string $grade, string $rank, callable $escape): string
+    {
+        $rows = [
+            ['ATTENDANCE:', $attendance, 'sum-val'],
+            ['OVERALL MARKS:', $totalMarks, 'sum-val'],
+            ['OVERALL PERCENTAGE:', $percentage, 'sum-val'],
+            ['OVERALL GRADE:', $grade, 'sum-grade'],
+            ['CLASS RANK:', $rank, 'sum-val'],
+        ];
+
+        $html = '';
+        foreach ($rows as [$label, $value, $valueClass]) {
+            $html .= '<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr>'
+                .'<td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">'.$escape($label).'</td>'
+                .'<td style="border:none;padding:0;text-align:left"><span class="'.$valueClass.'">'.$escape($value).'</span></td>'
+                .'</tr></table></div>';
+        }
+
+        return $html;
     }
 
     /**
@@ -376,10 +430,12 @@ class ReportCardPdfService
      * its grade — the grade already computed on the row when present (Term/Half Yearly/Annual
      * rows carry one per subject), or computed here from marks/max via the grade bands when it
      * isn't (Individual Exam rows only carry raw marks per subject, no precomputed grade).
+     * Checks `all_subjects` first — Term/Half Yearly rows drop Drawing from the printed marks
+     * table but still carry it there, so Drawing & Art can still mirror its real grade.
      */
     private function subjectGrade(array $row, string $needle, Collection $grades): ?string
     {
-        $match = collect($row['subjects'] ?? [])
+        $match = collect($row['all_subjects'] ?? $row['subjects'] ?? [])
             ->first(fn ($s) => str_contains(mb_strtolower((string) ($s['subject_name'] ?? '')), $needle));
         if (! $match) {
             return null;
@@ -497,15 +553,22 @@ class ReportCardPdfService
             $right = array_slice($items, $mid);
         }
 
+        // Every cell gets its own border (inline, not the stylesheet's own "border: none" rule
+        // for .grade-grid td — inline wins, so this also takes effect on already-created report
+        // card templates) rather than just one outer box around the whole grid. The old blank
+        // 10pt spacer column between the two halves is dropped in favour of equal cell padding,
+        // so the grid reads as one clean 4-column table instead of two separate 2-column ones.
+        $cellStyle = 'border:0.7pt solid #111;padding:2pt 6pt;text-align:center';
         $rows = max(count($left), count($right));
-        $html = '<table class="grade-grid">';
+        $html = '<table class="grade-grid" style="border-collapse:collapse;width:100%">';
         for ($i = 0; $i < $rows; $i++) {
             $l = $left[$i] ?? ['', ''];
             $r = $right[$i] ?? ['', ''];
             $html .= '<tr>'
-                .'<td class="g-range">'.$escape($l[0]).'</td><td class="g-letter">'.$escape($l[1]).'</td>'
-                .'<td style="width:10pt"></td>'
-                .'<td class="g-range">'.$escape($r[0]).'</td><td class="g-letter">'.$escape($r[1]).'</td>'
+                .'<td class="g-range" style="'.$cellStyle.'">'.$escape($l[0]).'</td>'
+                .'<td class="g-letter" style="'.$cellStyle.'">'.$escape($l[1]).'</td>'
+                .'<td class="g-range" style="'.$cellStyle.'">'.$escape($r[0]).'</td>'
+                .'<td class="g-letter" style="'.$cellStyle.'">'.$escape($r[1]).'</td>'
                 .'</tr>';
         }
 
@@ -538,7 +601,7 @@ class ReportCardPdfService
             $max = (float) ($s['max_marks'] ?: 100);
             $pct = $maxY > 0 ? max(0, min(100, ($obt / $maxY) * 100)) : 0;
             $color = $colors[$i % count($colors)];
-            $name = htmlspecialchars((string) ($s['subject_name'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $name = htmlspecialchars(mb_strtoupper((string) ($s['subject_name'] ?? '')), ENT_QUOTES, 'UTF-8');
             $value = $numFmt($obt).'/'.$numFmt($max);
 
             $rows .= '<tr>'

@@ -368,10 +368,10 @@ class AcademicTermController extends Controller
     {
         $termIndex = (int) ($row['term_index'] ?? 1);
         $row['format'] = 'annual_term';
-        $row['mapping_name'] = ($term->name ?: 'Term').' Result';
+        $row['mapping_name'] = 'Half Yearly Exam Result';
         $row['columns'] = [[
             'term_id' => $term->id,
-            'term_name' => 'TERM - '.$termIndex,
+            'term_name' => 'Half Yearly',
             'term_index' => $termIndex,
             'max_marks' => (float) ($term->max_marks ?: 100),
             'children' => array_merge($columns, [
@@ -397,6 +397,15 @@ class AcademicTermController extends Controller
                 'max_marks' => $subject['max_marks'] ?? 100,
             ];
         }, $row['subjects'] ?? []);
+
+        // Kept unfiltered for the Co-Scholastic Areas grid (Drawing & Art still needs the
+        // Drawing subject's own grade — see ReportCardPdfService::subjectGrade()) even though
+        // Drawing itself is dropped from the printed marks table below.
+        $row['all_subjects'] = $row['subjects'];
+        $row['subjects'] = array_values(array_filter(
+            $row['subjects'],
+            fn (array $s) => ! str_contains(mb_strtolower((string) ($s['subject_name'] ?? '')), 'drawing')
+        ));
 
         return $row;
     }

@@ -129,19 +129,19 @@
     </tr></table>
 
     <table class="brand-table"><tr>
-        <td style="width:56pt">{!! $logo_html !!}</td>
+        <td style="width:48pt">{!! $logo_html !!}</td>
         <td>
             <div class="school-name">{{ $school_name }}</div>
             <div class="school-line">{{ $school_address }}</div>
             <div class="school-line">{{ $school_phone_line }}</div>
         </td>
-        <td style="width:40pt"></td>
+        <td style="width:48pt"></td>
     </tr></table>
 
     <table class="title-row"><tr>
-        <td style="width:18%"></td>
+        <td style="width:20%"></td>
         <td style="text-align:center"><span class="title-box">{{ $exam_title }}</span></td>
-        <td class="session" style="width:22%">Session: {{ $session_year }}</td>
+        <td class="session" style="width:20%">Session: {{ $session_year }}</td>
     </tr></table>
 
     <table class="student"><tr>
@@ -178,11 +178,7 @@
             </div>
         </td>
         <td class="mid-right">
-            <div class="sum-box">ATTENDANCE: <span class="sum-val">{{ $attendance }}</span></div>
-            <div class="sum-box">OVERALL MARKS: <span class="sum-val">{{ $total_marks }}</span></div>
-            <div class="sum-box">OVERALL PERCENTAGE: <span class="sum-val">{{ $percentage }}</span></div>
-            <div class="sum-box">OVERALL GRADE: <span class="sum-grade">{{ $grade }}</span></div>
-            <div class="sum-box">CLASS RANK: <span class="sum-val">{{ $rank }}</span></div>
+            {!! $summary_rows_html !!}
         </td>
     </tr></table>
 

@@ -461,14 +461,39 @@ class ExportController extends Controller
                     continue;
                 }
 
+                // One getStyle() call per contiguous run of same-format rows instead of per
+                // cell — on a large school's fee sheet (thousands of rows × ~10 money columns)
+                // the old per-cell version meant tens of thousands of individual getStyle()
+                // calls, each with real overhead in PhpSpreadsheet's style-index bookkeeping,
+                // slow enough to trip the web server's gateway timeout before the download
+                // even reached the client.
+                $runStartRow = null;
+                $runEndRow = null;
+                $runCode = null;
+                $flushRun = function () use ($sheet, $col, &$runStartRow, &$runEndRow, &$runCode) {
+                    if ($runCode === null) {
+                        return;
+                    }
+                    $runRange = $runStartRow === $runEndRow ? "{$col}{$runStartRow}" : "{$col}{$runStartRow}:{$col}{$runEndRow}";
+                    $sheet->getStyle($runRange)->getNumberFormat()->setFormatCode($runCode);
+                };
                 foreach ($rows as $rIdx => $rowData) {
                     $val = $rowData[$i] ?? null;
-                    if (! is_int($val) && ! is_float($val)) {
+                    $cellRow = $firstDataRow + $rIdx;
+                    $code = (is_int($val) || is_float($val)) ? $this->moneyFormatCode($val) : null;
+
+                    if ($code !== null && $code === $runCode && $cellRow === $runEndRow + 1) {
+                        $runEndRow = $cellRow;
+
                         continue;
                     }
-                    $cellRow = $firstDataRow + $rIdx;
-                    $sheet->getStyle("{$col}{$cellRow}")->getNumberFormat()->setFormatCode($this->moneyFormatCode($val));
+
+                    $flushRun();
+                    $runCode = $code;
+                    $runStartRow = $cellRow;
+                    $runEndRow = $cellRow;
                 }
+                $flushRun();
             }
         }
 

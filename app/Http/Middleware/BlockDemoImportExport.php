@@ -57,6 +57,7 @@ class BlockDemoImportExport
                 'attendance' => 'attendance-export',
                 'academic-calendar' => 'academic-calendar-export',
                 'exam-marks' => 'exam-marks-export',
+                'exam-cross-list' => 'exam-cross-list-export',
                 default => null,
             };
         }
