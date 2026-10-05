@@ -141,8 +141,16 @@ class ErpDeployCommand extends Command
                         }
                     }
                 }
+
+                $sync = $provisioner->syncTenantTemplates($school->db_name, $school->db_host);
+                $syncNote = "templates: {$sync['synced']} synced, {$sync['already_synced']} already current, {$sync['skipped_customized']} customized (skipped)";
+                $this->line('  '.$syncNote);
+                if ($sync['synced'] > 0) {
+                    $this->line('    → '.implode(', ', $sync['synced_names']));
+                }
+
                 $this->info("  OK — {$label}");
-                $report[] = [$school->slug, $school->db_name, $school->status, 'OK', ''];
+                $report[] = [$school->slug, $school->db_name, $school->status, 'OK', $syncNote];
             } catch (Throwable $e) {
                 $failures++;
                 $msg = $e->getMessage();

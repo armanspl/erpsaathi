@@ -9,6 +9,7 @@ class Template extends Model
     protected $fillable = [
         'category', 'name', 'render_mode', 'is_default', 'is_favorite',
         'page_width_mm', 'page_height_mm', 'background_color', 'background_image_path', 'elements', 'raw_html',
+        'design_key', 'source', 'template_version', 'synced_at',
     ];
 
     protected function casts(): array
@@ -19,6 +20,7 @@ class Template extends Model
             'page_width_mm' => 'float',
             'page_height_mm' => 'float',
             'elements' => 'array',
+            'synced_at' => 'datetime',
         ];
     }
 }

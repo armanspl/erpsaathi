@@ -25,6 +25,25 @@
             </button>
             <span v-else class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">Default</span>
 
+            <span
+                v-if="template.render_mode === 'html'"
+                class="rounded-full px-2.5 py-1 text-xs font-semibold"
+                :class="template.source === 'custom' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400'"
+                :title="template.source === 'custom' ? 'Hand-edited via Code — the automatic sync in php artisan erp:deploy will never touch this template' : 'Tracks the system template — kept in sync automatically by php artisan erp:deploy'"
+            >
+                {{ template.source === 'custom' ? 'Customized' : 'System template' }}
+            </span>
+            <button
+                v-if="template.render_mode === 'html'"
+                type="button"
+                class="btn-outline !py-1 !text-xs"
+                title="Rewrite this template's HTML from the current system template"
+                :disabled="regenerating"
+                @click="regenerateTemplate"
+            >
+                {{ regenerating ? 'Syncing...' : 'Sync from template' }}
+            </button>
+
             <div class="ml-auto flex items-center gap-1">
                 <button type="button" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800" title="Undo" :disabled="historyIndex <= 0" @click="undo">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>
@@ -305,6 +324,16 @@
                 </div>
             </div>
         </div>
+
+        <ConfirmDialog
+            v-model:open="confirmRegenerateOpen"
+            title="Overwrite customized template?"
+            :message="regenerateWarning"
+            confirm-label="Discard customization & sync"
+            :busy="regenerating"
+            busy-label="Syncing..."
+            @confirm="regenerateConfirmed"
+        />
     </div>
 </template>
 
@@ -312,6 +341,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import client from '../../api/client';
+import ConfirmDialog from '../../components/common/ConfirmDialog.vue';
 import { assetUrl, elementBoxStyle, pageStyle, PX_PER_MM, substituteTokens, textStyle } from '../../utils/templateRender';
 import { openAndDownloadPdfBlob } from '../../utils/documentPdf';
 import { pushToast } from '../../utils/toast';
@@ -403,6 +433,45 @@ async function makeDefault() {
     const { data } = await client.patch(`/documents/templates/${template.value.id}/default`);
     template.value = { ...template.value, ...data, is_default: true };
     pushToast('This template is now the default for Print / Download.', 'success');
+}
+
+// --- Sync from system template ---
+const regenerating = ref(false);
+const confirmRegenerateOpen = ref(false);
+const regenerateWarning = ref('');
+
+async function regenerateTemplate() {
+    if (!template.value) return;
+    regenerating.value = true;
+    try {
+        const { data } = await client.post(`/documents/templates/${template.value.id}/regenerate`);
+        template.value = { ...template.value, ...data };
+        pushToast('Template synced from the current system template.', 'success');
+    } catch (e) {
+        if (e?.response?.status === 409) {
+            regenerateWarning.value = e.response.data?.message || 'This template was manually customized. Regenerating will discard that customization.';
+            confirmRegenerateOpen.value = true;
+        } else {
+            pushToast(e?.response?.data?.message || 'Could not sync this template.', 'error');
+        }
+    } finally {
+        regenerating.value = false;
+    }
+}
+
+async function regenerateConfirmed() {
+    if (!template.value) return;
+    regenerating.value = true;
+    try {
+        const { data } = await client.post(`/documents/templates/${template.value.id}/regenerate`, { confirm: true });
+        template.value = { ...template.value, ...data };
+        confirmRegenerateOpen.value = false;
+        pushToast('Template synced from the current system template.', 'success');
+    } catch (e) {
+        pushToast(e?.response?.data?.message || 'Could not sync this template.', 'error');
+    } finally {
+        regenerating.value = false;
+    }
 }
 
 function goBack() {

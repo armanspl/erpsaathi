@@ -1565,7 +1565,7 @@ class ExportController extends Controller
         }
 
         $headers = [
-            'ADM NO.', 'NAME OF STUDENT', 'FATHER NAME', 'ADDRESS', 'MOBILE', 'CLASS', 'VEHICLE',
+            'SESSION', 'ADM NO.', 'NAME OF STUDENT', 'FATHER NAME', 'ADDRESS', 'MOBILE', 'CLASS', 'VEHICLE',
             'TOT_PMNT', 'REG', 'ADM', 'ANN_PMNT', 'ANN_DUES', 'TUI_PMNT', 'TUI CALC', 'TUI_DUES',
             'TRA_PMNT', 'TRA CALC', 'TRA_DUES', 'DUES',
         ];
@@ -1574,12 +1574,28 @@ class ExportController extends Controller
             return [$headers, []];
         }
 
+        $sessionLabel = $this->shortSessionLabel($session->name);
+
+        // Scoped to the chosen Academic Session (header picker) — same roster rule
+        // FeeReportCalculator::studentsForSessions() uses: a student counts for this session if
+        // they have a session-history row naming it, or (only when this IS the current session)
+        // they have no session-history rows at all yet (freshly admitted, never imported/promoted).
+        // Previously this pulled every student in the DB regardless of session, so an old/left
+        // student with no activity in the chosen year still showed up, and a session picked in
+        // the header had no effect on who appeared here at all.
+        $aliases = AcademicSession::nameAliases($session->name);
         $students = Student::query()
             ->with([
                 'father:id,name',
                 'schoolClass:id,name',
                 'udiseDetail:id,student_id,vehicle,stoppage',
             ])
+            ->where(function ($q) use ($aliases, $session) {
+                $q->whereHas('sessionHistories', fn ($h) => $h->whereIn('session', $aliases));
+                if ($session->is_current) {
+                    $q->orWhereDoesntHave('sessionHistories');
+                }
+            })
             ->orderBy('admission_no')
             ->get();
 
@@ -1707,6 +1723,7 @@ class ExportController extends Controller
             ])));
 
             $rows[] = [
+                $sessionLabel,
                 $student->admission_no ?? '',
                 $student->name ?? '',
                 $student->father?->name ?? '',

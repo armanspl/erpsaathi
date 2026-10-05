@@ -197,6 +197,21 @@ class SchoolProvisioner
         ]);
     }
 
+    /**
+     * Brings this school's system-managed Report Card template (and any other category listed
+     * in TemplateSyncService::AUTO_SYNC_CATEGORIES) up to date with the current Blade source —
+     * called right after runTenantMigrations() in erp:deploy's per-school loop. Never touches a
+     * template an admin has hand-customized (source='custom'); see TemplateSyncService.
+     *
+     * @return array{synced: int, skipped_customized: int, already_synced: int, synced_names: list<string>}
+     */
+    public function syncTenantTemplates(string $dbName, ?string $host = null): array
+    {
+        $this->tenants->configureTemporaryConnection('tenant_provision', $dbName, $host);
+
+        return \App\Services\TemplateSyncService::syncAll('tenant_provision');
+    }
+
     protected function seedSchoolAdmin(string $dbName, string $name, string $email, string $password): void
     {
         $this->tenants->configureTemporaryConnection('tenant_provision', $dbName);

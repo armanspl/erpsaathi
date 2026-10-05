@@ -826,6 +826,7 @@ Route::prefix('documents')->name('documents.')->group(function () {
         Route::post('templates/{template}/assets', [TemplateController::class, 'uploadAsset'])->name('templates.assets.store');
         Route::put('templates/{template}/code', [TemplateController::class, 'updateCode'])->name('templates.code.update');
         Route::patch('templates/{template}/render-mode', [TemplateController::class, 'switchRenderMode'])->name('templates.render-mode');
+        Route::post('templates/{template}/regenerate', [TemplateController::class, 'regenerate'])->name('templates.regenerate');
     });
 });
 

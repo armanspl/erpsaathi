@@ -7,8 +7,10 @@ use App\Models\Template;
 use App\Services\DesignCatalog;
 use App\Services\DocumentRenderService;
 use App\Services\TemplateCatalog;
+use App\Services\TemplateSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -126,6 +128,7 @@ class TemplateController extends Controller
             ]);
         } else {
             [$width, $height] = DesignCatalog::pageSize($category, $designKey);
+            $html = DesignCatalog::seedHtml($category, $designKey);
             $template = Template::create([
                 'category' => $category,
                 'name' => $data['name'],
@@ -136,7 +139,11 @@ class TemplateController extends Controller
                 'page_height_mm' => $height,
                 'background_color' => '#ffffff',
                 'elements' => [],
-                'raw_html' => DesignCatalog::seedHtml($category, $designKey),
+                'raw_html' => $html,
+                'design_key' => $designKey,
+                'source' => 'system',
+                'template_version' => hash('sha256', $html),
+                'synced_at' => now(),
             ]);
         }
 
@@ -311,10 +318,46 @@ class TemplateController extends Controller
 
         abort_if(trim((string) $html) === '', 422, 'HTML content is empty.');
 
+        // A hand-edit here is exactly what makes this template "custom" — see TemplateSyncService's
+        // docblock. From this point the automatic erp:deploy sync pass will never touch it again
+        // until an admin explicitly regenerates it (regenerate() below, which sets 'system' back).
         $template->update([
             'render_mode' => 'html',
             'raw_html' => $html,
+            'source' => 'custom',
+            'template_version' => null,
+            'synced_at' => null,
         ]);
+
+        return response()->json($template->fresh());
+    }
+
+    /**
+     * Explicit "Regenerate from template" action — rewrites raw_html from the current Blade
+     * source for this template's design, exactly like the automatic erp:deploy sync pass would,
+     * but callable on demand for one template and willing to do it even to a source='custom'
+     * (admin-hand-edited) template — PROVIDED the caller passed confirm=true, since that
+     * discards the customization. Without it, a custom template responds 409 with a warning
+     * instead of silently overwriting the admin's edit.
+     */
+    public function regenerate(Request $request, Template $template)
+    {
+        abort_unless($template->render_mode === 'html', 422, 'Only HTML-mode templates can be regenerated from the Blade source.');
+
+        if ($template->source === 'custom' && ! $request->boolean('confirm')) {
+            return response()->json([
+                'message' => 'This template was manually customized'
+                    .($template->updated_at ? ' (last changed '.$template->updated_at->diffForHumans().')' : '')
+                    .'. Regenerating will discard that customization and replace it with the current system template. Confirm to proceed.',
+                'requires_confirmation' => true,
+                'is_customized' => true,
+            ], 409);
+        }
+
+        $designKey = $template->design_key ?: 'classic';
+        abort_unless(View::exists("documents.templates.{$designKey}.{$template->category}"), 404, "No [{$designKey}] design for category [{$template->category}].");
+
+        TemplateSyncService::regenerate($template, $designKey);
 
         return response()->json($template->fresh());
     }
