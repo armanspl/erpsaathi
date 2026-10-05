@@ -44,6 +44,8 @@ class StudentMasterImportService
         'student type' => 'student_type',
         'aadhaar no.' => 'aadhaar_no',
         'name' => 'name',
+        'student name' => 'name',
+        "student's name" => 'name',
         'mother name' => 'mother_name',
         'father name' => 'father_name',
         'address' => 'address',
