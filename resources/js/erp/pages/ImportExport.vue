@@ -65,6 +65,7 @@
                         <li>SALARY … Bank (NAME / DESIG / BASIC / APR–MAR) → auto-creates Teachers &amp; Staff from designation, writes monthly salary slips with inferred present/absent, so you can manage them under People</li>
                         <li>Skipped sheets: SUMMARY, STUD_REC*, pivots, BANK* statements, CHQ*, FUEL*, WORKING DAYS</li>
                         <li>Skipped columns: numeric headers (pasted totals), TOT_INCOME, and #REF! / INCOME / BALANCE junk columns</li>
+                        <li>Re-import is safe to repeat: matched by receipt/voucher no. (or admission no. for Student Master) — an edited row updates the existing record, an unchanged row is skipped, a new row is added. A payment/expense already edited, refunded, or reviewed in the app is left untouched rather than overwritten</li>
                     </ul>
                 </div>
                 <label
@@ -475,8 +476,10 @@ const resultBreakdown = computed(() => {
     const b = importResult.value?.breakdown || importResult.value?.stats?.breakdown;
     if (!b) return null;
     const items = [
+        { label: 'Updated (existing record changed)', value: b.updated_existing },
         { label: 'Skipped (header artifact)', value: b.skipped_header_artifact },
         { label: 'Skipped (duplicate)', value: b.skipped_duplicate },
+        { label: 'Skipped (already edited/refunded/reviewed in app)', value: b.skipped_manually_edited },
         { label: 'Failed (student not found)', value: b.failed_student_not_found },
         { label: 'Failed (missing field)', value: b.failed_missing_field },
         { label: 'Failed (broken formula)', value: b.failed_broken_formula },

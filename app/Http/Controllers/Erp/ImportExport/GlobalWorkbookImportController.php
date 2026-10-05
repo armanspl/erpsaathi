@@ -294,6 +294,8 @@ class GlobalWorkbookImportController extends Controller
             'skipped_header_artifact' => 0,
             'skipped_duplicate' => 0,
             'skipped_old_student_new_only_fee' => 0,
+            'skipped_manually_edited' => 0,
+            'updated_existing' => 0,
             'failed_student_not_found' => 0,
             'failed_missing_field' => 0,
             'failed_broken_formula' => 0,
@@ -330,9 +332,21 @@ class GlobalWorkbookImportController extends Controller
             'fee_heads' => FeeHead::query()->pluck('id', 'name')->all(),
             'sessions' => AcademicSession::query()->get()->keyBy('name'),
             'expense_categories' => ExpenseCategory::query()->pluck('id', 'name')->all(),
+            // Existing-row lookups, keyed by receipt/voucher no., populated by warm*Caches()
+            // below — each entry is a snapshot of that row's comparable columns (plus 'id')
+            // so a re-imported row can be diffed against what's already in the DB, instead of
+            // the old "key already seen → skip" check that silently dropped edited rows.
             'receipts' => [],
             'income_vouchers' => [],
             'expense_vouchers' => [],
+            // Keys already handled during THIS import run (inserted or matched-for-update) —
+            // separate from the DB-sourced lookups above, so a second row in the same file
+            // reusing the same receipt/voucher no. is still treated as a plain duplicate
+            // (skipped) rather than attempted as an update against a row that only exists in
+            // an unflushed buffer and has no real id yet.
+            'receipts_seen' => [],
+            'income_vouchers_seen' => [],
+            'expense_vouchers_seen' => [],
             'bank_accounts' => [],
             'bank_ledger_covered_accounts' => [],
             'user_id' => Auth::guard('erp')->id(),
@@ -356,6 +370,7 @@ class GlobalWorkbookImportController extends Controller
             'incomes' => [],
             'expenses' => [],
             'bank_transactions' => [],
+            'updates' => [],
             'failed_rows' => [],
             'failed_logs' => [],
         ];
@@ -371,6 +386,8 @@ class GlobalWorkbookImportController extends Controller
                     $breakdown['skipped_duplicate']++;
                 } elseif ($reason === 'old_student_new_only_fee') {
                     $breakdown['skipped_old_student_new_only_fee']++;
+                } elseif ($reason === 'manually_edited') {
+                    $breakdown['skipped_manually_edited']++;
                 }
 
                 return;
@@ -378,6 +395,20 @@ class GlobalWorkbookImportController extends Controller
 
             if ($result['ok'] ?? false) {
                 $success++;
+
+                if (! empty($result['update'])) {
+                    // Existing row, re-imported with changed values — queued for a targeted
+                    // UPDATE (see flush() below) instead of the bulk INSERT buffers, since it
+                    // already has a real id and must not become a duplicate row.
+                    $breakdown['updated_existing']++;
+                    if (! empty($result['bucket'])) {
+                        $stats[$result['bucket']] = ($stats[$result['bucket']] ?? 0) + 1;
+                    }
+                    $buffers['updates'][$result['update']][] = ['id' => $result['update_id'], 'data' => $result['data']];
+
+                    return;
+                }
+
                 $breakdown['imported']++;
                 if (! empty($result['bucket'])) {
                     $stats[$result['bucket']] = ($stats[$result['bucket']] ?? 0) + 1;
@@ -450,6 +481,16 @@ class GlobalWorkbookImportController extends Controller
                 }
                 $buffers['failed_logs'] = [];
             }
+            // Targeted per-row updates for existing fee_payments/incomes/expenses whose sheet
+            // values changed since the last import — a handful of rows at most (most re-imports
+            // are byte-identical and never reach here), so a plain per-id UPDATE is fine; no
+            // bulk-insert buffer applies to these since each already has its own id.
+            foreach ($buffers['updates'] as $table => $rows) {
+                foreach ($rows as $row) {
+                    DB::table($table)->where('id', $row['id'])->update($row['data']);
+                }
+            }
+            $buffers['updates'] = [];
         };
 
         // TRANSPORT sheet first — builds Stoppage routes/fares before Student Master attaches
@@ -811,11 +852,17 @@ class GlobalWorkbookImportController extends Controller
             'Imported: '.$breakdown['imported'],
             'Skipped (header artifact): '.$breakdown['skipped_header_artifact'],
         ];
+        if (($breakdown['updated_existing'] ?? 0) > 0) {
+            $parts[] = 'Updated (existing record changed): '.$breakdown['updated_existing'];
+        }
         if ($breakdown['skipped_duplicate'] > 0) {
             $parts[] = 'Skipped (duplicate): '.$breakdown['skipped_duplicate'];
         }
         if (($breakdown['skipped_old_student_new_only_fee'] ?? 0) > 0) {
             $parts[] = 'Skipped (Old student ADM/REG): '.$breakdown['skipped_old_student_new_only_fee'];
+        }
+        if (($breakdown['skipped_manually_edited'] ?? 0) > 0) {
+            $parts[] = 'Skipped (already edited/refunded/reviewed in app): '.$breakdown['skipped_manually_edited'];
         }
         $parts[] = 'Failed (student not found): '.$breakdown['failed_student_not_found'];
         $otherFailed = $breakdown['failed_missing_field']
@@ -1123,12 +1170,48 @@ class GlobalWorkbookImportController extends Controller
                 }
 
                 $receipt = $receiptNo !== '' ? $receiptNo : sprintf('IMP-INC-%s-%s', $date, $row['row_number']);
-                if (isset($cache['receipts'][$receipt])) {
+                if (isset($cache['receipts_seen'][$receipt])) {
                     return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
                 }
-
-                $cache['receipts'][$receipt] = true;
+                $cache['receipts_seen'][$receipt] = true;
                 $now = $cache['now'];
+
+                $newData = [
+                    'receipt_no' => $receipt,
+                    'student_id' => $studentId,
+                    'academic_session_id' => $session->id,
+                    'items' => json_encode($items, JSON_THROW_ON_ERROR),
+                    'amount' => $amount,
+                    'discount_amount' => 0,
+                    'fine_amount' => $fineAmount,
+                    'payment_mode' => $this->normalizeFeeMode($row['mode'] ?? 'Cash'),
+                    'payment_date' => $date,
+                    'remarks' => $this->composeIncomeRemarks($row),
+                ];
+
+                $existing = $cache['receipts'][$receipt] ?? null;
+                if ($existing) {
+                    // A payment the school has since edited, refunded, or rolled back in the app
+                    // (see FeePaymentController) has diverged from the sheet on purpose — a stale
+                    // re-import must not silently overwrite that manual decision.
+                    if ($existing['status'] !== 'Paid' || (float) $existing['refunded_amount'] > 0
+                        || $existing['edited_at'] !== null || $existing['rolled_back_at'] !== null) {
+                        return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited'];
+                    }
+
+                    $changed = $this->diffForUpdate($existing, $newData, ['amount', 'fine_amount', 'discount_amount'], ['items']);
+                    if ($changed === []) {
+                        return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
+                    }
+
+                    return [
+                        'ok' => true,
+                        'bucket' => 'income_fee_payments_updated',
+                        'update' => 'fee_payments',
+                        'update_id' => $existing['id'],
+                        'data' => array_merge($changed, ['updated_at' => $now]),
+                    ];
+                }
 
                 // fee_payments has no bank_account_id column, so the link to the account is a
                 // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums
@@ -1151,52 +1234,60 @@ class GlobalWorkbookImportController extends Controller
                     'ok' => true,
                     'bucket' => 'income_fee_payments',
                     'insert' => 'fee_payments',
-                    'data' => [
-                        'receipt_no' => $receipt,
-                        'student_id' => $studentId,
-                        'academic_session_id' => $session->id,
-                        'items' => json_encode($items, JSON_THROW_ON_ERROR),
-                        'amount' => $amount,
-                        'discount_amount' => 0,
-                        'fine_amount' => $fineAmount,
-                        'payment_mode' => $this->normalizeFeeMode($row['mode'] ?? 'Cash'),
-                        'payment_date' => $date,
-                        'remarks' => $this->composeIncomeRemarks($row),
+                    'data' => array_merge($newData, [
                         'status' => 'Paid',
                         'refunded_amount' => 0,
                         'collected_by_id' => $cache['user_id'],
                         'created_at' => $now,
                         'updated_at' => $now,
-                    ],
+                    ]),
                     'bank_transaction' => $bankTx,
                 ];
             }
 
             $voucher = $receiptNo !== '' ? 'INC-'.$receiptNo : sprintf('INC-IMP-%s-%04d', substr($date, 0, 4), $row['row_number']);
-            if (isset($cache['income_vouchers'][$voucher])) {
+            if (isset($cache['income_vouchers_seen'][$voucher])) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
             }
-
-            $cache['income_vouchers'][$voucher] = true;
+            $cache['income_vouchers_seen'][$voucher] = true;
             $source = trim((string) ($row['head'] ?? '')) ?: 'Imported income';
             $now = $cache['now'];
+
+            $newIncomeData = [
+                'voucher_no' => $voucher,
+                'source' => $source,
+                'amount' => $amount,
+                'date' => $date,
+                'payment_mode' => $this->normalizeIncomeMode($row['mode'] ?? 'Cash'),
+                'bank_account_id' => $bankAccountId,
+                'remarks' => $this->composeIncomeRemarks($row),
+            ];
+
+            $existingIncome = $cache['income_vouchers'][$voucher] ?? null;
+            if ($existingIncome) {
+                $changed = $this->diffForUpdate($existingIncome, $newIncomeData, ['amount']);
+                if ($changed === []) {
+                    return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
+                }
+
+                return [
+                    'ok' => true,
+                    'bucket' => 'income_misc_updated',
+                    'update' => 'incomes',
+                    'update_id' => $existingIncome['id'],
+                    'data' => array_merge($changed, ['updated_at' => $now]),
+                ];
+            }
 
             return [
                 'ok' => true,
                 'bucket' => 'income_misc',
                 'insert' => 'incomes',
-                'data' => [
-                    'voucher_no' => $voucher,
-                    'source' => $source,
-                    'amount' => $amount,
-                    'date' => $date,
-                    'payment_mode' => $this->normalizeIncomeMode($row['mode'] ?? 'Cash'),
-                    'bank_account_id' => $bankAccountId,
-                    'remarks' => $this->composeIncomeRemarks($row),
+                'data' => array_merge($newIncomeData, [
                     'received_by_id' => $cache['user_id'],
                     'created_at' => $now,
                     'updated_at' => $now,
-                ],
+                ]),
             ];
         } catch (\Throwable $e) {
             return $this->fail($log, $row, $e->getMessage(), 'other');
@@ -1259,34 +1350,59 @@ class GlobalWorkbookImportController extends Controller
                 ? (str_starts_with(strtoupper($receiptNo), 'EXP-') ? $receiptNo : 'EXP-'.$receiptNo)
                 : sprintf('EXP-IMP-%s-%04d', substr($date, 0, 4), $row['row_number']);
 
-            if (isset($cache['expense_vouchers'][$voucher])) {
+            if (isset($cache['expense_vouchers_seen'][$voucher])) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
             }
-
-            $cache['expense_vouchers'][$voucher] = true;
+            $cache['expense_vouchers_seen'][$voucher] = true;
             $part2 = trim((string) ($row['part2'] ?? ''));
             $part3 = trim((string) ($row['part3'] ?? ''));
             $remarks = trim((string) ($row['remarks'] ?? ''));
             $now = $cache['now'];
 
+            $newData = [
+                'voucher_no' => $voucher,
+                'expense_category_id' => $categoryId,
+                'part2' => $part2 !== '' ? $part2 : null,
+                'part3' => $part3 !== '' ? $part3 : null,
+                'title' => $description,
+                'amount' => $amount,
+                'date' => $date,
+                'remarks' => $remarks !== '' ? $remarks : null,
+            ];
+
+            $existing = $cache['expense_vouchers'][$voucher] ?? null;
+            if ($existing) {
+                // Once a school has reviewed an imported expense (Approved/Rejected via the
+                // Expenses screen), a stale re-import must not silently change its figures
+                // out from under that decision.
+                if ($existing['status'] !== 'Pending') {
+                    return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited'];
+                }
+
+                $changed = $this->diffForUpdate($existing, $newData, ['amount']);
+                if ($changed === []) {
+                    return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
+                }
+
+                return [
+                    'ok' => true,
+                    'bucket' => 'expenses_updated',
+                    'update' => 'expenses',
+                    'update_id' => $existing['id'],
+                    'data' => array_merge($changed, ['updated_at' => $now]),
+                ];
+            }
+
             return [
                 'ok' => true,
                 'bucket' => 'expenses',
                 'insert' => 'expenses',
-                'data' => [
-                    'voucher_no' => $voucher,
-                    'expense_category_id' => $categoryId,
-                    'part2' => $part2 !== '' ? $part2 : null,
-                    'part3' => $part3 !== '' ? $part3 : null,
-                    'title' => $description,
-                    'amount' => $amount,
-                    'date' => $date,
+                'data' => array_merge($newData, [
                     'payment_mode' => 'Cash',
-                    'remarks' => $remarks !== '' ? $remarks : null,
                     'paid_by_id' => $cache['user_id'],
                     'created_at' => $now,
                     'updated_at' => $now,
-                ],
+                ]),
             ];
         } catch (\Throwable $e) {
             return $this->fail($log, $row, $e->getMessage(), 'other');
@@ -1703,14 +1819,22 @@ class GlobalWorkbookImportController extends Controller
         $receipts = array_values(array_unique(array_filter($receipts)));
         $incomeVouchers = array_values(array_unique(array_filter($incomeVouchers)));
 
+        // Full rows (not just the key) — raw query-builder results (no Eloquent casts) so every
+        // value compares cleanly against the freshly computed sheet values in importIncomeRow().
         foreach (array_chunk($receipts, 500) as $chunk) {
-            foreach (FeePayment::query()->whereIn('receipt_no', $chunk)->pluck('receipt_no') as $no) {
-                $cache['receipts'][$no] = true;
+            foreach (DB::table('fee_payments')->whereIn('receipt_no', $chunk)->get([
+                'id', 'receipt_no', 'student_id', 'academic_session_id', 'items', 'amount',
+                'discount_amount', 'fine_amount', 'payment_mode', 'payment_date', 'remarks',
+                'status', 'refunded_amount', 'edited_at', 'rolled_back_at',
+            ]) as $r) {
+                $cache['receipts'][$r->receipt_no] = (array) $r;
             }
         }
         foreach (array_chunk($incomeVouchers, 500) as $chunk) {
-            foreach (Income::query()->whereIn('voucher_no', $chunk)->pluck('voucher_no') as $no) {
-                $cache['income_vouchers'][$no] = true;
+            foreach (DB::table('incomes')->whereIn('voucher_no', $chunk)->get([
+                'id', 'voucher_no', 'source', 'amount', 'date', 'payment_mode', 'bank_account_id', 'remarks',
+            ]) as $r) {
+                $cache['income_vouchers'][$r->voucher_no] = (array) $r;
             }
         }
     }
@@ -1731,9 +1855,56 @@ class GlobalWorkbookImportController extends Controller
         }
         $vouchers = array_values(array_unique(array_filter($vouchers)));
         foreach (array_chunk($vouchers, 500) as $chunk) {
-            foreach (Expense::query()->whereIn('voucher_no', $chunk)->pluck('voucher_no') as $no) {
-                $cache['expense_vouchers'][$no] = true;
+            foreach (DB::table('expenses')->whereIn('voucher_no', $chunk)->get([
+                'id', 'voucher_no', 'expense_category_id', 'part2', 'part3', 'title', 'amount', 'date', 'remarks', 'status',
+            ]) as $r) {
+                $cache['expense_vouchers'][$r->voucher_no] = (array) $r;
             }
         }
+    }
+
+    /**
+     * Compares a freshly computed row ($new) against the matching existing DB row ($existing,
+     * from warmReceiptCaches()/warmExpenseVoucherCaches() — a plain array via DB::table(), no
+     * Eloquent casts) and returns only the $new entries that actually differ, so a re-import only
+     * ever UPDATEs the columns the sheet actually changed, never touches unrelated columns
+     * (status, collected_by_id, created_at, ...), and never "updates" a byte-identical row.
+     *
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>  $new
+     * @param  list<string>  $numericFields  compared as rounded floats (DB decimals come back as strings)
+     * @param  list<string>  $jsonFields  compared as decoded structures, not raw strings
+     * @return array<string, mixed>
+     */
+    private function diffForUpdate(array $existing, array $new, array $numericFields = [], array $jsonFields = []): array
+    {
+        $changed = [];
+        foreach ($new as $field => $value) {
+            $old = $existing[$field] ?? null;
+
+            if (in_array($field, $numericFields, true)) {
+                if (round((float) $old, 2) !== round((float) $value, 2)) {
+                    $changed[$field] = $value;
+                }
+
+                continue;
+            }
+
+            if (in_array($field, $jsonFields, true)) {
+                $oldDecoded = is_string($old) ? json_decode($old, true) : $old;
+                $newDecoded = is_string($value) ? json_decode($value, true) : $value;
+                if ($oldDecoded !== $newDecoded) {
+                    $changed[$field] = $value;
+                }
+
+                continue;
+            }
+
+            if ((string) $old !== (string) $value) {
+                $changed[$field] = $value;
+            }
+        }
+
+        return $changed;
     }
 }
