@@ -88,4 +88,16 @@ return [
         'admin_password' => env('DEMO_ADMIN_PASSWORD', 'Demo@12345'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Scheduled log cleanup (erp:cleanup-logs)
+    |--------------------------------------------------------------------------
+    |
+    | Off by default: the 4-hourly schedule only fires once this is true, so a
+    | deploy can be verified with `php artisan erp:cleanup-logs --dry-run` first.
+    | Running the command by hand is not affected by this flag.
+    |
+    */
+    'cleanup_logs_enabled' => (bool) env('ERP_CLEANUP_LOGS_ENABLED', false),
+
 ];
