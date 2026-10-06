@@ -378,8 +378,8 @@ class ReportCardPdfService
         $headStyle = $isMono
             ? 'background:#ffffff;color:#000000'
             : 'background:'.$escape($accentColor).';color:#ffffff';
-        $thead = '<tr><th class="area-head" style="'.$headStyle.'">Co-Scholastic Areas</th>'
-            .'<th class="remarks-head" style="'.$headStyle.'">Grade</th></tr>';
+        $thead = '<tr><th class="area-head" style="'.$headStyle.'">CO-SCHOLASTIC AREAS</th>'
+            .'<th class="remarks-head" style="'.$headStyle.'">GRADE</th></tr>';
 
         $bodyRows = '';
         foreach (CoScholasticGrade::AREAS as $key => $label) {
@@ -388,8 +388,9 @@ class ReportCardPdfService
             // are different widths, so centering the text itself would start each one at a
             // different x position; this keeps every value starting at the same spot within its
             // own (equally sized, equally centered) box. Same technique as the marks table's own
-            // Grade column.
-            $bodyRows .= '<tr><td class="area">'.$escape(mb_strtoupper($label)).'</td>'
+            // Grade column. Area names print in lowercase ("work education") — inline
+            // text-transform:none overrides the template's own uppercase rule on td.area.
+            $bodyRows .= '<tr><td class="area" style="text-transform:none">'.$escape(mb_strtolower($label)).'</td>'
                 .'<td class="grade" style="text-align:center"><span style="display:inline-block;width:16pt;text-align:left">'
                 .$escape($values[$key] ?? 'A').'</span></td></tr>';
         }
@@ -403,6 +404,8 @@ class ReportCardPdfService
      * plain "LABEL: value" text. Every box shares the same label-column width, so every value
      * starts at the same x position across all five boxes regardless of label length (plain
      * text meant "CLASS RANK:" pushed its value much further left than "OVERALL PERCENTAGE:" did).
+     * The grade badge's left padding (6pt in the template CSS) is cancelled with an equal negative
+     * margin so its letter starts at the same x as the plain values (e.g. CLASS RANK's "3").
      */
     private function summaryRowsHtml(string $attendance, string $totalMarks, string $percentage, string $grade, string $rank, callable $escape): string
     {
@@ -418,7 +421,7 @@ class ReportCardPdfService
         foreach ($rows as [$label, $value, $valueClass]) {
             $html .= '<div class="sum-box"><table style="width:100%;border-collapse:collapse"><tr>'
                 .'<td style="border:none;padding:0;width:130pt;text-align:left;white-space:nowrap">'.$escape($label).'</td>'
-                .'<td style="border:none;padding:0;text-align:left"><span class="'.$valueClass.'">'.$escape($value).'</span></td>'
+                .'<td style="border:none;padding:0;text-align:left"><span class="'.$valueClass.'"'.($valueClass === 'sum-grade' ? ' style="margin-left:-6pt"' : '').'>'.$escape($value).'</span></td>'
                 .'</tr></table></div>';
         }
 
