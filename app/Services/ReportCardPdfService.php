@@ -388,9 +388,8 @@ class ReportCardPdfService
             // are different widths, so centering the text itself would start each one at a
             // different x position; this keeps every value starting at the same spot within its
             // own (equally sized, equally centered) box. Same technique as the marks table's own
-            // Grade column. Area names print in lowercase ("work education") — inline
-            // text-transform:none overrides the template's own uppercase rule on td.area.
-            $bodyRows .= '<tr><td class="area" style="text-transform:none">'.$escape(mb_strtolower($label)).'</td>'
+            // Grade column. Area names print in capitals ("WORK EDUCATION").
+            $bodyRows .= '<tr><td class="area" style="text-transform:uppercase">'.$escape(mb_strtoupper($label)).'</td>'
                 .'<td class="grade" style="text-align:center"><span style="display:inline-block;width:16pt;text-align:left">'
                 .$escape($values[$key] ?? 'A').'</span></td></tr>';
         }
