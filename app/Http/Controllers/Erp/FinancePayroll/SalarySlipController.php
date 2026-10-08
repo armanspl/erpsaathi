@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Erp\FinancePayroll;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Erp\ImportExport\SalaryMonthlyImportController;
 use App\Models\AcademicSession;
+use App\Models\BankAccount;
 use App\Models\Driver;
 use App\Models\SalarySlip;
 use App\Models\SalaryStructure;
@@ -11,6 +13,8 @@ use App\Models\Staff;
 use App\Models\Teacher;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
+use App\Services\Payroll\SalaryHistory;
+use App\Support\EmployeeCustomFields;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -26,7 +30,7 @@ class SalarySlipController extends Controller
 
     public function index(Request $request)
     {
-        $query = SalarySlip::with('employee');
+        $query = SalarySlip::with(['employee', 'bankAccount']);
 
         if ($request->filled('period')) {
             $query->where('period', $request->string('period'));
@@ -54,40 +58,53 @@ class SalarySlipController extends Controller
         }
 
         return response()->json(
-            $query->orderByDesc('period')->orderBy('employee_type')->get()->map(fn (SalarySlip $slip) => [
-                ...$slip->toArray(),
-                'employee_name' => $slip->employee->name ?? '—',
-                'employee_code' => $slip->employee->employee_id ?? null,
-            ])
+            $query->orderByDesc('period')->orderBy('employee_type')->get()->map(fn (SalarySlip $slip) => $this->present($slip))
         );
     }
 
-    /** Direct ad-hoc slip creation from the Create Salary Slip form (itemized earnings/deductions). */
+    /**
+     * People for the Create Salary Slip form, straight from the database (not the cached people
+     * lookups) so a just-imported teacher/staff/driver shows up at once. Includes the basic salary
+     * to pre-fill and the designation to show next to the name.
+     */
+    public function employees(Request $request)
+    {
+        $data = $request->validate(['type' => ['required', Rule::in(['teacher', 'staff', 'driver'])]]);
+        $class = $this->modelClass($data['type']);
+        $columns = ['id', 'employee_id', 'name', 'status', 'salary', 'custom_field_values'];
+        if ($data['type'] === 'staff') {
+            $columns[] = 'department';
+        }
+
+        return response()->json(
+            $class::query()->orderByRaw("status = 'active' desc")->orderBy('name')
+                ->get($columns)
+                ->map(fn ($e) => [
+                    'id' => $e->id,
+                    'code' => $e->employee_id,
+                    'name' => $e->name,
+                    'status' => $e->status,
+                    'salary' => $e->salary !== null ? (float) $e->salary : null,
+                    'designation' => EmployeeCustomFields::get($e->custom_field_values, 'Designation') ?: ($data['type'] === 'staff' ? (string) $e->department : ''),
+                ])
+        );
+    }
+
+    /** Create Salary Slip form — the same columns as a row of the school's salary sheet. */
     public function store(Request $request)
     {
         $data = $this->validatedManual($request);
         $this->assertEmployeeExists($data['employee_type'], $data['employee_id']);
         $this->assertNoDuplicate($data['employee_type'], $data['employee_id'], $data['period']);
 
-        [$basic, $allowances] = $this->splitEarnings($data['earnings'] ?? []);
-        $deductionsTotal = collect($data['deduction_items'] ?? [])->sum(fn ($row) => (float) $row['amount']);
-
-        $slip = SalarySlip::create([
-            'slip_no' => $this->nextSlipNo(),
+        $label = 'Created slip — '.$this->employeeName($data).' ('.$this->periodLabel($data['period']).')';
+        $slip = SalaryHistory::batch('manual', $label, fn () => SalarySlip::create($this->slipPayload($data) + [
+            'slip_no' => SalarySlip::nextSlipNo(),
             'employee_type' => $data['employee_type'],
             'employee_id' => $data['employee_id'],
             'period' => $data['period'],
-            'basic_salary' => $basic,
-            'allowances' => $allowances,
-            'earnings' => $data['earnings'] ?? [],
-            'deductions' => $deductionsTotal,
-            'deduction_items' => $data['deduction_items'] ?? [],
-            'net_salary' => $basic + $allowances - $deductionsTotal,
-            'status' => $data['status'],
-            'payment_mode' => $data['payment_mode'] ?? null,
-            'remarks' => $data['remarks'] ?? null,
             'generated_by_id' => Auth::guard('erp')->id(),
-        ]);
+        ]));
 
         return response()->json($this->present($slip->fresh('employee')), 201);
     }
@@ -98,30 +115,21 @@ class SalarySlipController extends Controller
         $this->assertEmployeeExists($data['employee_type'], $data['employee_id']);
         $this->assertNoDuplicate($data['employee_type'], $data['employee_id'], $data['period'], $salarySlip->id);
 
-        [$basic, $allowances] = $this->splitEarnings($data['earnings'] ?? []);
-        $deductionsTotal = collect($data['deduction_items'] ?? [])->sum(fn ($row) => (float) $row['amount']);
-
-        $salarySlip->update([
+        $label = 'Edited slip '.($salarySlip->slip_no ?: '#'.$salarySlip->id).' — '.$this->employeeName($data).' ('.$this->periodLabel($data['period']).')';
+        SalaryHistory::batch('manual', $label, fn () => $salarySlip->update($this->slipPayload($data) + [
             'employee_type' => $data['employee_type'],
             'employee_id' => $data['employee_id'],
             'period' => $data['period'],
-            'basic_salary' => $basic,
-            'allowances' => $allowances,
-            'earnings' => $data['earnings'] ?? [],
-            'deductions' => $deductionsTotal,
-            'deduction_items' => $data['deduction_items'] ?? [],
-            'net_salary' => $basic + $allowances - $deductionsTotal,
-            'status' => $data['status'],
-            'payment_mode' => $data['payment_mode'] ?? null,
-            'remarks' => $data['remarks'] ?? null,
-        ]);
+        ]));
 
         return response()->json($this->present($salarySlip->fresh('employee')));
     }
 
     public function destroy(SalarySlip $salarySlip)
     {
-        $salarySlip->delete();
+        $salarySlip->loadMissing('employee');
+        $label = 'Deleted slip '.($salarySlip->slip_no ?: '#'.$salarySlip->id).' — '.($salarySlip->employee->name ?? '?').' ('.$this->periodLabel($salarySlip->period).')';
+        SalaryHistory::batch('manual', $label, fn () => $salarySlip->delete());
 
         return response()->json(['success' => true]);
     }
@@ -133,14 +141,6 @@ class SalarySlipController extends Controller
         return $this->renderer->streamPdf('salary_slip', $this->dataBuilder->salarySlip($salarySlip), "{$salarySlip->slip_no}.pdf");
     }
 
-    private function periodLabel(string $period): string
-    {
-        $months = ['01' => 'January', '02' => 'February', '03' => 'March', '04' => 'April', '05' => 'May', '06' => 'June', '07' => 'July', '08' => 'August', '09' => 'September', '10' => 'October', '11' => 'November', '12' => 'December'];
-        [$year, $month] = array_pad(explode('-', $period), 2, '');
-
-        return ($months[$month] ?? $month).' '.$year;
-    }
-
     /** Generate Pending slips for every configured salary structure for a given period. Idempotent — skips employees who already have a slip for that period. */
     public function generate(Request $request)
     {
@@ -148,28 +148,33 @@ class SalarySlipController extends Controller
             'period' => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
         ]);
 
-        $structures = SalaryStructure::all();
-        $existing = SalarySlip::where('period', $data['period'])->get()
-            ->map(fn (SalarySlip $s) => $s->employee_type . ':' . $s->employee_id);
+        $created = SalaryHistory::batch('generate', 'Generated slips — '.$this->periodLabel($data['period']), function () use ($data) {
+            $structures = SalaryStructure::all();
+            $existing = SalarySlip::where('period', $data['period'])->get()
+                ->map(fn (SalarySlip $s) => $s->employee_type . ':' . $s->employee_id);
 
-        $created = 0;
-        foreach ($structures as $structure) {
-            if ($existing->contains($structure->employee_type . ':' . $structure->employee_id)) {
-                continue;
+            $created = 0;
+            foreach ($structures as $structure) {
+                if ($existing->contains($structure->employee_type . ':' . $structure->employee_id)) {
+                    continue;
+                }
+
+                SalarySlip::create([
+                    'slip_no' => SalarySlip::nextSlipNo(),
+                    'employee_type' => $structure->employee_type,
+                    'employee_id' => $structure->employee_id,
+                    'period' => $data['period'],
+                    'basic_salary' => $structure->basic_salary,
+                    'allowances' => $structure->allowances,
+                    'deductions' => $structure->deductions,
+                    'net_salary' => (float) $structure->basic_salary + (float) $structure->allowances - (float) $structure->deductions,
+                    'generated_by_id' => Auth::guard('erp')->id(),
+                ]);
+                $created++;
             }
 
-            SalarySlip::create([
-                'employee_type' => $structure->employee_type,
-                'employee_id' => $structure->employee_id,
-                'period' => $data['period'],
-                'basic_salary' => $structure->basic_salary,
-                'allowances' => $structure->allowances,
-                'deductions' => $structure->deductions,
-                'net_salary' => (float) $structure->basic_salary + (float) $structure->allowances - (float) $structure->deductions,
-                'generated_by_id' => Auth::guard('erp')->id(),
-            ]);
-            $created++;
-        }
+            return $created;
+        });
 
         return response()->json(['success' => true, 'generated' => $created]);
     }
@@ -178,24 +183,36 @@ class SalarySlipController extends Controller
     {
         $data = $request->validate([
             'payment_mode' => ['required', Rule::in(['Cash', 'Bank'])],
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
             'paid_on' => 'nullable|date',
         ]);
+        $bankId = $this->bankAccountFor($data['payment_mode'], $data['bank_account_id'] ?? null, 'Paid');
 
-        $salarySlip->update([
+        $salarySlip->loadMissing('employee');
+        $via = $bankId ? (BankAccount::whereKey($bankId)->value('bank_name') ?: 'Bank') : $data['payment_mode'];
+        $label = 'Paid '.($salarySlip->employee->name ?? '?').' — '.$this->periodLabel($salarySlip->period).' ('.$via.')';
+        SalaryHistory::batch('payment', $label, fn () => $salarySlip->update([
             'status' => 'Paid',
             'payment_mode' => $data['payment_mode'],
+            'bank_account_id' => $bankId,
             'paid_on' => $data['paid_on'] ?? now()->toDateString(),
-        ]);
+        ]));
 
-        return response()->json($salarySlip);
+        return response()->json($this->present($salarySlip->fresh('employee')));
     }
 
     private function validatedManual(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'employee_type' => ['required', Rule::in(['teacher', 'staff', 'driver'])],
             'employee_id' => 'required|integer',
-            'period' => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
+            'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'basic_salary' => 'required|numeric|min:0|max:99999999',
+            'days_in_month' => 'nullable|integer|min:1|max:31',
+            'absent' => 'nullable|numeric|min:0|max:31',
+            'present' => 'nullable|numeric|min:0|max:31',
+            'cl' => 'nullable|numeric|min:0|max:31',
+            'advance' => 'nullable|numeric|min:0|max:99999999',
             'earnings' => 'array',
             'earnings.*.label' => 'required|string|max:100',
             'earnings.*.amount' => 'required|numeric|min:0',
@@ -203,19 +220,85 @@ class SalarySlipController extends Controller
             'deduction_items.*.label' => 'required|string|max:100',
             'deduction_items.*.amount' => 'required|numeric|min:0',
             'payment_mode' => ['nullable', Rule::in(['Cash', 'Bank'])],
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
+            'paid_on' => 'nullable|date',
             'status' => ['required', Rule::in(['Draft', 'Pending', 'Paid'])],
-            'remarks' => 'nullable|string|max:1000',
+            'remarks' => 'nullable|string|max:255',
         ]);
+        $data['bank_account_id'] = $this->bankAccountFor($data['payment_mode'] ?? null, $data['bank_account_id'] ?? null, $data['status']);
+
+        // Days in month comes from the calendar unless the sheet used something else.
+        [$year, $month] = array_map('intval', explode('-', $data['period']));
+        $data['days_in_month'] ??= cal_days_in_month(CAL_GREGORIAN, $month, $year);
+        $data['absent'] = (float) ($data['absent'] ?? 0);
+        $data['cl'] = (float) ($data['cl'] ?? 0);
+        $data['present'] = isset($data['present']) ? (float) $data['present'] : max(0, $data['days_in_month'] - $data['absent'] - $data['cl']);
+
+        if ($data['present'] + $data['absent'] + $data['cl'] > $data['days_in_month'] + 0.001) {
+            throw ValidationException::withMessages(['present' => "Present + Absent + CL is more than the {$data['days_in_month']} days in this month."]);
+        }
+
+        return $data;
+    }
+
+    /** Excel row math (see SalaryMonthlyImportController::computeSlip) + the slip's own fields. */
+    private function slipPayload(array $data): array
+    {
+        $earnings = array_values(array_filter($data['earnings'] ?? [], fn ($r) => strtolower(trim($r['label'])) !== 'basic'));
+        $deductions = array_values($data['deduction_items'] ?? []);
+        $otherEarnings = (float) collect($earnings)->sum(fn ($r) => (float) $r['amount']);
+        $otherDeductions = (float) collect($deductions)->sum(fn ($r) => (float) $r['amount']);
+
+        $status = $data['status'];
+
+        return SalaryMonthlyImportController::computeSlip(
+            (float) $data['basic_salary'],
+            (int) $data['days_in_month'],
+            $data['present'],
+            $data['absent'],
+            $data['cl'],
+            (float) ($data['advance'] ?? 0),
+            $otherEarnings,
+            $otherDeductions,
+        ) + [
+            'earnings' => array_merge([['label' => 'Basic', 'amount' => (float) $data['basic_salary']]], $earnings),
+            'deduction_items' => $deductions,
+            'status' => $status,
+            'payment_mode' => $data['payment_mode'] ?? null,
+            'bank_account_id' => $data['bank_account_id'],
+            'paid_on' => $status === 'Paid' ? ($data['paid_on'] ?? now()->toDateString()) : null,
+            'remarks' => $data['remarks'] ?? null,
+        ];
+    }
+
+    /**
+     * The bank account a Bank payment comes out of: the one picked, or the school's only account.
+     * Paying by Bank needs an account (that's where the salary is debited); Cash never has one.
+     */
+    private function bankAccountFor(?string $mode, ?int $bankAccountId, string $status): ?int
+    {
+        if ($mode !== 'Bank') {
+            return null;
+        }
+        if ($bankAccountId) {
+            return $bankAccountId;
+        }
+        $ids = BankAccount::query()->limit(2)->pluck('id');
+        if ($ids->count() === 1) {
+            return (int) $ids->first();
+        }
+        if ($status === 'Paid') {
+            throw ValidationException::withMessages(['bank_account_id' => $ids->isEmpty()
+                ? 'Add a bank account under Finance & Payroll › Bank Accounts first, or pay by Cash.'
+                : 'Choose the bank account the salary is paid from.']);
+        }
+
+        return null;
     }
 
     private function assertEmployeeExists(string $employeeType, int $employeeId): void
     {
-        $modelClass = match ($employeeType) {
-            'teacher' => Teacher::class,
-            'driver' => Driver::class,
-            default => Staff::class,
-        };
-        if (! $modelClass::whereKey($employeeId)->exists()) {
+        if (! $this->modelClass($employeeType)::whereKey($employeeId)->exists()) {
             throw ValidationException::withMessages(['employee_id' => 'Selected staff member was not found.']);
         }
     }
@@ -229,43 +312,42 @@ class SalarySlipController extends Controller
             ->exists();
 
         if ($exists) {
-            throw ValidationException::withMessages(['period' => 'A salary slip already exists for this staff member and period.']);
+            throw ValidationException::withMessages(['period' => 'A salary slip already exists for this staff member and month — edit that slip instead.']);
         }
     }
 
-    /** @return array{0: float, 1: float} [basic, allowances] — rows labeled "Basic" (any case) count as basic salary, the rest as allowances. */
-    private function splitEarnings(array $earnings): array
+    private function employeeName(array $data): string
     {
-        $basic = 0.0;
-        $allowances = 0.0;
-        foreach ($earnings as $row) {
-            if (strtolower(trim($row['label'])) === 'basic') {
-                $basic += (float) $row['amount'];
-            } else {
-                $allowances += (float) $row['amount'];
-            }
-        }
+        return (string) ($this->modelClass($data['employee_type'])::whereKey($data['employee_id'])->value('name') ?? '?');
+    }
 
-        return [$basic, $allowances];
+    /** @return class-string<Teacher|Staff|Driver> */
+    private function modelClass(string $type): string
+    {
+        return match ($type) {
+            'teacher' => Teacher::class,
+            'driver' => Driver::class,
+            default => Staff::class,
+        };
+    }
+
+    private function periodLabel(string $period): string
+    {
+        $months = ['01' => 'January', '02' => 'February', '03' => 'March', '04' => 'April', '05' => 'May', '06' => 'June', '07' => 'July', '08' => 'August', '09' => 'September', '10' => 'October', '11' => 'November', '12' => 'December'];
+        [$year, $month] = array_pad(explode('-', $period), 2, '');
+
+        return ($months[$month] ?? $month).' '.$year;
     }
 
     private function present(SalarySlip $slip): array
     {
+        $bank = $slip->bank_account_id ? $slip->bankAccount : null;
+
         return [
             ...$slip->toArray(),
             'employee_name' => $slip->employee->name ?? '—',
             'employee_code' => $slip->employee->employee_id ?? null,
+            'bank_account_label' => $bank ? trim($bank->bank_name.' — '.$bank->account_name) : null,
         ];
-    }
-
-    private function nextSlipNo(): string
-    {
-        $session = AcademicSession::query()->where('is_current', true)->first();
-        $sessionDigits = $session ? preg_replace('/\D+/', '', (string) $session->name) : '';
-        $token = $sessionDigits !== '' ? $sessionDigits : now()->format('Y');
-        $prefix = "SLP-{$token}-";
-        $count = SalarySlip::where('slip_no', 'like', $prefix.'%')->count() + 1;
-
-        return sprintf('%s%05d', $prefix, $count);
     }
 }

@@ -6,6 +6,8 @@ use App\Models\Driver;
 use App\Models\SalarySlip;
 use App\Models\Staff;
 use App\Models\Teacher;
+use App\Services\Payroll\SalaryHistory;
+use App\Support\EmployeeCustomFields;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -222,6 +224,8 @@ class SalaryBankWorkbookService
         $nameLookup = $this->loadNameLookup();
         $slipCounter = (int) SalarySlip::query()->where('slip_no', 'like', 'SB-'.now()->format('Ym').'-%')->count();
 
+        // One Salary History batch, so the whole bank-workbook import can be rolled back together.
+        SalaryHistory::batch('bank', 'Bank workbook import', function () use ($parsed, $userId, &$stats, &$nameLookup, &$slipCounter) {
         DB::transaction(function () use ($parsed, $userId, &$stats, &$nameLookup, &$slipCounter) {
             foreach ($parsed['rows'] as $row) {
                 $type = $row['type'];
@@ -254,9 +258,7 @@ class SalaryBankWorkbookService
                     $employee = $matches[0];
                     $employee->salary = $row['basic_salary'];
                     $employee->status = $employee->status ?: 'active';
-                    $cf = is_array($employee->custom_field_values) ? $employee->custom_field_values : [];
-                    $cf['Designation'] = $row['designation'];
-                    $employee->custom_field_values = $cf;
+                    $employee->custom_field_values = EmployeeCustomFields::set($employee->custom_field_values, 'Designation', (string) $row['designation']);
                     $employee->save();
                     $stats['employees_updated']++;
                 } else {
@@ -276,6 +278,7 @@ class SalaryBankWorkbookService
                     $stats['slips_written']++;
                 }
             }
+        });
         });
 
         return $stats;
@@ -407,12 +410,11 @@ class SalaryBankWorkbookService
 
     private function designationLabel(Teacher|Staff|Driver $employee, string $type): string
     {
-        $cf = is_array($employee->custom_field_values) ? $employee->custom_field_values : [];
-        if (! empty($cf['Designation'])) {
-            return (string) $cf['Designation'];
-        }
-        if (! empty($cf['POST'])) {
-            return (string) $cf['POST'];
+        foreach (['Designation', 'POST'] as $label) {
+            $value = EmployeeCustomFields::get($employee->custom_field_values, $label);
+            if ($value !== '') {
+                return $value;
+            }
         }
 
         return match ($type) {
@@ -469,7 +471,7 @@ class SalaryBankWorkbookService
             'name' => $name,
             'status' => 'active',
             'salary' => $basic,
-            'custom_field_values' => ['Designation' => $desig],
+            'custom_field_values' => [['label' => 'Designation', 'value' => $desig]],
         ];
 
         return match ($type) {

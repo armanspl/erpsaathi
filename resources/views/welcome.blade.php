@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-erp-template="school-green">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="color-scheme" content="dark light">
+    <meta name="color-scheme" content="light dark">
 
     <title>{{ $welcome['schoolName'] }} — Complete School ERP &amp; Management System</title>
     <meta name="description" content="{{ $welcome['schoolName'] }} School ERP — one secure, centralized platform for academics, student management, attendance, fees, examinations, finance &amp; payroll, library, transport, inventory and reports.">
@@ -40,12 +40,14 @@
     </script>
 
     <script>
-        // Pre-paint the correct background so a saved light theme doesn't flash dark.
+        // Pre-paint: School Green defaults to light white / bg-alt.
         (function () {
             try {
-                var t = localStorage.getItem('erp-welcome-theme');
-                var bg = t === 'light' ? '#f8fafc' : '#07080c';
+                var t = localStorage.getItem('erp-welcome-theme-v3');
+                var dark = t === 'dark';
+                var bg = dark ? '#052E16' : '#FFFFFF';
                 document.documentElement.style.backgroundColor = bg;
+                document.documentElement.classList.toggle('dark', dark);
                 document.addEventListener('DOMContentLoaded', function () { document.body.style.backgroundColor = bg; });
             } catch (e) {}
         })();
@@ -54,7 +56,7 @@
     @vite(['resources/css/app.css', 'resources/js/welcome.js'])
 
     <style>
-        html, body { margin: 0; min-height: 100vh; background: #07080c; overflow-x: hidden; }
+        html, body { margin: 0; min-height: 100vh; background: #FFFFFF; overflow-x: hidden; }
         #erp-welcome-app { min-height: 100vh; }
     </style>
 </head>

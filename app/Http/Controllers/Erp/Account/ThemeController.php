@@ -10,6 +10,8 @@ use Illuminate\Validation\Rule;
 class ThemeController extends Controller
 {
     public const TEMPLATES = [
+        'school-green',
+        'royal-navy-gold',
         'midnight-gold',
         'harbor-navy',
         'forest-ledger',

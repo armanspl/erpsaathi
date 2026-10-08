@@ -298,23 +298,27 @@ class ImportTemplateService
         $ss = new Spreadsheet();
         $salary = $ss->getActiveSheet();
         $salary->setTitle('SALARY DETAILS');
-        $salaryHeaders = ['EMP_CODE', 'NAME', 'POST', 'SUBJECT', 'SECTION', 'STATUS', 'BASIC SALARY AT JOINING', 'BASIC SALARY PRESENT'];
+        $salaryHeaders = ['EMP_CODE', 'NAME', 'POST', 'SUBJECT', 'SECTION', 'STATUS', 'BASIC SALARY AT THE TIME OF JOINING', 'BASIC SALARY PRESENT', 'PHONE', 'EMAIL'];
         $salary->fromArray($salaryHeaders, null, 'A1');
-        $this->styleHeaderRow($salary, 'A1:H1');
-        $salary->fromArray(['T-1001', 'SAMPLE TEACHER', 'ASST TEACHER', 'ENG', 'A', 'Active', 18000, 22000], null, 'A2');
-        $salary->fromArray(['S-2001', 'SAMPLE STAFF', 'OFFICE ASST', '', '', 'Active', 12000, 14000], null, 'A3');
-        $salary->fromArray(['D-3001', 'SAMPLE DRIVER', 'DRIVER', '', '', 'Active', 10000, 11000], null, 'A4');
+        $this->styleHeaderRow($salary, 'A1:J1');
+        // Column-A-only rows are group labels (stored as the employee's Grade).
+        $salary->setCellValue('A2', 'GRADE I');
+        $salary->fromArray(['T-1001', 'SAMPLE TEACHER', 'ASST. TEACHER', 'ENGLISH', 'PRIMARY', 'ACTIVE', 18000, 22000, '9876500001', 'teacher@gmail.com'], null, 'A3');
+        $salary->setCellValue('A5', 'GRADE III');
+        $salary->fromArray(['S-2001', 'SAMPLE STAFF', 'OFFICE ASST', '', '', 'ACTIVE', 12000, 14000, '9876500002', 'staff@gmail.com'], null, 'A6');
+        $salary->setCellValue('A8', 'TRANSPORT');
+        $salary->fromArray(['D-3001', 'SAMPLE DRIVER', 'DRIVER', '', '', 'INACTIVE', 10000, 11000, '9876500003', ''], null, 'A9');
 
         $staff = $ss->createSheet();
         $staff->setTitle('STAFF DETAILS');
         $staff->setCellValue('A1', 'Staff bio-data (header must be on row 3)');
         $staff->setCellValue('A2', '');
-        $staffHeaders = ['EMPL_CODE', 'NAME', 'DOB', 'CATEG', 'HS YEAR', 'INTER YEAR', 'GRAD YEAR', 'PHONE', 'JOIN DATE', 'ADDRESS', 'BASIC SALARY', 'REMARKS'];
+        $staffHeaders = ['EMPL_CODE', 'NAME', 'DOB', 'CATEG', 'HS YEAR', 'INTER YEAR', 'GRAD YEAR', 'PHONE', 'EMAIL', 'JOIN DATE', 'ADDRESS', 'BASIC SALARY', 'REMARKS'];
         $staff->fromArray($staffHeaders, null, 'A3');
-        $this->styleHeaderRow($staff, 'A3:L3');
-        $staff->fromArray(['T-1001', 'SAMPLE TEACHER', '1990-05-12', 'GEN', '2006', '2008', '2011', '9876500001', '2018-04-01', 'Sample Address', 22000, ''], null, 'A4');
-        $staff->fromArray(['S-2001', 'SAMPLE STAFF', '1988-08-20', 'OBC', '2004', '2006', '', '9876500002', '2019-06-01', 'Sample Address', 14000, ''], null, 'A5');
-        $staff->fromArray(['D-3001', 'SAMPLE DRIVER', '1985-01-10', 'GEN', '', '', '', '9876500003', '2020-01-15', 'Sample Address', 11000, ''], null, 'A6');
+        $this->styleHeaderRow($staff, 'A3:M3');
+        $staff->fromArray(['T-1001', 'SAMPLE TEACHER', '12-05-1990', 'GEN', '2006', '2008', '2011', '9876500001', 'teacher@gmail.com', '01-04-2018', 'Sample Address', 22000, 'B.A., B.Ed.'], null, 'A4');
+        $staff->fromArray(['S-2001', 'SAMPLE STAFF', '20-08-1988', 'OBC', '2004', '2006', '', '9876500002', 'staff@gmail.com', '01-06-2019', 'Sample Address', 14000, ''], null, 'A5');
+        $staff->fromArray(['D-3001', 'SAMPLE DRIVER', '10-01-1985', 'GEN', '', '', '', '9876500003', '', '15-01-2020', 'Sample Address', 11000, ''], null, 'A6');
 
         return $ss;
     }

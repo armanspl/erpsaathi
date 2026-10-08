@@ -14,6 +14,7 @@ class Driver extends Model
         'employee_id',
         'name',
         'phone',
+        'email',
         'license_no',
         'vehicle_no',
         'status',

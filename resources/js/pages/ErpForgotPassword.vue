@@ -36,74 +36,55 @@
 
     <!-- Left brand panel (identical to login) -->
     <div class="erp-left">
+      <div class="erp-left-orbit" aria-hidden="true">
+        <span class="erp-float-icon erp-fi-1">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+        <span class="erp-float-icon erp-fi-2">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+        </span>
+        <span class="erp-float-icon erp-fi-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </span>
+        <span class="erp-float-icon erp-fi-4">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9M12 16v-5M17 16V7"/></svg>
+        </span>
+      </div>
       <div class="erp-left-inner">
         <div class="erp-logo-ring erp-anim" style="--d:0s">
-          <img src="/assets/img/logo/erpsaathi.png" alt="School logo" class="erp-logo" />
+          <img src="/assets/img/logo/new-logo2.png?v=1" alt="ERPSaathi logo" class="erp-logo" />
         </div>
         <h1 class="erp-brand-title erp-anim" style="--d:.08s">{{ t.brandTitle }}</h1>
+        <span class="erp-gold-rule erp-anim" style="--d:.12s" aria-hidden="true"></span>
         <p class="erp-brand-sub erp-anim" style="--d:.16s">
           {{ t.brandSub }}
         </p>
         <ul class="erp-feature-list">
           <li class="erp-feature erp-anim" style="--d:.24s">
-            <span class="erp-feature-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+            <span class="erp-feature-icon erp-icon-pulse">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </span>
             <span>{{ t.feature1 }}</span>
           </li>
           <li class="erp-feature erp-anim" style="--d:.32s">
-            <span class="erp-feature-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+            <span class="erp-feature-icon erp-icon-pulse" style="--p:.4s">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
             </span>
             <span>{{ t.feature2 }}</span>
           </li>
           <li class="erp-feature erp-anim" style="--d:.4s">
-            <span class="erp-feature-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+            <span class="erp-feature-icon erp-icon-pulse" style="--p:.8s">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             </span>
             <span>{{ t.feature3 }}</span>
           </li>
           <li class="erp-feature erp-anim" style="--d:.48s">
-            <span class="erp-feature-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+            <span class="erp-feature-icon erp-icon-pulse" style="--p:1.2s">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9M12 16v-5M17 16V7"/></svg>
             </span>
             <span>{{ t.feature4 }}</span>
           </li>
         </ul>
-        <svg class="erp-illustration erp-anim" style="--d:.56s" viewBox="0 0 200 130" aria-hidden="true">
-          <defs>
-            <linearGradient id="fpg1" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#6366F1" />
-              <stop offset="1" stop-color="#4F46E5" />
-            </linearGradient>
-            <linearGradient id="fpg2" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#4F46E5" />
-              <stop offset="1" stop-color="#4338CA" />
-            </linearGradient>
-            <linearGradient id="fpg3" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#4338CA" />
-              <stop offset="1" stop-color="#38BDF8" />
-            </linearGradient>
-          </defs>
-          <rect x="28" y="88" width="144" height="15" rx="4" fill="url(#fpg1)" opacity="0.9" />
-          <rect x="40" y="72" width="120" height="15" rx="4" fill="url(#fpg2)" opacity="0.9" />
-          <rect x="52" y="56" width="96" height="15" rx="4" fill="url(#fpg3)" opacity="0.9" />
-          <polygon points="100,14 162,40 100,66 38,40" fill="#FFFFFF" opacity="0.92" />
-          <rect x="96" y="40" width="8" height="9" fill="#FFFFFF" opacity="0.92" />
-          <line x1="142" y1="45" x2="142" y2="70" stroke="#FFFFFF" stroke-width="2" opacity="0.75" />
-          <circle cx="142" cy="73" r="3.2" fill="#6366F1" />
-          <circle class="erp-spark erp-spark-1" cx="22" cy="26" r="2.4" fill="#6366F1" />
-          <circle class="erp-spark erp-spark-2" cx="180" cy="32" r="2.8" fill="#38BDF8" />
-          <circle class="erp-spark erp-spark-3" cx="188" cy="86" r="2.2" fill="#4F46E5" />
-        </svg>
       </div>
     </div>
 
@@ -111,7 +92,7 @@
     <div class="erp-right">
       <div class="erp-form-card erp-anim" style="--d:.1s">
         <div class="erp-mobile-header">
-          <img src="/assets/img/logo/erpsaathi.png" alt="School logo" class="erp-mobile-logo" />
+          <img :src="mobileLogoUrl" alt="ERPSaathi logo" class="erp-mobile-logo" />
           <h2 class="erp-mobile-title">{{ t.brandTitle }}</h2>
         </div>
 
@@ -257,6 +238,9 @@ export default {
     t() {
       return TRANSLATIONS[this.locale] || TRANSLATIONS.en;
     },
+    mobileLogoUrl() {
+      return '/assets/img/logo/new-logo2.png?v=1';
+    },
   },
   watch: {
     isDark(value) {
@@ -264,8 +248,13 @@ export default {
     },
   },
   mounted() {
-    const saved = localStorage.getItem("erp-auth-theme");
-    this.isDark = saved === "dark";
+    let saved = null;
+    try {
+      saved = localStorage.getItem("erp-auth-theme");
+    } catch (e) {
+      saved = null;
+    }
+    this.isDark = saved === null ? false : saved === "dark";
     this.applyTheme(this.isDark);
     const savedLang = localStorage.getItem("erp-welcome-lang");
     if (savedLang === "hi" || savedLang === "en") this.locale = savedLang;
@@ -292,9 +281,15 @@ export default {
       if (el && !el.contains(event.target)) this.langMenuOpen = false;
     },
     applyTheme(dark) {
-      const bg = dark ? '#07080c' : '#f8fafc';
+      const bg = dark ? 'var(--brand-950)' : 'var(--rng-bg)';
       document.documentElement.style.backgroundColor = bg;
       if (document.body) document.body.style.backgroundColor = bg;
+      document.documentElement.classList.toggle('erp-login-dark', !!dark);
+      document.documentElement.classList.toggle('erp-login-light', !dark);
+      if (document.body) {
+        document.body.classList.toggle('erp-login-dark', !!dark);
+        document.body.classList.toggle('erp-login-light', !dark);
+      }
       try {
         localStorage.setItem("erp-auth-theme", dark ? "dark" : "light");
       } catch (e) {
@@ -342,393 +337,341 @@ export default {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap');
 
+/* Royal Navy + Gold. Every colour comes from the shared tokens in
+   resources/css/erp-theme-royal.css (loaded via app.css). */
 .erp-root {
-  --gold: #4f46e5;
-  --gold-soft: #6366f1;
-  --gold-strong: #4338ca;
-  --violet: #7c3aed;
-  --ink: #0f172a;
-  --cream: #0f172a;
-  --muted: #475569;
-  --line: rgba(15, 23, 42, 0.10);
-  --card-bg: rgba(255, 255, 255, 0.92);
-  --card-border: rgba(15, 23, 42, 0.10);
-  --card-text: #0f172a;
-  --card-muted: #475569;
-  --input-bg: #ffffff;
-  --input-bg-solid: #ffffff;
-  --input-border: rgba(15, 23, 42, 0.14);
-  --error-bg: #fef2f2;
-  --error-line: #fca5a5;
-  --error-text: #b91c1c;
-  --accent: #4f46e5;
-  --accent-strong: #4338ca;
+  --gold: var(--rng-primary);
+  --gold-soft: var(--rng-primary-hover);
+  --gold-strong: var(--rng-primary-hover);
+  --card-bg: var(--rng-surface);
+  --card-border: var(--rng-border);
+  --card-text: var(--rng-text);
+  --card-muted: var(--rng-text-muted);
+  --input-bg: var(--rng-surface);
+  --input-bg-solid: var(--rng-surface);
+  --input-border: var(--rng-border);
+  --error-bg: var(--rng-danger-bg);
+  --error-line: var(--rng-danger-bg);
+  --error-text: var(--rng-danger-text);
+  --accent: var(--rng-primary);
+  --accent-strong: var(--rng-primary-hover);
   position: relative;
   min-height: 100vh;
   display: flex;
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  color: #0f172a;
-  background: #f8fafc;
+  font-family: var(--rng-font);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--rng-text);
+  background: var(--rng-bg);
   overflow: hidden;
 }
 
-/* Dark: same indigo/violet brand as the homepage, on slate — not a separate gold theme. */
+/* Dark: the whole page goes navy; the card becomes a lighter navy surface. */
 .erp-root.dark {
-  --gold: #6366f1;
-  --gold-soft: #818cf8;
-  --gold-strong: #4f46e5;
-  --violet: #8b5cf6;
-  --ink: #0b1120;
-  --cream: #e6ebf5;
-  --muted: #a3adc2;
-  --line: rgba(148, 163, 184, 0.16);
-  --card-bg: rgba(17, 26, 46, 0.86);
-  --card-border: rgba(148, 163, 184, 0.16);
-  --card-text: #e6ebf5;
-  --card-muted: #a3adc2;
-  --input-bg: rgba(255, 255, 255, 0.04);
-  --input-bg-solid: rgba(255, 255, 255, 0.06);
-  --input-border: rgba(230, 235, 245, 0.14);
-  --error-bg: rgba(180, 60, 60, 0.18);
-  --error-line: rgba(248, 180, 180, 0.35);
-  --error-text: #f6c1c1;
-  --accent: #818cf8;
-  --accent-strong: #a5b4fc;
-  color: #e6ebf5;
-  background: #0b1120;
+  --card-bg: var(--rng-primary-hover);
+  --card-border: rgb(255 255 255 / 0.12);
+  --card-text: var(--rng-text-on-dark);
+  --card-muted: var(--rng-text-on-dark-muted);
+  --input-bg: rgb(255 255 255 / 0.06);
+  --input-bg-solid: rgb(255 255 255 / 0.08);
+  --input-border: rgb(255 255 255 / 0.18);
+  --error-bg: rgb(220 38 38 / 0.18);
+  --error-line: rgb(220 38 38 / 0.4);
+  --error-text: var(--rng-danger-on-dark);
+  --accent: var(--rng-accent);
+  --accent-strong: var(--rng-accent);
+  color: var(--rng-text-on-dark);
+  background: var(--rng-primary);
 }
 
-.erp-root.lang-hi { font-family: 'Noto Sans Devanagari', 'Inter', sans-serif; }
+.erp-root.lang-hi { font-family: 'Noto Sans Devanagari', var(--rng-font); }
 .erp-root.lang-hi .erp-brand-title,
 .erp-root.lang-hi .erp-mobile-title,
 .erp-root.lang-hi .erp-title,
-.erp-root.lang-hi .erp-modal-head h3 { font-family: 'Noto Sans Devanagari', 'Plus Jakarta Sans', sans-serif; }
+.erp-root.lang-hi .erp-modal-head h3 { font-family: 'Noto Sans Devanagari', var(--rng-font); }
 
 .erp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.erp-skip-link { position: absolute; top: -48px; left: 12px; z-index: 100; background: var(--card-bg); color: var(--card-text); padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; transition: top .15s ease; border: 1px solid var(--card-border); }
+.erp-skip-link { position: absolute; top: -48px; left: 12px; z-index: 100; background: var(--card-bg); color: var(--card-text); padding: 10px 16px; border-radius: var(--rng-radius-control); font-size: 13px; font-weight: 600; text-decoration: none; transition: top .15s ease; border: 1px solid var(--card-border); }
 .erp-skip-link:focus { top: 12px; }
 
-/* Backdrop — matches the homepage: two soft blobs + a faint dot-grid, no continuous drifting icons. */
-.erp-mesh { position: absolute; inset: 0; z-index: 0; overflow: hidden; background: radial-gradient(circle at 18% 18%, #eef2ff 0%, #f8fafc 58%); }
-.erp-root.dark .erp-mesh { background: radial-gradient(circle at 18% 18%, #111a2e 0%, #0b1120 58%); }
-.erp-blob { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .32; animation: erp-drift-a 26s ease-in-out infinite; }
-.erp-blob-a { width: 480px; height: 480px; top: -160px; left: -120px; background: radial-gradient(circle, var(--gold-soft), transparent 70%); }
-.erp-blob-b { width: 420px; height: 420px; top: 15%; right: -140px; background: radial-gradient(circle, var(--violet), transparent 70%); animation-delay: -12s; }
-.erp-root.dark .erp-blob { opacity: .2; }
-@keyframes erp-drift-a { 0%,100% { transform: translate(0,0); } 50% { transform: translate(22px,-16px); } }
-@media (prefers-reduced-motion:reduce) { .erp-blob { animation: none; } }
-.erp-dot-grid {
-  position: absolute; inset: 0;
-  background-image: radial-gradient(rgba(15,23,42,0.09) 1px, transparent 1px);
-  background-size: 26px 26px;
-  mask-image: radial-gradient(circle at 20% 10%, #000 0%, transparent 65%);
-  -webkit-mask-image: radial-gradient(circle at 20% 10%, #000 0%, transparent 65%);
-}
-.erp-root.dark .erp-dot-grid { background-image: radial-gradient(rgba(148,163,184,0.14) 1px, transparent 1px); }
+/* Flat split layout — no decorative backdrop. */
+.erp-mesh { display: none; }
 
-.erp-anim { animation: erp-rise .6s cubic-bezier(0.16,1,0.3,1) both; animation-delay: var(--d,0s); }
-@keyframes erp-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.erp-anim { animation: erp-rise .5s cubic-bezier(0.16,1,0.3,1) both; animation-delay: var(--d,0s); }
+@keyframes erp-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion:reduce) { .erp-anim { animation: none; opacity: 1; transform: none; } }
 
 .erp-utility-bar {
   position: absolute; top: 18px; right: 18px; z-index: 20;
-  display: flex; align-items: center; gap: 8px;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(15, 23, 42, 0.10);
-  backdrop-filter: blur(12px);
-  border-radius: 999px; padding: 6px;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--rng-surface);
+  border: 1px solid var(--rng-border);
+  border-radius: 999px; padding: 4px;
+  box-shadow: var(--rng-shadow);
 }
-.erp-root.dark .erp-utility-bar {
-  background: rgba(12, 12, 16, 0.55);
-  border-color: rgba(198, 167, 94, 0.28);
-}
+.erp-root.dark .erp-utility-bar { background: var(--rng-primary-hover); border-color: rgb(255 255 255 / 0.12); }
 .erp-theme-toggle {
   width: 30px; height: 30px; border-radius: 50%; border: none;
-  background: rgba(79, 70, 229, 0.12); color: #4f46e5;
+  background: transparent; color: var(--rng-primary);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: background .15s ease, transform .15s ease;
+  transition: background .15s ease;
 }
-.erp-root.dark .erp-theme-toggle {
-  background: rgba(198, 167, 94, 0.16); color: #e2c98a;
-}
-.erp-theme-toggle:hover { background: rgba(79, 70, 229, 0.2); transform: rotate(15deg); }
-.erp-root.dark .erp-theme-toggle:hover { background: rgba(198, 167, 94, 0.28); }
-.erp-theme-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.erp-root.dark .erp-theme-toggle { color: var(--rng-text-on-dark); }
+.erp-theme-toggle:hover { background: var(--rng-primary-light); }
+.erp-root.dark .erp-theme-toggle:hover { background: rgb(255 255 255 / 0.1); }
+.erp-theme-toggle:focus-visible { outline: 2px solid var(--rng-primary); outline-offset: 2px; }
 
 .erp-lang-switch { position: relative; }
 .erp-lang-menu {
   position: absolute; top: calc(100% + 8px); right: 0; min-width: 128px;
-  border: 1px solid var(--card-border); border-radius: 10px;
-  background: var(--card-bg); backdrop-filter: blur(18px);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
-  padding: 6px; display: flex; flex-direction: column; gap: 2px; z-index: 30;
+  border: 1px solid var(--card-border); border-radius: var(--rng-radius-control);
+  background: var(--card-bg);
+  box-shadow: var(--rng-shadow);
+  padding: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 30;
 }
 .erp-lang-menu button {
-  text-align: left; padding: 8px 10px; border-radius: 7px; border: 0;
-  background: transparent; font-family: inherit; font-size: 13px; font-weight: 600;
+  text-align: left; padding: 8px 10px; border-radius: 6px; border: 0;
+  background: transparent; font-family: inherit; font-size: 13px; font-weight: 500;
   color: var(--card-muted); cursor: pointer;
 }
-.erp-lang-menu button:hover { background: rgba(79, 70, 229, 0.08); color: var(--card-text); }
-.erp-lang-menu button.is-active { background: rgba(79, 70, 229, 0.12); color: var(--accent); }
-.erp-root.dark .erp-lang-menu button:hover { background: rgba(99, 102, 241, 0.14); }
-.erp-root.dark .erp-lang-menu button.is-active { background: rgba(99, 102, 241, 0.18); }
+.erp-lang-menu button:hover { background: var(--rng-row-hover); color: var(--card-text); }
+.erp-lang-menu button.is-active { background: var(--rng-primary-light); color: var(--rng-primary); font-weight: 600; }
+.erp-root.dark .erp-lang-menu button:hover { background: rgb(255 255 255 / 0.08); }
+.erp-root.dark .erp-lang-menu button.is-active { background: rgb(255 255 255 / 0.12); color: var(--rng-text-on-dark); }
 
-.erp-left { position: relative; z-index: 1; display: none; width: 45%; align-items: center; justify-content: center; padding: 48px; }
+/* ── Left: navy brand panel ── */
+.erp-left {
+  position: relative; z-index: 1; display: none; width: 50%;
+  align-items: center; justify-content: center; padding: 56px;
+  background: var(--brand-950, var(--rng-navy-deep));
+  color: var(--rng-text-on-dark);
+  overflow: hidden;
+}
 @media (min-width:1024px) { .erp-left { display: flex; } }
-.erp-left-inner { max-width: 400px; }
+.erp-left-inner { position: relative; z-index: 1; max-width: 420px; width: 100%; }
+.erp-left-orbit {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+}
+.erp-float-icon {
+  position: absolute;
+  width: 44px; height: 44px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--rng-accent);
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(201 162 75 / 0.28);
+  backdrop-filter: blur(6px);
+  animation: erp-float 7s ease-in-out infinite;
+}
+.erp-fi-1 { top: 12%; left: 10%; animation-delay: 0s; }
+.erp-fi-2 { top: 22%; right: 12%; animation-delay: 1.2s; }
+.erp-fi-3 { bottom: 28%; left: 14%; animation-delay: 2.1s; }
+.erp-fi-4 { bottom: 16%; right: 16%; animation-delay: 3s; }
+@keyframes erp-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); opacity: .72; }
+  50% { transform: translateY(-12px) rotate(3deg); opacity: 1; }
+}
 .erp-logo-ring {
-  width: auto;
-  height: auto;
-  min-width: 180px;
-  min-height: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 24px;
-  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin: 0 0 32px;
+  padding: 14px 20px;
+  background: var(--rng-surface);
+  border-radius: var(--rng-radius-card);
+  box-shadow: 0 0 0 0 rgb(201 162 75 / 0.35);
+  animation: erp-rise .5s cubic-bezier(0.16,1,0.3,1) both, erp-logo-glow 3.6s ease-in-out infinite;
+  animation-delay: var(--d,0s), .6s;
 }
 .erp-logo-ring::before { display: none; }
-.erp-logo {
-  position: relative;
-  width: auto;
-  height: 110px;
-  max-width: 260px;
-  object-fit: contain;
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
-  box-shadow: none;
-}
-.erp-root.dark .erp-logo {
-  background: transparent;
-  box-shadow: none;
+.erp-logo { display: block; width: auto; height: 64px; max-width: 220px; object-fit: contain; }
+@keyframes erp-logo-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(201 162 75 / 0.2); }
+  50% { box-shadow: 0 0 28px 2px rgb(201 162 75 / 0.35); }
 }
 
 .erp-brand-title {
-  font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', sans-serif;
-  font-size: 40px; font-weight: 700; color: #0f172a;
-  margin-bottom: 12px; line-height: 1.15; letter-spacing: 0.01em; text-align: center;
+  font-family: var(--rng-font);
+  font-size: 36px; font-weight: 600; color: var(--rng-text-on-dark);
+  margin: 0; line-height: 1.2; letter-spacing: -0.01em;
 }
-.erp-root.dark .erp-brand-title { color: #f7f2e8; }
+/* The one gold element on this screen. */
+.erp-gold-rule {
+  display: block; width: 56px; height: 2px; margin: 20px 0;
+  background: var(--rng-accent); border-radius: 2px;
+}
 .erp-brand-sub {
-  font-size: 15px; color: #475569; line-height: 1.65;
-  margin-bottom: 32px; text-align: center;
+  font-size: 16px; color: var(--rng-text-on-dark-muted); line-height: 1.6;
+  margin: 0 0 32px;
 }
-.erp-root.dark .erp-brand-sub { color: rgba(243, 239, 230, 0.68); }
 
-.erp-feature-list { list-style: none; padding: 0; margin: 0 0 24px; display: flex; flex-direction: column; gap: 12px; }
+.erp-feature-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
 .erp-feature {
   display: flex; align-items: center; gap: 12px;
-  color: #0f172a; font-size: 14px; font-weight: 500;
-  padding: 11px 14px; border-radius: 12px;
-  background: rgba(255,255,255,0.72);
-  border: 1px solid rgba(15,23,42,0.08);
-  backdrop-filter: blur(6px);
-  transition: background .2s ease, transform .2s ease, border-color .2s ease;
+  color: var(--rng-text-on-dark-muted); font-size: 14px; font-weight: 500;
 }
-.erp-root.dark .erp-feature {
-  color: #f3efe6;
-  background: rgba(255,255,255,0.04);
-  border-color: rgba(198,167,94,0.16);
-}
-.erp-feature:hover { background: rgba(99,102,241,0.08); transform: translateX(3px); border-color: rgba(79,70,229,0.28); }
-.erp-root.dark .erp-feature:hover { background: rgba(198,167,94,0.1); border-color: rgba(198,167,94,0.35); }
 .erp-feature-icon {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 10px;
+  background: rgb(255 255 255 / 0.1);
+  color: var(--rng-accent);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  border: 1px solid rgb(201 162 75 / 0.22);
 }
-.erp-root.dark .erp-feature-icon {
-  background: linear-gradient(135deg, #c6a75e, #8a6d2f);
-  color: #0b0c10;
+.erp-feature-icon svg { width: 15px; height: 15px; }
+.erp-icon-pulse { animation: erp-icon-pulse 2.8s ease-in-out infinite; animation-delay: var(--p, 0s); }
+@keyframes erp-icon-pulse {
+  0%, 100% { transform: scale(1); background: rgb(255 255 255 / 0.1); }
+  50% { transform: scale(1.06); background: rgb(201 162 75 / 0.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .erp-float-icon, .erp-icon-pulse, .erp-logo-ring { animation: none !important; }
 }
 
-.erp-illustration {
-  width: 100%; max-width: 260px; display: block; margin: 8px auto 0;
-  animation-name: erp-rise, erp-bob;
-  animation-duration: .6s, 5s;
-  animation-delay: var(--d,0s), .6s;
-  animation-iteration-count: 1, infinite;
-  animation-timing-function: cubic-bezier(0.16,1,0.3,1), ease-in-out;
-  filter: saturate(0.85) brightness(1.05);
-}
-@keyframes erp-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-@media (prefers-reduced-motion:reduce) { .erp-illustration { animation: none; } }
-.erp-spark { animation: erp-twinkle 2.4s ease-in-out infinite; transform-origin: center; }
-.erp-spark-2 { animation-delay: .6s; } .erp-spark-3 { animation-delay: 1.2s; }
-@keyframes erp-twinkle { 0%,100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
-@media (prefers-reduced-motion:reduce) { .erp-spark { animation: none; opacity: .8; } }
-
-.erp-right { position: relative; z-index: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 32px; }
-@media (min-width:1024px) { .erp-right { width: 55%; } }
+/* ── Right: off-white with a white card ── */
+.erp-right { position: relative; z-index: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 32px 16px; }
+@media (min-width:1024px) { .erp-right { width: 50%; padding: 32px; } }
 
 .erp-form-card {
   width: 100%; max-width: 420px;
   background: var(--card-bg);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
   border: 1px solid var(--card-border);
-  border-radius: 20px;
-  padding: 38px 36px;
+  border-radius: var(--rng-radius-card);
+  padding: 40px 36px;
   color: var(--card-text);
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.10), 0 1px 0 rgba(255,255,255,0.8) inset;
-  transition: background .25s ease, border-color .25s ease, box-shadow .25s ease;
+  box-shadow: var(--rng-shadow);
 }
-.erp-root.dark .erp-form-card {
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(198, 167, 94, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-@media (max-width:480px) { .erp-form-card { padding: 30px 22px; } }
+@media (max-width:480px) { .erp-form-card { padding: 28px 20px; } }
 
-.erp-mobile-header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 28px; }
+.erp-mobile-header { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 24px; }
 @media (min-width:1024px) { .erp-mobile-header { display: none; } }
-.erp-mobile-logo { width: auto; height: 44px; max-width: 160px; object-fit: contain; background: transparent; border-radius: 0; box-shadow: none; }
-.erp-mobile-title { font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', sans-serif; font-size: 22px; font-weight: 700; color: var(--card-text); }
+.erp-mobile-logo { width: auto; height: 44px; max-width: 160px; object-fit: contain; }
+.erp-mobile-title { font-family: var(--rng-font); font-size: 20px; font-weight: 600; color: var(--rng-primary); margin: 0; }
+.erp-root.dark .erp-mobile-title { color: var(--rng-text-on-dark); }
 
 .erp-title {
-  font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', sans-serif;
-  font-size: 30px; font-weight: 700; color: var(--card-text);
-  margin-bottom: 6px; letter-spacing: -0.01em;
+  font-family: var(--rng-font);
+  font-size: 26px; font-weight: 600; color: var(--rng-primary);
+  margin: 0 0 6px; letter-spacing: -0.01em;
 }
-.erp-subtitle { font-size: 14px; color: var(--card-muted); margin-bottom: 26px; }
+.erp-root.dark .erp-title { color: var(--rng-text-on-dark); }
+.erp-subtitle { font-size: 14px; color: var(--card-muted); margin: 0 0 28px; }
 
 .erp-field { margin-bottom: 18px; }
 .erp-label {
-  display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--card-muted); margin-bottom: 7px;
+  display: block; font-size: 13px; font-weight: 500;
+  color: var(--card-text); margin-bottom: 6px;
 }
 .erp-input-wrap {
-  position: relative; border: 1px solid var(--input-border); border-radius: 10px;
+  position: relative; border: 1px solid var(--input-border); border-radius: var(--rng-radius-control);
   background: var(--input-bg);
-  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
 .erp-input-wrap.is-focused {
-  border-color: var(--gold);
+  border-color: var(--rng-primary);
   background: var(--input-bg-solid);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+  box-shadow: var(--rng-focus-ring);
 }
-.erp-root.dark .erp-input-wrap.is-focused {
-  box-shadow: 0 0 0 3px rgba(198, 167, 94, 0.16);
-}
-.erp-input-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; display: flex; transition: color .18s ease; }
-.erp-input-wrap.is-focused .erp-input-icon { color: var(--gold); }
+.erp-root.dark .erp-input-wrap.is-focused { border-color: var(--rng-accent); box-shadow: 0 0 0 3px rgb(201 162 75 / 0.25); }
+.erp-input-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--rng-text-muted); pointer-events: none; display: flex; }
+.erp-root.dark .erp-input-icon { color: var(--rng-text-on-dark-muted); }
+.erp-input-wrap.is-focused .erp-input-icon { color: var(--rng-primary); }
+.erp-root.dark .erp-input-wrap.is-focused .erp-input-icon { color: var(--rng-text-on-dark); }
 .erp-input {
-  width: 100%; padding: 13px 14px 13px 40px; border: none; border-radius: 10px;
-  background: transparent; font-size: 14px; color: var(--card-text); outline: none;
+  width: 100%; padding: 11px 14px 11px 38px; border: none; border-radius: var(--rng-radius-control);
+  background: transparent; font-size: 15px; color: var(--card-text); outline: none;
   box-sizing: border-box; font-family: inherit;
 }
-.erp-input::placeholder { color: #94a3b8; }
+.erp-input::placeholder { color: var(--rng-placeholder); }
 .erp-input-password { padding-right: 40px; }
 .erp-toggle-visibility {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-  background: none; border: none; padding: 4px; cursor: pointer; color: #94a3b8;
-  display: flex; align-items: center; transition: color .15s ease;
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; padding: 4px; cursor: pointer; color: var(--rng-text-muted);
+  display: flex; align-items: center; border-radius: 6px;
 }
+.erp-root.dark .erp-toggle-visibility { color: var(--rng-text-on-dark-muted); }
 .erp-toggle-visibility:hover { color: var(--card-text); }
 .erp-toggle-visibility:focus-visible,
 .erp-forgot:focus-visible,
 .erp-submit:focus-visible,
-.erp-input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.erp-input:focus-visible { outline: 2px solid var(--rng-primary); outline-offset: 2px; }
+.erp-root.dark .erp-submit:focus-visible { outline-color: var(--rng-accent); }
 
 .erp-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
 .erp-remember { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
-.erp-checkbox { width: 16px; height: 16px; border-radius: 4px; accent-color: var(--gold); }
+.erp-checkbox { width: 16px; height: 16px; border-radius: 4px; accent-color: var(--rng-primary); }
 .erp-remember-text { font-size: 13px; color: var(--card-muted); }
-.erp-forgot { font-size: 13px; color: var(--accent); font-weight: 600; text-decoration: none; }
-.erp-forgot:hover { color: var(--gold-strong); text-decoration: underline; text-underline-offset: 3px; }
+.erp-forgot { font-size: 13px; color: var(--accent); font-weight: 500; text-decoration: none; }
+.erp-forgot:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .erp-error {
   display: flex; align-items: flex-start; gap: 8px;
   background: var(--error-bg); border: 1px solid var(--error-line); color: var(--error-text);
-  padding: 11px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 18px;
+  padding: 10px 12px; border-radius: var(--rng-radius-control); font-size: 13px; margin-bottom: 18px;
 }
 .erp-error svg { flex-shrink: 0; margin-top: 1px; }
 .erp-fade-enter-active, .erp-fade-leave-active { transition: opacity .15s ease, transform .15s ease; }
 .erp-fade-enter-from, .erp-fade-leave-to { opacity: 0; transform: translateY(-4px); }
 
+/* Primary button: navy, white text, primary-hover on hover. */
 .erp-submit {
-  position: relative; overflow: hidden; width: 100%; padding: 14px;
-  border-radius: 10px; border: none;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: #ffffff; font-size: 14px; font-weight: 700; letter-spacing: 0.02em;
+  width: 100%; padding: 12px;
+  border-radius: var(--rng-radius-control); border: none;
+  background: var(--brand-600, var(--rng-primary));
+  color: var(--rng-text-on-dark); font-size: 15px; font-weight: 600;
   cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-  box-shadow: 0 10px 28px rgba(79, 70, 229, 0.28);
-  transition: transform .15s ease, box-shadow .15s ease;
+  transition: background .15s ease;
 }
-.erp-root.dark .erp-submit {
-  background: linear-gradient(135deg, #d4b56a, #9a7a3a);
-  color: #14110c;
-  box-shadow: 0 10px 28px rgba(198, 167, 94, 0.28);
-}
-.erp-submit::after {
-  content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
-  background: linear-gradient(120deg, transparent, rgba(255,255,255,0.4), transparent);
-  transform: skewX(-20deg) translateX(0); transition: transform .5s ease;
-}
-.erp-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(79, 70, 229, 0.38); }
-.erp-root.dark .erp-submit:hover:not(:disabled) { box-shadow: 0 14px 32px rgba(198, 167, 94, 0.38); }
-.erp-submit:hover:not(:disabled)::after { transform: skewX(-20deg) translateX(280%); }
-.erp-submit:active:not(:disabled) { transform: translateY(0); }
+.erp-submit:hover:not(:disabled) { background: var(--brand-700, var(--rng-primary-hover)); }
+.erp-root.dark .erp-submit { background: var(--rng-surface); color: var(--brand-600, var(--rng-primary)); }
+.erp-root.dark .erp-submit:hover:not(:disabled) { background: var(--brand-50, var(--rng-primary-light)); }
 .erp-submit:disabled { opacity: .65; cursor: not-allowed; }
 .erp-spin { animation: erp-spin 1s linear infinite; }
 @keyframes erp-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .erp-spin { animation: none; } }
 
-.erp-shortcut-hint { text-align: center; font-size: 11.5px; color: var(--card-muted); margin-top: 16px; }
+.erp-shortcut-hint { text-align: center; font-size: 12px; color: var(--card-muted); margin: 16px 0 0; }
 .erp-shortcut-hint kbd, .erp-shortcut-list kbd {
   display: inline-block; padding: 1px 6px; border-radius: 4px;
   border: 1px solid var(--input-border); background: var(--input-bg-solid);
   font-size: 11px; font-family: inherit; color: var(--card-text);
 }
-.erp-shortcut-link { background: none; border: none; padding: 0; color: var(--accent); font-weight: 600; font-size: 11.5px; cursor: pointer; }
+.erp-shortcut-link { background: none; border: none; padding: 0; color: var(--accent); font-weight: 500; font-size: 12px; cursor: pointer; }
 
 .erp-modal-backdrop {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(5, 6, 10, 0.72); backdrop-filter: blur(6px);
-  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgb(15 27 61 / 0.55);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
 }
 .erp-modal {
-  width: 100%; max-width: 380px; background: var(--card-bg); backdrop-filter: blur(18px);
-  border: 1px solid var(--card-border); border-radius: 16px; padding: 22px; color: var(--card-text);
+  width: 100%; max-width: 380px; background: var(--card-bg);
+  border: 1px solid var(--card-border); border-radius: var(--rng-radius-card); padding: 22px; color: var(--card-text);
+  box-shadow: var(--rng-shadow);
 }
 .erp-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.erp-modal-head h3 { font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', sans-serif; font-size: 22px; font-weight: 700; }
+.erp-modal-head h3 { font-family: var(--rng-font); font-size: 18px; font-weight: 600; margin: 0; }
 .erp-modal-close {
   width: 28px; height: 28px; border-radius: 50%; border: none;
-  background: rgba(148,163,184,0.18); color: var(--card-text); font-size: 16px; line-height: 1; cursor: pointer;
+  background: var(--rng-row-hover); color: var(--card-text); font-size: 16px; line-height: 1; cursor: pointer;
 }
-.erp-modal-close:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.erp-root.dark .erp-modal-close { background: rgb(255 255 255 / 0.1); }
+.erp-modal-close:focus-visible { outline: 2px solid var(--rng-primary); outline-offset: 2px; }
 .erp-shortcut-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .erp-shortcut-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--card-muted); }
 .erp-shortcut-list span { margin-left: auto; }
 
-/* Forgot / reset extras */
-.erp-root {
-  --success-bg: #F0FDF4;
-  --success-line: #86EFAC;
-  --success-text: #166534;
-}
-.erp-root.dark {
-  --success-bg: rgba(22, 101, 52, 0.18);
-  --success-line: rgba(134, 239, 172, 0.35);
-  --success-text: #86EFAC;
-}
+/* Success notice + "Back to login" (forgot / reset password) */
 .erp-success {
   display: flex; align-items: flex-start; gap: 10px;
-  background: var(--success-bg); border: 1px solid var(--success-line); color: var(--success-text);
-  padding: 16px 18px; border-radius: 12px; font-size: 13px; line-height: 1.5;
+  background: var(--rng-success-bg); border: 1px solid var(--rng-success-bg); color: var(--rng-success-text);
+  padding: 14px 16px; border-radius: var(--rng-radius-control); font-size: 13px; line-height: 1.5;
 }
+.erp-root.dark .erp-success { background: rgb(22 163 74 / 0.18); border-color: rgb(22 163 74 / 0.4); color: var(--rng-success-on-dark); }
 .erp-success svg { flex-shrink: 0; }
 .erp-success strong { display: block; margin-bottom: 4px; }
 .erp-back-link { text-align: center; margin-top: 22px; }
 .erp-back-link a {
   display: inline-flex; align-items: center; gap: 6px;
-  color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none;
-  transition: color 0.15s ease;
+  color: var(--accent); font-size: 13px; font-weight: 500; text-decoration: none;
 }
-.erp-back-link a:hover { color: var(--gold-strong); }
-.erp-submit:focus-visible, .erp-back-link a:focus-visible, .erp-input:focus-visible {
-  outline: 2px solid var(--gold); outline-offset: 2px;
-}
+.erp-back-link a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.erp-back-link a:focus-visible { outline: 2px solid var(--rng-primary); outline-offset: 2px; }
 </style>

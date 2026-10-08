@@ -5,7 +5,12 @@
                 <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">Drivers</h1>
                 <Breadcrumb :items="['Dashboard', 'People', 'Drivers']" class="mt-1" />
             </div>
-            <button type="button" class="btn-primary" @click="openAdd">+ Add Driver</button>
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="btn-outline" :disabled="exportingProfiles" title="SALARY DETAILS + STAFF DETAILS workbook, re-importable from Salary Sheet" @click="exportProfiles">
+                    {{ exportingProfiles ? 'Exporting...' : 'Export profiles (Excel)' }}
+                </button>
+                <button type="button" class="btn-primary" @click="openAdd">+ Add Driver</button>
+            </div>
         </div>
 
         <FilterBar :filters="filters" v-model="filterValues" label="drivers" @reset="filterValues = {}" />
@@ -23,6 +28,7 @@
                         <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('employee_id')">Emp ID {{ sortArrow('employee_id') }}</th>
                         <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
                         <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('phone')">Phone {{ sortArrow('phone') }}</th>
+                        <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('email')">Email {{ sortArrow('email') }}</th>
                         <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('license_no')">License No {{ sortArrow('license_no') }}</th>
                         <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('vehicle_no')">Vehicle No {{ sortArrow('vehicle_no') }}</th>
                         <th class="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('status')">Status {{ sortArrow('status') }}</th>
@@ -31,15 +37,18 @@
                 </thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                     <tr v-if="loading">
-                        <td colspan="7" class="px-4 py-10 text-center text-slate-400">Loading...</td>
+                        <td colspan="8" class="px-4 py-10 text-center text-slate-400">Loading...</td>
                     </tr>
                     <tr v-else-if="!filteredDrivers.length">
-                        <td colspan="7" class="px-4 py-10 text-center text-slate-400">No drivers match your filters.</td>
+                        <td colspan="8" class="px-4 py-10 text-center text-slate-400">No drivers match your filters.</td>
                     </tr>
                     <tr v-for="d in sortedDrivers" :key="d.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ d.employee_id }}</td>
-                        <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ d.name }}</td>
+                        <td class="px-4 py-3">
+                            <button type="button" class="text-left font-medium text-slate-800 hover:text-primary-600 hover:underline dark:text-slate-100" @click="openView(d)">{{ d.name }}</button>
+                        </td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ d.phone || '—' }}</td>
+                        <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ d.email || '—' }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ d.license_no || '—' }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ d.vehicle_no || '—' }}</td>
                         <td class="px-4 py-3">
@@ -47,6 +56,7 @@
                         </td>
                         <td class="px-4 py-3">
                             <div class="flex items-center justify-end gap-1">
+                                <button type="button" class="btn-outline !py-1 !text-xs" @click="openView(d)">View</button>
                                 <button type="button" title="Edit" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" @click="openEdit(d)">✎</button>
                                 <button type="button" title="Delete" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-rose-600 dark:hover:bg-slate-800" @click="remove(d)">🗑</button>
                             </div>
@@ -56,18 +66,22 @@
             </table>
         </div>
 
-        <SlideOver :open="drawerOpen" :title="editing ? 'Edit Driver' : 'Add Driver'" @close="drawerOpen = false">
+        <SlideOver :open="drawerOpen" :title="editing ? 'Edit Driver' : 'Add Driver'" wide @close="drawerOpen = false">
             <div>
-                <label class="form-label">Employee ID</label>
+                <label class="form-label">EMP code <span class="text-rose-500">*</span></label>
                 <input v-model="form.employee_id" type="text" class="form-input" required />
             </div>
             <div>
-                <label class="form-label">Name</label>
+                <label class="form-label">Name <span class="text-rose-500">*</span></label>
                 <input v-model="form.name" type="text" class="form-input" required />
             </div>
             <div>
-                <label class="form-label">Phone</label>
-                <input v-model="form.phone" type="text" class="form-input" />
+                <label class="form-label">Phone number</label>
+                <input v-model="form.phone" type="tel" inputmode="tel" class="form-input" placeholder="10-digit mobile" />
+            </div>
+            <div>
+                <label class="form-label">Email (Gmail)</label>
+                <input v-model="form.email" type="email" class="form-input" placeholder="name@gmail.com" />
             </div>
             <div>
                 <label class="form-label">License No</label>
@@ -77,18 +91,35 @@
                 <label class="form-label">Vehicle No</label>
                 <input v-model="form.vehicle_no" type="text" class="form-input" />
             </div>
-            <div>
-                <label class="form-label">Status</label>
-                <select v-model="form.status" class="form-input">
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </select>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="form-label">Basic salary (present)</label>
+                    <input v-model="form.salary" type="number" min="0" step="0.01" class="form-input" placeholder="₹" />
+                </div>
+                <div>
+                    <label class="form-label">Status</label>
+                    <select v-model="form.status" class="form-input">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            <div class="border-t border-slate-100 pt-4 dark:border-slate-800">
+                <EmployeeProfileFormFields :profile="profile" type="driver" />
             </div>
             <template #footer>
                 <button type="button" class="btn-outline" @click="drawerOpen = false">Cancel</button>
                 <button type="button" class="btn-primary" :disabled="saving" @click="save">{{ saving ? 'Saving...' : 'Save' }}</button>
             </template>
         </SlideOver>
+
+        <EmployeeProfileModal
+            :open="viewOpen"
+            :person="viewTarget"
+            type="driver"
+            @close="viewOpen = false"
+            @edit="(d) => { viewOpen = false; openEdit(d); }"
+        />
     </div>
 </template>
 
@@ -98,6 +129,10 @@ import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import FilterBar from '../../components/common/FilterBar.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import SlideOver from '../../components/common/SlideOver.vue';
+import EmployeeProfileFormFields from '../../components/people/EmployeeProfileFormFields.vue';
+import EmployeeProfileModal from '../../components/people/EmployeeProfileModal.vue';
+import { emptyProfile, profileFromFields } from '../../utils/customFields';
+import { downloadStaffProfiles } from '../../utils/downloadExport';
 import { fetchPeopleLookups, invalidatePeopleLookups } from '../../api/people';
 import client from '../../api/client';
 import { statusBadgeClass } from '../../utils/colors';
@@ -115,11 +150,37 @@ const filterValues = reactive({});
 const drawerOpen = ref(false);
 const editing = ref(null);
 
-const form = reactive({ employee_id: '', name: '', phone: '', license_no: '', vehicle_no: '', status: 'active' });
+const form = reactive({ employee_id: '', name: '', phone: '', email: '', license_no: '', vehicle_no: '', status: 'active', salary: '' });
+const profile = reactive(emptyProfile());
+
+function payload() {
+    return { ...form, salary: form.salary === '' ? null : form.salary, profile: { ...profile } };
+}
+
+const viewOpen = ref(false);
+const viewTarget = ref(null);
+
+function openView(driver) {
+    viewTarget.value = driver;
+    viewOpen.value = true;
+}
+
+const exportingProfiles = ref(false);
+
+async function exportProfiles() {
+    exportingProfiles.value = true;
+    try {
+        await downloadStaffProfiles({ type: 'driver' });
+    } catch (err) {
+        pushToast(err?.response?.status === 403 ? 'You do not have permission to export profiles (Salary Sheet → Export).' : 'Could not export profiles.', 'error');
+    } finally {
+        exportingProfiles.value = false;
+    }
+}
 
 const filteredDrivers = computed(() =>
     drivers.value.filter((d) => {
-        if (filterValues.search && !`${d.name} ${d.employee_id} ${d.vehicle_no}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
+        if (filterValues.search && !`${d.name} ${d.employee_id} ${d.vehicle_no || ''} ${d.phone || ''} ${d.email || ''}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.status && d.status !== filterValues.status.toLowerCase()) return false;
         return true;
     }),
@@ -165,13 +226,15 @@ load();
 
 function openAdd() {
     editing.value = null;
-    Object.assign(form, { employee_id: '', name: '', phone: '', license_no: '', vehicle_no: '', status: 'active' });
+    Object.assign(form, { employee_id: '', name: '', phone: '', email: '', license_no: '', vehicle_no: '', status: 'active', salary: '' });
+    Object.assign(profile, emptyProfile());
     drawerOpen.value = true;
 }
 
 function openEdit(driver) {
     editing.value = driver;
-    Object.assign(form, { employee_id: driver.employee_id, name: driver.name, phone: driver.phone || '', license_no: driver.license_no || '', vehicle_no: driver.vehicle_no || '', status: driver.status });
+    Object.assign(form, { employee_id: driver.employee_id, name: driver.name, phone: driver.phone || '', email: driver.email || '', license_no: driver.license_no || '', vehicle_no: driver.vehicle_no || '', status: driver.status, salary: driver.salary ?? '' });
+    Object.assign(profile, profileFromFields(driver.custom_field_values));
     drawerOpen.value = true;
 }
 
@@ -179,15 +242,20 @@ async function save() {
     saving.value = true;
     try {
         if (editing.value) {
-            await client.put(`/people/drivers/${editing.value.id}`, form);
+            await client.put(`/people/drivers/${editing.value.id}`, payload());
             pushToast('Driver updated.', 'success');
         } else {
-            await client.post('/people/drivers', form);
+            await client.post('/people/drivers', payload());
             pushToast('Driver added.', 'success');
         }
         drawerOpen.value = false;
         invalidatePeopleLookups();
         await load();
+    } catch (e) {
+        const msg = (e?.response?.data?.errors && Object.values(e.response.data.errors).flat()[0])
+            || e?.response?.data?.message
+            || 'Could not save driver.';
+        pushToast(msg, 'error');
     } finally {
         saving.value = false;
     }

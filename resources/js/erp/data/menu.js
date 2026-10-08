@@ -60,7 +60,7 @@ const rawMenu = [
     {
         label: 'Finance & Payroll',
         icon: '🏦',
-        children: ['Office Expenses', 'Salary Slips', 'Salary Sheet', 'Book Store', 'Book Expenses', 'Bank Accounts', 'Bank Transactions'],
+        children: ['Office Expenses', 'Salary Slips', 'Salary Sheet', 'Salary History', 'Book Store', 'Book Expenses', 'Bank Accounts', 'Bank Transactions'],
     },
     {
         label: 'Transport Management',

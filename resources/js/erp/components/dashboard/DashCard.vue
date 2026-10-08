@@ -16,10 +16,10 @@ defineProps({ title: { type: String, required: true }, to: { type: String, defau
 .dash-panel {
     border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
     background: var(--erp-surface, rgba(18, 19, 24, 0.92));
-    border-radius: 14px;
+    border-radius: var(--erp-radius-card, 14px);
     padding: 1.15rem 1.2rem;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
-    backdrop-filter: blur(10px);
+    box-shadow: var(--erp-shadow, 0 12px 40px rgba(0, 0, 0, 0.22));
+    backdrop-filter: var(--erp-backdrop, blur(10px));
 }
 .dash-panel__head {
     display: flex;
@@ -31,11 +31,11 @@ defineProps({ title: { type: String, required: true }, to: { type: String, defau
 }
 .dash-panel__title {
     margin: 0;
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-size: 1.2rem;
+    font-family: var(--erp-font-display, 'Cormorant Garamond', Georgia, serif);
+    font-size: var(--erp-card-title-size, 1.2rem);
     font-weight: 600;
     letter-spacing: 0.01em;
-    color: var(--erp-cream, #f3efe6);
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
 }
 .dash-panel__link {
     font-size: 0.7rem;

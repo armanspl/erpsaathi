@@ -1,8 +1,42 @@
-/** Six full-ERP visual templates. Selecting one restyles the shell + primary palette. */
+/** Full-ERP visual templates. Selecting one restyles the shell + primary palette. */
 
-export const DEFAULT_UI_TEMPLATE = 'midnight-gold';
+export const DEFAULT_UI_TEMPLATE = 'school-green';
 
 export const UI_TEMPLATES = [
+    {
+        id: 'school-green',
+        name: 'School Green',
+        tagline: 'Clean white workspace with trustworthy green brand',
+        dark: false,
+        primary: '#15803D',
+        fixedPalette: true,
+        preview: {
+            bg: '#F8FAFC',
+            surface: '#FFFFFF',
+            accent: '#15803D',
+            accentSoft: '#16A34A',
+            text: '#0F172A',
+            muted: '#475569',
+        },
+    },
+    {
+        id: 'royal-navy-gold',
+        name: 'Royal Navy + Gold',
+        tagline: 'Premium navy with restrained gold accents',
+        dark: false,
+        primary: '#0F1B3D',
+        // Colours come from resources/css/erp-theme-royal.css (fixed token ramps), not from
+        // the generated runtime primary shades the other templates use.
+        fixedPalette: true,
+        preview: {
+            bg: '#F7F5F0',
+            surface: '#FFFFFF',
+            accent: '#0F1B3D',
+            accentSoft: '#C9A24B',
+            text: '#1E293B',
+            muted: '#64748B',
+        },
+    },
     {
         id: 'midnight-gold',
         name: 'Midnight Gold',
@@ -81,7 +115,7 @@ export const UI_TEMPLATES = [
     {
         id: 'velvet-plum',
         name: 'Velvet Plum',
-        tagline: 'Deep plum with rose-gold highlights',
+        tagline: 'Deep plum with rose-gold accents',
         dark: true,
         primary: '#C97B98',
         preview: {

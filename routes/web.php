@@ -24,7 +24,7 @@ Route::get('/', function () {
         'dashboardUrl'  => url('/erp/dashboard'),
         'tryDemoUrl'    => app(\App\Services\Tenancy\DemoSchoolService::class)->publicEnterUrl(),
         'schoolName'    => $tenant?->name ?: 'erpsaathi',
-        'logoUrl'       => asset('assets/img/logo/erpsaathi.png'),
+        'logoUrl'       => asset('assets/img/logo/new-logo2.png') . '?v=1',
     ];
 
     return view('welcome', ['welcome' => $welcome]);

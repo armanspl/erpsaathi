@@ -492,6 +492,11 @@ class PermissionCatalog
                         'path' => '/finance-and-payroll/salary-sheet',
                         'actions' => ['view' => 'View', 'upload' => 'Upload', 'import' => 'Import', 'export' => 'Export'],
                     ],
+                    'salary-history' => [
+                        'label' => 'Salary History',
+                        'path' => '/finance-and-payroll/salary-history',
+                        'actions' => ['view' => 'View', 'rollback' => 'Rollback'],
+                    ],
                     'book-store' => [
                         'label' => 'Book Store',
                         'path' => '/finance-and-payroll/book-store',

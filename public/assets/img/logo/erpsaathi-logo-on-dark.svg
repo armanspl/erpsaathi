@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 56" role="img" aria-label="ERPSaathi">
+  <!-- Circle mark: brand green (stands out on dark green backgrounds) -->
+  <circle cx="28" cy="28" r="24" fill="#15803D"/>
+  <!-- Roof / growth chevron -->
+  <path fill="#BBF7D0" d="M20.5 16.2 28 10.8l7.5 5.4-2.2 3L28 15.8l-5.3 3.4z"/>
+  <!-- Bold E -->
+  <path fill="#FFFFFF" d="M17.5 20.5h15.2v4.2H22.2v2.6h8.6v4H22.2v2.8h10.8v4.2H17.5z"/>
+  <!-- Wordmark: "ERP" white, "Saathi" light green -->
+  <text x="62" y="35" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="26" font-weight="750" letter-spacing="-0.6"><tspan fill="#FFFFFF">ERP</tspan><tspan fill="#4ADE80">Saathi</tspan></text>
+</svg>

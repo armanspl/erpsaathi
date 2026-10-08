@@ -78,3 +78,16 @@ export async function downloadImportTemplate(type) {
     });
     triggerBlobDownload(response, `import-template-${type}.xlsx`);
 }
+
+/**
+ * Download Teacher/Staff/Driver profiles as the SALARY DETAILS + STAFF DETAILS workbook
+ * (re-importable from Salary Sheet > Staff Profiles).
+ * @param {{ type?: 'all'|'teacher'|'staff'|'driver', status?: 'all'|'active'|'inactive' }} [filters]
+ */
+export async function downloadStaffProfiles(filters = {}) {
+    const response = await client.get('/finance-payroll/staff-profiles/export', {
+        params: { type: filters.type || 'all', status: filters.status || 'all' },
+        responseType: 'blob',
+    });
+    triggerBlobDownload(response, 'staff-profiles.xlsx');
+}

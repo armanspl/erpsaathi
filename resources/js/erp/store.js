@@ -18,7 +18,13 @@ const initialThemeColor = (accountThemeColor && isValidHex(accountThemeColor))
     ? accountThemeColor
     : (initialTemplate.primary || loadStoredTheme());
 
-applyTheme(initialThemeColor);
+// Fixed-palette templates (Royal Navy + Gold) take their ramps from the theme CSS; only an
+// explicitly chosen custom colour should override them with generated shades.
+if (initialTemplate.fixedPalette && initialThemeColor.toLowerCase() === initialTemplate.primary.toLowerCase()) {
+    resetTheme();
+} else {
+    applyTheme(initialThemeColor);
+}
 
 /** Sentinel label for the header session picker — show data across every academic session. */
 export const ALL_SESSIONS = 'All Sessions';
@@ -144,7 +150,8 @@ export function setUiTemplate(id, { persist = true } = {}) {
     const tpl = getUiTemplate(id);
     state.uiTemplate = tpl.id;
     state.darkMode = !!tpl.dark;
-    applyTheme(tpl.primary);
+    if (tpl.fixedPalette) resetTheme();
+    else applyTheme(tpl.primary);
     state.themeColor = tpl.primary;
     // Clear sticky dark-mode override so template preference sticks until user toggles again.
     localStorage.setItem('erp_dark_mode', tpl.dark ? '1' : '0');

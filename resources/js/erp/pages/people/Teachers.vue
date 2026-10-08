@@ -14,6 +14,10 @@
                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
                     Export
                 </button>
+                <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="exportingProfiles" title="SALARY DETAILS + STAFF DETAILS workbook, re-importable from Salary Sheet" @click="exportProfiles">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                    {{ exportingProfiles ? 'Exporting...' : 'Export profiles (Excel)' }}
+                </button>
                 <button type="button" class="btn-primary inline-flex items-center gap-1.5" @click="openAdd">
                     <span class="text-lg leading-none">+</span> Create Teacher
                 </button>
@@ -70,6 +74,7 @@
                 <table v-if="viewMode === 'table'" class="w-full min-w-[1100px] text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                         <tr>
+                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('employee_id')">Emp ID {{ sortArrow('employee_id') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('phone')">Phone {{ sortArrow('phone') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('email')">Email {{ sortArrow('email') }}</th>
@@ -84,11 +89,12 @@
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-for="t in paged" :key="t.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                            <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ t.employee_id || '—' }}</td>
                             <td class="px-4 py-3">
-                                <div class="flex items-center gap-2">
+                                <button type="button" class="flex items-center gap-2 text-left" @click="openView(t)">
                                     <span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700 dark:bg-primary-500/20 dark:text-primary-300">{{ initials(t.name) }}</span>
-                                    <span class="font-medium text-slate-800 dark:text-slate-100">{{ t.name }}</span>
-                                </div>
+                                    <span class="font-medium text-slate-800 hover:text-primary-600 hover:underline dark:text-slate-100">{{ t.name }}</span>
+                                </button>
                             </td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ t.phone || '—' }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ t.email || '—' }}</td>
@@ -96,12 +102,13 @@
                             <td class="px-4 py-3 text-slate-500">{{ (t.class_assignments || []).length }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ assignmentLabel(t, 'head') }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ assignmentLabel(t, 'assistant') }}</td>
-                            <td class="px-4 py-3 text-slate-500">{{ (t.custom_field_values || []).length }}</td>
+                            <td class="px-4 py-3 text-slate-500">{{ normalizeCustomFields(t.custom_field_values).length }}</td>
                             <td class="px-4 py-3">
                                 <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset" :class="statusBadgeClass(t.status)">{{ t.status }}</span>
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="btn-outline !py-1 !text-xs" @click="openView(t)">View</button>
                                     <button type="button" class="btn-outline !py-1 !text-xs" @click="openAssign(t)">Assign</button>
                                     <button type="button" class="btn-outline !py-1 !text-xs" @click="openSubjects(t)">Subjects</button>
                                     <button type="button" class="btn-outline !py-1 !text-xs" @click="openFields(t)">Fields</button>
@@ -120,11 +127,14 @@
                 <!-- List view -->
                 <div v-else-if="viewMode === 'list'" class="divide-y divide-slate-100 dark:divide-slate-800">
                     <div v-for="t in paged" :key="t.id" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <div>
-                            <div class="font-medium text-slate-800 dark:text-slate-100">{{ t.name }}</div>
+                        <button type="button" class="text-left" @click="openView(t)">
+                            <div class="font-medium text-slate-800 hover:text-primary-600 dark:text-slate-100">{{ t.name }}</div>
                             <div class="text-xs text-slate-400">{{ t.phone || '—' }} · {{ t.email || '—' }}</div>
+                        </button>
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset" :class="statusBadgeClass(t.status)">{{ t.status }}</span>
+                            <button type="button" class="btn-outline !py-1 !text-xs" @click="openView(t)">View</button>
                         </div>
-                        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset" :class="statusBadgeClass(t.status)">{{ t.status }}</span>
                     </div>
                 </div>
 
@@ -137,6 +147,7 @@
                         </div>
                         <p class="mt-2 text-xs text-slate-500">{{ t.phone || '—' }} · {{ t.email || '—' }}</p>
                         <p class="text-xs text-slate-400">Salary: {{ t.salary != null ? Number(t.salary).toLocaleString('en-IN') : '—' }}</p>
+                        <button type="button" class="btn-outline mt-3 !py-1 !text-xs" @click="openView(t)">View details</button>
                     </div>
                 </div>
             </div>
@@ -167,7 +178,7 @@
         <!-- Create / Edit Teacher modal -->
         <div v-if="formOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-slate-900/40" @click="formOpen = false" />
-            <div class="relative z-10 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div class="relative z-10 max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
                 <div class="flex items-start justify-between">
                     <div>
                         <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ editing ? 'Edit Teacher' : 'Create Teacher' }}</h2>
@@ -178,22 +189,26 @@
                     </button>
                 </div>
 
-                <div class="mt-4 grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <label class="form-label">Name</label>
+                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="form-label">EMP code</label>
+                        <input v-model="form.employee_id" type="text" class="form-input" :placeholder="editing ? '' : 'Leave blank to auto-generate'" />
+                    </div>
+                    <div>
+                        <label class="form-label">Name <span class="text-rose-500">*</span></label>
                         <input v-model="form.name" type="text" class="form-input" required />
                     </div>
                     <div>
-                        <label class="form-label">Phone</label>
-                        <input v-model="form.phone" type="text" class="form-input" />
+                        <label class="form-label">Phone number</label>
+                        <input v-model="form.phone" type="tel" inputmode="tel" class="form-input" placeholder="10-digit mobile" />
                     </div>
                     <div>
-                        <label class="form-label">Email</label>
-                        <input v-model="form.email" type="email" class="form-input" />
+                        <label class="form-label">Email (Gmail)</label>
+                        <input v-model="form.email" type="email" class="form-input" placeholder="name@gmail.com" />
                     </div>
                     <div>
-                        <label class="form-label">Salary</label>
-                        <input v-model="form.salary" type="number" min="0" step="0.01" class="form-input" />
+                        <label class="form-label">Basic salary (present)</label>
+                        <input v-model="form.salary" type="number" min="0" step="0.01" class="form-input" placeholder="₹" />
                     </div>
                     <div>
                         <label class="form-label">Status</label>
@@ -202,14 +217,17 @@
                             <option value="inactive">Inactive</option>
                         </select>
                     </div>
-                    <div class="col-span-2">
+                    <div class="sm:col-span-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                        <EmployeeProfileFormFields :profile="profile" type="teacher" />
+                    </div>
+                    <div class="sm:col-span-2">
                         <label class="form-label">Class (optional)</label>
                         <select v-model="form.school_class_id" class="form-input">
                             <option :value="null">—</option>
                             <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
                         </select>
                     </div>
-                    <div class="col-span-2">
+                    <div class="sm:col-span-2">
                         <label class="form-label">Signature image</label>
                         <div class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/40">
                             <div class="flex h-16 w-36 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900">
@@ -300,6 +318,14 @@
             </div>
         </div>
 
+        <EmployeeProfileModal
+            :open="viewOpen"
+            :person="viewTarget"
+            type="teacher"
+            @close="viewOpen = false"
+            @edit="(t) => { viewOpen = false; openEdit(t); }"
+        />
+
         <!-- Custom fields modal -->
         <div v-if="fieldsOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-slate-900/40" @click="fieldsOpen = false" />
@@ -330,7 +356,11 @@ import { computed, reactive, ref, watch } from 'vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import { fetchPeopleLookups, invalidatePeopleLookups } from '../../api/people';
 import client from '../../api/client';
+import EmployeeProfileFormFields from '../../components/people/EmployeeProfileFormFields.vue';
+import EmployeeProfileModal from '../../components/people/EmployeeProfileModal.vue';
+import { downloadStaffProfiles } from '../../utils/downloadExport';
 import { statusBadgeClass } from '../../utils/colors';
+import { emptyProfile, normalizeCustomFields, profileFromFields } from '../../utils/customFields';
 import { pushToast } from '../../utils/toast';
 
 const viewModes = [
@@ -355,7 +385,8 @@ const sortDir = ref('asc');
 
 const formOpen = ref(false);
 const editing = ref(null);
-const form = reactive({ name: '', phone: '', email: '', salary: '', status: 'active', school_class_id: null });
+const form = reactive({ employee_id: '', name: '', phone: '', email: '', salary: '', status: 'active', school_class_id: null });
+const profile = reactive(emptyProfile());
 const signatureInput = ref(null);
 const signatureFile = ref(null);
 const signaturePreview = ref('');
@@ -372,6 +403,27 @@ const selectedSubjectIds = ref([]);
 const fieldsOpen = ref(false);
 const fieldsTarget = ref(null);
 const fieldRows = ref([]);
+
+const viewOpen = ref(false);
+const viewTarget = ref(null);
+
+function openView(teacher) {
+    viewTarget.value = teacher;
+    viewOpen.value = true;
+}
+
+const exportingProfiles = ref(false);
+
+async function exportProfiles() {
+    exportingProfiles.value = true;
+    try {
+        await downloadStaffProfiles({ type: 'teacher' });
+    } catch (err) {
+        pushToast(err?.response?.status === 403 ? 'You do not have permission to export profiles (Salary Sheet → Export).' : 'Could not export profiles.', 'error');
+    } finally {
+        exportingProfiles.value = false;
+    }
+}
 
 function initials(name) {
     return String(name || '')
@@ -396,14 +448,14 @@ const filtered = computed(() => {
     let rows = teachers.value;
     if (filters.search.trim()) {
         const term = filters.search.trim().toLowerCase();
-        rows = rows.filter((t) => `${t.name} ${t.phone || ''} ${t.email || ''}`.toLowerCase().includes(term));
+        rows = rows.filter((t) => `${t.name} ${t.employee_id || ''} ${t.phone || ''} ${t.email || ''}`.toLowerCase().includes(term));
     }
     if (filters.status) {
         rows = rows.filter((t) => t.status === filters.status);
     }
     return [...rows].sort((a, b) => {
-        let av = sortKey.value === 'customFieldCount' ? (a.custom_field_values || []).length : a[sortKey.value];
-        let bv = sortKey.value === 'customFieldCount' ? (b.custom_field_values || []).length : b[sortKey.value];
+        let av = sortKey.value === 'customFieldCount' ? normalizeCustomFields(a.custom_field_values).length : a[sortKey.value];
+        let bv = sortKey.value === 'customFieldCount' ? normalizeCustomFields(b.custom_field_values).length : b[sortKey.value];
         av = av ?? '';
         bv = bv ?? '';
         if (typeof av === 'string') av = av.toLowerCase();
@@ -498,7 +550,8 @@ async function syncSignature(teacherId) {
 
 function openAdd() {
     editing.value = null;
-    Object.assign(form, { name: '', phone: '', email: '', salary: '', status: 'active', school_class_id: null });
+    Object.assign(form, { employee_id: '', name: '', phone: '', email: '', salary: '', status: 'active', school_class_id: null });
+    Object.assign(profile, emptyProfile());
     resetSignatureState();
     formOpen.value = true;
 }
@@ -506,6 +559,7 @@ function openAdd() {
 function openEdit(teacher) {
     editing.value = teacher;
     Object.assign(form, {
+        employee_id: teacher.employee_id || '',
         name: teacher.name,
         phone: teacher.phone || '',
         email: teacher.email || '',
@@ -513,6 +567,7 @@ function openEdit(teacher) {
         status: teacher.status,
         school_class_id: teacher.school_class_id,
     });
+    Object.assign(profile, profileFromFields(teacher.custom_field_values));
     resetSignatureState(teacher.signature_url || '');
     formOpen.value = true;
 }
@@ -524,7 +579,7 @@ async function save() {
     }
     saving.value = true;
     try {
-        const payload = { ...form, salary: form.salary === '' ? null : form.salary };
+        const payload = { ...form, salary: form.salary === '' ? null : form.salary, profile: { ...profile } };
         let response;
         if (editing.value) {
             response = await client.put(`/people/teachers/${editing.value.id}`, payload);
@@ -546,6 +601,11 @@ async function save() {
         resetSignatureState();
         invalidatePeopleLookups();
         await load();
+    } catch (e) {
+        const msg = (e?.response?.data?.errors && Object.values(e.response.data.errors).flat()[0])
+            || e?.response?.data?.message
+            || 'Could not save teacher.';
+        pushToast(msg, 'error');
     } finally {
         saving.value = false;
     }
@@ -604,7 +664,7 @@ async function saveSubjects() {
 
 function openFields(teacher) {
     fieldsTarget.value = teacher;
-    fieldRows.value = (teacher.custom_field_values || []).map((f) => ({ label: f.label, value: f.value }));
+    fieldRows.value = normalizeCustomFields(teacher.custom_field_values).map((f) => ({ label: f.label, value: f.value }));
     fieldsOpen.value = true;
 }
 
@@ -633,7 +693,7 @@ function exportCsv() {
             (t.class_assignments || []).length,
             assignmentLabel(t, 'head'),
             assignmentLabel(t, 'assistant'),
-            (t.custom_field_values || []).length,
+            normalizeCustomFields(t.custom_field_values).length,
             t.status,
         ]);
     });

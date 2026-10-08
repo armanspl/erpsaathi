@@ -10,7 +10,7 @@
     @endif
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         window.__ERP_USER__ = @json($erpUser);
         window.__ERP_SCHOOL__ = @json($erpSchool ?? []);
@@ -18,17 +18,19 @@
         window.__ERP_LOGIN_URL__ = @json(route('erp.login'));
         (function () {
             var saved = localStorage.getItem('erp_dark_mode');
-            var tpl = localStorage.getItem('erp_ui_template') || 'midnight-gold';
-            var dark = saved === null ? (tpl !== 'ivory-studio' && tpl !== 'skyline-mist') : saved === '1';
+            var tpl = @json($erpUser['ui_template'] ?? null) || localStorage.getItem('erp_ui_template') || 'school-green';
+            var lightDefaults = { 'school-green': 1, 'royal-navy-gold': 1, 'ivory-studio': 1, 'terracotta-sand': 1 };
+            var dark = saved === null ? !lightDefaults[tpl] : saved === '1';
             document.documentElement.classList.toggle('dark', dark);
             document.documentElement.setAttribute('data-erp-template', tpl);
-            document.documentElement.style.background = dark ? '#07080c' : '#f2f4f7';
+            var lightBg = tpl === 'school-green' ? '#F8FAFC' : (tpl === 'royal-navy-gold' ? '#F7F5F0' : '#f2f4f7');
+            document.documentElement.style.background = dark ? (tpl === 'school-green' ? '#052E16' : '#07080c') : lightBg;
         })();
     </script>
     @vite(['resources/css/app.css', 'resources/js/erp-app.js'])
     <style>
-        html, body { min-height: 100%; background: #07080c; }
-        body { margin: 0; font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif; }
+        html, body { min-height: 100%; background: #F8FAFC; }
+        body { margin: 0; font-family: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
     </style>
 </head>
 <body class="antialiased">

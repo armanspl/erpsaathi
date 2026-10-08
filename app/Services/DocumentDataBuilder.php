@@ -1080,6 +1080,29 @@ class DocumentDataBuilder
         ]);
     }
 
+    /** Fields for the Salary Advance receipt (school header + the advance). */
+    public function salaryAdvance(\App\Models\SalaryAdvance $advance): array
+    {
+        $advance->loadMissing(['employee', 'bankAccount']);
+        $bank = $advance->bankAccount;
+
+        return array_merge($this->schoolContext(), [
+            'advance_no' => $advance->advance_no,
+            'employee_name' => $advance->employee->name ?? '',
+            'employee_type' => ['teacher' => 'Teaching', 'staff' => 'Non-Teaching', 'driver' => 'Driver'][$advance->employee_type] ?? ucfirst((string) $advance->employee_type),
+            'employee_code' => $advance->employee->employee_id ?? '',
+            'period' => $this->periodLabel($advance->period),
+            'basic_salary' => number_format((float) $advance->basic_salary, 2),
+            'amount' => number_format((float) $advance->amount, 2),
+            'amount_in_words' => $this->amountInWords((float) $advance->amount),
+            'paid_on' => $advance->paid_on?->format('d-m-Y') ?? '',
+            'payment_mode' => $advance->payment_mode === 'Bank'
+                ? 'Bank'.($bank ? ' — '.trim($bank->bank_name.' '.($bank->account_number ? '(A/c ••'.substr((string) $bank->account_number, -4).')' : '')) : '')
+                : (string) $advance->payment_mode,
+            'remarks' => $advance->remarks ?? '',
+        ]);
+    }
+
     /** @param  \App\Models\BookExpense  $expense */
     public function bookExpense($expense): array
     {

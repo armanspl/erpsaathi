@@ -5,7 +5,12 @@
                 <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">Staff</h1>
                 <Breadcrumb :items="['Dashboard', 'People', 'Staff']" class="mt-1" />
             </div>
-            <button v-if="can('people.staff.create')" type="button" class="btn-primary" @click="openAdd">+ Add Staff</button>
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="btn-outline" :disabled="exportingProfiles" title="SALARY DETAILS + STAFF DETAILS workbook, re-importable from Salary Sheet" @click="exportProfiles">
+                    {{ exportingProfiles ? 'Exporting...' : 'Export profiles (Excel)' }}
+                </button>
+                <button v-if="can('people.staff.create')" type="button" class="btn-primary" @click="openAdd">+ Add Staff</button>
+            </div>
         </div>
 
         <FilterBar :filters="filters" v-model="filterValues" label="staff" @reset="filterValues = {}" />
@@ -38,7 +43,9 @@
                     </tr>
                     <tr v-for="s in sortedStaff" :key="s.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td class="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{{ s.employee_id }}</td>
-                        <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</td>
+                        <td class="px-4 py-3">
+                            <button type="button" class="text-left font-medium text-slate-800 hover:text-primary-600 hover:underline dark:text-slate-100" @click="openView(s)">{{ s.name }}</button>
+                        </td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ s.department || '—' }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ s.email || '—' }}</td>
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ s.phone || '—' }}</td>
@@ -47,6 +54,7 @@
                         </td>
                         <td class="px-4 py-3">
                             <div class="flex items-center justify-end gap-1">
+                                <button type="button" class="btn-outline !py-1 !text-xs" @click="openView(s)">View</button>
                                 <button v-if="can('people.staff.edit')" type="button" title="Edit" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" @click="openEdit(s)">✎</button>
                                 <button v-if="can('people.staff.delete')" type="button" title="Delete" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-rose-600 dark:hover:bg-slate-800" @click="remove(s)">🗑</button>
                             </div>
@@ -56,9 +64,9 @@
             </table>
         </div>
 
-        <SlideOver :open="drawerOpen" :title="editing ? 'Edit Staff' : 'Add Staff'" @close="drawerOpen = false">
+        <SlideOver :open="drawerOpen" :title="editing ? 'Edit Staff' : 'Add Staff'" wide @close="drawerOpen = false">
             <div>
-                <label class="form-label">Employee ID <span class="text-rose-500">*</span></label>
+                <label class="form-label">EMP code <span class="text-rose-500">*</span></label>
                 <input v-model="form.employee_id" type="text" class="form-input" required />
             </div>
             <div>
@@ -82,34 +90,52 @@
                 />
             </div>
             <div>
-                <label class="form-label">Phone</label>
-                <input v-model="form.phone" type="text" class="form-input" />
+                <label class="form-label">Phone number</label>
+                <input v-model="form.phone" type="tel" inputmode="tel" class="form-input" placeholder="10-digit mobile" />
             </div>
             <div>
-                <label class="form-label">Email <span class="text-rose-500">*</span></label>
-                <input v-model="form.email" type="email" class="form-input" required />
-                <p class="mt-1 text-xs text-slate-400">Used to sign in to the ERP login page.</p>
+                <label class="form-label">Email (Gmail)</label>
+                <input v-model="form.email" type="email" class="form-input" placeholder="name@gmail.com" />
+                <p class="mt-1 text-xs text-slate-400">Optional. When filled, it is also used to sign in to the ERP login page.</p>
             </div>
             <div>
                 <label class="form-label">
                     {{ editing ? 'Password (leave blank to keep current)' : 'Password' }}
-                    <span v-if="!editing" class="text-rose-500">*</span>
+                    <span v-if="!editing && form.email.trim()" class="text-rose-500">*</span>
                 </label>
-                <input v-model="form.password" type="password" class="form-input" :required="!editing" autocomplete="new-password" />
-                <p class="mt-1 text-xs text-slate-400">Staff can log in with this email and password.</p>
+                <input v-model="form.password" type="password" class="form-input" :required="!editing && !!form.email.trim()" autocomplete="new-password" />
+                <p class="mt-1 text-xs text-slate-400">Needed only with an email — staff log in with that email and password.</p>
             </div>
-            <div>
-                <label class="form-label">Status</label>
-                <select v-model="form.status" class="form-input">
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </select>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="form-label">Basic salary (present)</label>
+                    <input v-model="form.salary" type="number" min="0" step="0.01" class="form-input" placeholder="₹" />
+                </div>
+                <div>
+                    <label class="form-label">Status</label>
+                    <select v-model="form.status" class="form-input">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            <div class="border-t border-slate-100 pt-4 dark:border-slate-800">
+                <EmployeeProfileFormFields :profile="profile" type="staff" />
             </div>
             <template #footer>
                 <button type="button" class="btn-outline" @click="drawerOpen = false">Cancel</button>
                 <button type="button" class="btn-primary" :disabled="saving" @click="save">{{ saving ? 'Saving...' : 'Save' }}</button>
             </template>
         </SlideOver>
+
+        <EmployeeProfileModal
+            :open="viewOpen"
+            :person="viewTarget"
+            type="staff"
+            :can-edit="can('people.staff.edit')"
+            @close="viewOpen = false"
+            @edit="(s) => { viewOpen = false; openEdit(s); }"
+        />
     </div>
 </template>
 
@@ -119,6 +145,10 @@ import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import FilterBar from '../../components/common/FilterBar.vue';
 import StatCard from '../../components/common/StatCard.vue';
 import SlideOver from '../../components/common/SlideOver.vue';
+import EmployeeProfileFormFields from '../../components/people/EmployeeProfileFormFields.vue';
+import EmployeeProfileModal from '../../components/people/EmployeeProfileModal.vue';
+import { emptyProfile, profileFromFields } from '../../utils/customFields';
+import { downloadStaffProfiles } from '../../utils/downloadExport';
 import { invalidatePeopleLookups } from '../../api/people';
 import client from '../../api/client';
 import { statusBadgeClass } from '../../utils/colors';
@@ -142,11 +172,33 @@ const filterValues = reactive({});
 const drawerOpen = ref(false);
 const editing = ref(null);
 
-const form = reactive({ employee_id: '', name: '', department: '', phone: '', email: '', password: '', status: 'active' });
+const form = reactive({ employee_id: '', name: '', department: '', phone: '', email: '', password: '', status: 'active', salary: '' });
+const profile = reactive(emptyProfile());
+
+const viewOpen = ref(false);
+const viewTarget = ref(null);
+
+function openView(member) {
+    viewTarget.value = member;
+    viewOpen.value = true;
+}
+
+const exportingProfiles = ref(false);
+
+async function exportProfiles() {
+    exportingProfiles.value = true;
+    try {
+        await downloadStaffProfiles({ type: 'staff' });
+    } catch (err) {
+        pushToast(err?.response?.status === 403 ? 'You do not have permission to export profiles (Salary Sheet → Export).' : 'Could not export profiles.', 'error');
+    } finally {
+        exportingProfiles.value = false;
+    }
+}
 
 const filteredStaff = computed(() =>
     staff.value.filter((s) => {
-        if (filterValues.search && !`${s.name} ${s.employee_id} ${s.department} ${s.email}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
+        if (filterValues.search && !`${s.name} ${s.employee_id} ${s.department || ''} ${s.email || ''} ${s.phone || ''}`.toLowerCase().includes(filterValues.search.toLowerCase())) return false;
         if (filterValues.status && s.status !== filterValues.status.toLowerCase()) return false;
         return true;
     }),
@@ -218,7 +270,8 @@ loadDepartments();
 function openAdd() {
     editing.value = null;
     customDepartment.value = '';
-    Object.assign(form, { employee_id: '', name: '', department: departmentOptions.value[0] || '', phone: '', email: '', password: '', status: 'active' });
+    Object.assign(form, { employee_id: '', name: '', department: departmentOptions.value[0] || '', phone: '', email: '', password: '', status: 'active', salary: '' });
+    Object.assign(profile, emptyProfile());
     drawerOpen.value = true;
 }
 
@@ -233,7 +286,9 @@ function openEdit(member) {
         email: member.email || '',
         password: '',
         status: member.status,
+        salary: member.salary ?? '',
     });
+    Object.assign(profile, profileFromFields(member.custom_field_values));
     if (member.department && !departmentOptions.value.includes(member.department)) {
         departmentOptions.value = [...departmentOptions.value, member.department];
     }
@@ -245,17 +300,13 @@ async function save() {
         pushToast('Department is required.', 'error');
         return;
     }
-    if (!form.email?.trim()) {
-        pushToast('Email is required for ERP login.', 'error');
-        return;
-    }
-    if (!editing.value && !form.password) {
-        pushToast('Password is required so the staff member can log in.', 'error');
+    if (!editing.value && form.email?.trim() && !form.password) {
+        pushToast('Password is required with an email so the staff member can log in.', 'error');
         return;
     }
     saving.value = true;
     try {
-        const payload = { ...form };
+        const payload = { ...form, salary: form.salary === '' ? null : form.salary, profile: { ...profile } };
         if (editing.value && !payload.password) {
             delete payload.password;
         }

@@ -77,6 +77,7 @@ import BankAccounts from '../pages/finance-payroll/BankAccounts.vue';
 import BankTransactions from '../pages/finance-payroll/BankTransactions.vue';
 import SalaryGenerate from '../pages/finance-payroll/SalaryGenerate.vue';
 import SalarySlips from '../pages/finance-payroll/SalarySlips.vue';
+import SalaryHistory from '../pages/finance-payroll/SalaryHistory.vue';
 import SalaryMonthlySheet from '../pages/finance-payroll/SalaryMonthlySheet.vue';
 import SalaryReports from '../pages/finance-payroll/SalaryReports.vue';
 import CashBook from '../pages/finance-payroll/CashBook.vue';
@@ -221,6 +222,7 @@ const FLAGSHIP_ROUTES = {
     '/finance-and-payroll/salary-generate': SalaryGenerate,
     '/finance-and-payroll/salary-slips': SalarySlips,
     '/finance-and-payroll/salary-sheet': SalaryMonthlySheet,
+    '/finance-and-payroll/salary-history': SalaryHistory,
     '/finance-and-payroll/salary-reports': SalaryReports,
     '/finance-and-payroll/cash-book': CashBook,
     '/finance-and-payroll/book-store': BookStore,

@@ -38,7 +38,7 @@ class PeopleLookupController extends Controller
                     ->get(['id', 'employee_id', 'name', 'department', 'phone', 'email', 'status']),
                 'drivers' => Driver::query()
                     ->orderBy('name')
-                    ->get(['id', 'employee_id', 'name', 'phone', 'license_no', 'vehicle_no', 'status']),
+                    ->get(['id', 'employee_id', 'name', 'phone', 'email', 'license_no', 'vehicle_no', 'status', 'salary', 'custom_field_values']),
             ];
         });
 

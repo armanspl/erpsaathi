@@ -407,7 +407,7 @@ class ExportController extends Controller
 
         if ($rowCount <= 500) {
             for ($row = $firstDataRow; $row <= $lastRow; $row++) {
-                $sheet->getRowDimension($row)->setRowHeight($richLayout ? 20 : 18);
+            $sheet->getRowDimension($row)->setRowHeight($richLayout ? 20 : 18);
             }
         }
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Erp\People;
 use App\Http\Controllers\Controller;
 use App\Models\ErpUser;
 use App\Models\Teacher;
+use App\Support\EmployeeCustomFields;
 use App\Support\PeopleCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -29,9 +30,12 @@ class TeacherController extends Controller
     public function store(Request $request)
     {
         $data = $this->validated($request);
+        $data = $this->withProfile($data, null);
 
         [$teacher, $accountStatus] = DB::transaction(function () use ($data) {
-            $data['employee_id'] = $this->nextEmployeeId();
+            if (trim((string) ($data['employee_id'] ?? '')) === '') {
+                $data['employee_id'] = $this->nextEmployeeId();
+            }
             $teacher = Teacher::create($data);
 
             return [$teacher, $this->provisionLinkedAccount($teacher)];
@@ -47,7 +51,11 @@ class TeacherController extends Controller
 
     public function update(Request $request, Teacher $teacher)
     {
-        $data = $this->validated($request);
+        $data = $this->validated($request, $teacher);
+        $data = $this->withProfile($data, $teacher);
+        if (trim((string) ($data['employee_id'] ?? '')) === '') {
+            unset($data['employee_id']); // blank = keep the current code
+        }
 
         $accountStatus = DB::transaction(function () use ($data, $teacher) {
             $teacher->update($data);
@@ -172,16 +180,28 @@ class TeacherController extends Controller
         return response()->json($teacher->load(self::RELATIONS));
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, ?Teacher $teacher = null): array
     {
         return $request->validate([
+            'employee_id' => ['nullable', 'string', 'max:50', Rule::unique('teachers', 'employee_id')->ignore($teacher?->id)],
             'name' => 'required|string|max:255',
             'phone' => 'nullable|string|max:30',
             'email' => 'nullable|email|max:255',
             'school_class_id' => 'nullable|exists:school_classes,id',
             'status' => 'required|in:active,inactive',
             'salary' => 'nullable|numeric|min:0|max:99999999.99',
-        ]);
+        ] + EmployeeCustomFields::profileRules());
+    }
+
+    /** Moves the form's Excel profile fields (DOB, address, ...) into custom_field_values. */
+    private function withProfile(array $data, ?Teacher $teacher): array
+    {
+        if (array_key_exists('profile', $data)) {
+            $data['custom_field_values'] = EmployeeCustomFields::applyProfile($teacher?->custom_field_values, $data['profile'] ?? []);
+            unset($data['profile']);
+        }
+
+        return $data;
     }
 
     private function nextEmployeeId(): string

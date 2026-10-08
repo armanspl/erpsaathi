@@ -71,8 +71,11 @@ use App\Http\Controllers\Erp\FinancePayroll\CashBookController;
 use App\Http\Controllers\Erp\FinancePayroll\ExpenseCategoryController;
 use App\Http\Controllers\Erp\FinancePayroll\ExpenseController;
 use App\Http\Controllers\Erp\FinancePayroll\IncomeController;
+use App\Http\Controllers\Erp\FinancePayroll\SalaryHistoryController;
 use App\Http\Controllers\Erp\FinancePayroll\SalaryMonthlySheetController;
+use App\Http\Controllers\Erp\FinancePayroll\StaffProfileExportController;
 use App\Http\Controllers\Erp\FinancePayroll\SalaryReportController;
+use App\Http\Controllers\Erp\FinancePayroll\SalaryAdvanceController;
 use App\Http\Controllers\Erp\FinancePayroll\SalarySlipController;
 use App\Http\Controllers\Erp\FinancePayroll\SalaryStructureController;
 use App\Http\Controllers\Erp\Hostel\BedController;
@@ -580,10 +583,24 @@ Route::prefix('finance-payroll')->name('finance-payroll.')->group(function () {
     Route::get('bank-transactions', [BankTransactionController::class, 'index'])->name('bank-transactions.index');
     Route::get('salary-structures', [SalaryStructureController::class, 'index'])->name('salary-structures.index');
     Route::get('salary-slips', [SalarySlipController::class, 'index'])->name('salary-slips.index');
+    Route::get('salary-slips/employees', [SalarySlipController::class, 'employees'])->name('salary-slips.employees');
+    Route::get('salary-history', [SalaryHistoryController::class, 'index'])->name('salary-history.index');
+    Route::get('salary-history/{batchId}', [SalaryHistoryController::class, 'show'])->name('salary-history.show');
+    Route::middleware('erp.permission:finance.manage|finance-and-payroll.salary-history.rollback')
+        ->post('salary-history/{batchId}/rollback', [SalaryHistoryController::class, 'rollback'])->name('salary-history.rollback');
     Route::get('salary-slips/{salarySlip}/pdf', [SalarySlipController::class, 'downloadPdf'])->name('salary-slips.pdf');
+    Route::get('salary-advances', [SalaryAdvanceController::class, 'index'])->name('salary-advances.index');
+    Route::get('salary-advances/{salaryAdvance}/receipt', [SalaryAdvanceController::class, 'receipt'])->name('salary-advances.receipt');
     Route::get('salary-reports', [SalaryReportController::class, 'index'])->name('salary-reports.index');
     Route::get('salary-monthly/export', [SalaryMonthlySheetController::class, 'export'])->name('salary-monthly.export');
     Route::post('salary-monthly/preview', [SalaryMonthlyImportController::class, 'preview'])->name('salary-monthly.preview');
+    // Staff Profile import/export on the Salary Sheet page (same engine as People > Employee Master Import).
+    Route::middleware('erp.permission:finance.manage|finance-and-payroll.salary-sheet.upload|finance-and-payroll.salary-sheet.import|people.employee-master-import.view')
+        ->post('staff-profiles/preview', [EmployeeMasterImportController::class, 'preview'])->name('staff-profiles.preview');
+    Route::middleware('erp.permission:finance.manage|finance-and-payroll.salary-sheet.import|people.employee-master-import.import')
+        ->post('staff-profiles/import', [EmployeeMasterImportController::class, 'import'])->name('staff-profiles.import');
+    Route::middleware('erp.permission:finance.manage|finance-and-payroll.salary-sheet.export')
+        ->get('staff-profiles/export', [StaffProfileExportController::class, 'export'])->name('staff-profiles.export');
     Route::get('cash-book', [CashBookController::class, 'index'])->name('cash-book.index');
     Route::get('book-store', [BookStoreController::class, 'index'])->name('book-store.index');
     Route::get('book-expenses', [BookExpenseController::class, 'index'])->name('book-expenses.index');
@@ -619,6 +636,9 @@ Route::prefix('finance-payroll')->name('finance-payroll.')->group(function () {
         Route::delete('salary-slips/{salarySlip}', [SalarySlipController::class, 'destroy'])->name('salary-slips.destroy');
         Route::post('salary-slips/generate', [SalarySlipController::class, 'generate'])->name('salary-slips.generate');
         Route::patch('salary-slips/{salarySlip}/pay', [SalarySlipController::class, 'markPaid'])->name('salary-slips.pay');
+        Route::post('salary-advances', [SalaryAdvanceController::class, 'store'])->name('salary-advances.store');
+        Route::put('salary-advances/{salaryAdvance}', [SalaryAdvanceController::class, 'update'])->name('salary-advances.update');
+        Route::delete('salary-advances/{salaryAdvance}', [SalaryAdvanceController::class, 'destroy'])->name('salary-advances.destroy');
         Route::post('salary-monthly/import', [SalaryMonthlyImportController::class, 'import'])->name('salary-monthly.import');
 
         Route::post('book-store', [BookStoreController::class, 'store'])->name('book-store.store');

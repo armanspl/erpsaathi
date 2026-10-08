@@ -29,6 +29,7 @@
         <template v-else-if="!error">
             <section class="dash-stats">
                 <article v-for="s in peopleStats" :key="s.label" class="dash-stat">
+                    <span class="dash-stat__icon" aria-hidden="true" v-html="STAT_ICONS[s.icon]" />
                     <p class="dash-stat__label">{{ s.label }}</p>
                     <p class="dash-stat__value">{{ s.value }}</p>
                 </article>
@@ -36,6 +37,7 @@
 
             <section class="dash-stats dash-stats--money">
                 <article v-for="s in moneyStats" :key="s.label" class="dash-stat dash-stat--accent">
+                    <span class="dash-stat__icon" aria-hidden="true" v-html="STAT_ICONS[s.icon]" />
                     <p class="dash-stat__label">{{ s.label }}</p>
                     <p class="dash-stat__value">{{ s.value }}</p>
                 </article>
@@ -345,16 +347,16 @@ async function load() {
         if (seq !== loadSeq) return;
         loadedForSession = sessionKey;
         peopleStats.value = [
-            { label: 'Students', value: data.people_stats.students },
-            { label: 'Teachers', value: data.people_stats.teachers },
-            { label: 'Staff', value: data.people_stats.staff },
-            { label: 'Drivers', value: data.people_stats.drivers },
+            { label: 'Students', value: data.people_stats.students, icon: 'students' },
+            { label: 'Teachers', value: data.people_stats.teachers, icon: 'teachers' },
+            { label: 'Staff', value: data.people_stats.staff, icon: 'staff' },
+            { label: 'Drivers', value: data.people_stats.drivers, icon: 'drivers' },
         ];
         moneyStats.value = [
-            { label: 'Fee collected', value: `₹${money(data.money_stats.fee_collected)}` },
-            { label: 'Fee pending', value: `₹${money(data.money_stats.fee_pending)}` },
-            { label: 'Bank balance', value: `₹${money(data.money_stats.bank_balance)}` },
-            { label: 'Expense', value: `₹${money(data.money_stats.expense)}` },
+            { label: 'Fee collected', value: `₹${money(data.money_stats.fee_collected)}`, icon: 'collected' },
+            { label: 'Fee pending', value: `₹${money(data.money_stats.fee_pending)}`, icon: 'pending' },
+            { label: 'Bank balance', value: `₹${money(data.money_stats.bank_balance)}`, icon: 'bank' },
+            { label: 'Expense', value: `₹${money(data.money_stats.expense)}`, icon: 'expense' },
         ];
         todaySummary.value = {
             students: data.today_summary?.students || { present: 0, absent: 0 },
@@ -397,6 +399,19 @@ watch(
     },
 );
 
+// Stroke icons (currentColor) for the stat cards; colour comes from --erp-stat-icon.
+const svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const STAT_ICONS = {
+    students: svg('<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>'),
+    teachers: svg('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'),
+    staff: svg('<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/>'),
+    drivers: svg('<rect x="3" y="5" width="18" height="11" rx="2"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M3 11h18"/>'),
+    collected: svg('<path d="M20 6 9 17l-5-5"/>'),
+    pending: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    bank: svg('<path d="M3 10 12 4l9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>'),
+    expense: svg('<path d="M12 3v18M17 7.5C17 5.6 14.8 4.5 12 4.5S7 5.6 7 7.5s2.2 3 5 3.5 5 1.6 5 3.5-2.2 3-5 3-5-1.1-5-3"/>'),
+};
+
 const quickActions = [
     { label: 'Add student', to: '/people/students?add=1' },
     { label: 'Collect fee', to: '/fee-management/pay-fee' },
@@ -411,7 +426,7 @@ const quickActions = [
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
-    font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--erp-font, 'Manrope', ui-sans-serif, system-ui, sans-serif);
     color: var(--erp-cream, #f3efe6);
 }
 
@@ -440,11 +455,11 @@ const quickActions = [
 }
 .dash-title {
     margin: 0;
-    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-family: var(--erp-font-display, 'Cormorant Garamond', Georgia, serif);
     font-size: clamp(1.85rem, 3vw, 2.35rem);
     font-weight: 600;
     line-height: 1.15;
-    color: var(--erp-cream, #f3efe6);
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
 }
 .dash-sub {
     margin: 0.4rem 0 0;
@@ -462,9 +477,9 @@ const quickActions = [
     align-items: center;
     padding: 0.5rem 0.9rem;
     border-radius: 8px;
-    border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.28));
-    background: transparent;
-    color: var(--erp-cream, #f3efe6);
+    border: 1px solid var(--erp-btn2-border, var(--erp-border, rgba(198, 167, 94, 0.28)));
+    background: var(--erp-btn2-bg, transparent);
+    color: var(--erp-btn2-text, var(--erp-cream, #f3efe6));
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -473,6 +488,7 @@ const quickActions = [
 }
 .dash-btn:hover {
     border-color: var(--erp-gold, #c6a75e);
+    background: var(--erp-btn2-hover-bg, transparent);
     color: var(--erp-gold-soft, #e2c98a);
 }
 .dash-btn--primary {
@@ -481,14 +497,15 @@ const quickActions = [
     color: var(--erp-brand-ink, #14120e);
 }
 .dash-btn--primary:hover {
-    color: #0b0a08;
-    filter: brightness(1.05);
+    color: var(--erp-brand-ink-hover, #0b0a08);
+    background: var(--erp-btn1-hover-bg, linear-gradient(135deg, var(--erp-gold, #c6a75e), var(--erp-brand-to, #a8883f)));
+    filter: var(--erp-btn1-hover-filter, brightness(1.05));
 }
 
 .dash-alert {
-    border: 1px solid rgba(248, 180, 180, 0.35);
-    background: rgba(180, 60, 60, 0.18);
-    color: #f6c1c1;
+    border: 1px solid var(--erp-alert-border, rgba(248, 180, 180, 0.35));
+    background: var(--erp-alert-bg, rgba(180, 60, 60, 0.18));
+    color: var(--erp-alert-text, #f6c1c1);
     border-radius: 12px;
     padding: 0.85rem 1rem;
     font-size: 0.875rem;
@@ -514,7 +531,7 @@ const quickActions = [
 .dash-skel__card {
     height: 5.5rem;
     border-radius: 12px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+    background: linear-gradient(90deg, var(--erp-skeleton, rgba(255,255,255,0.04)), var(--erp-skeleton-shine, rgba(255,255,255,0.08)), var(--erp-skeleton, rgba(255,255,255,0.04)));
     background-size: 200% 100%;
     animation: dash-pulse 1.4s ease-in-out infinite;
 }
@@ -536,9 +553,9 @@ const quickActions = [
     overflow: hidden;
     border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
     background: var(--erp-surface, rgba(18, 19, 24, 0.92));
-    border-radius: 14px;
+    border-radius: var(--erp-radius-card, 14px);
     padding: 1rem 1.1rem;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--erp-shadow, 0 10px 28px rgba(0, 0, 0, 0.18));
 }
 .dash-stat::after {
     content: '';
@@ -547,11 +564,26 @@ const quickActions = [
     width: 90px;
     height: 90px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(198, 167, 94, 0.16), transparent 70%);
+    background: radial-gradient(circle, var(--erp-glow, rgba(198, 167, 94, 0.16)), transparent 70%);
     pointer-events: none;
 }
 .dash-stat--accent::after {
-    background: radial-gradient(circle, rgba(198, 167, 94, 0.28), transparent 70%);
+    background: radial-gradient(circle, var(--erp-glow-strong, rgba(198, 167, 94, 0.28)), transparent 70%);
+}
+.dash-stat__icon {
+    display: var(--erp-stat-icon-display, none);
+    float: right;
+    width: 2.25rem;
+    height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background: var(--erp-stat-icon-bg, transparent);
+    color: var(--erp-stat-icon, currentColor);
+}
+.dash-stat__icon :deep(svg) {
+    width: 1.1rem;
+    height: 1.1rem;
 }
 .dash-stat__label {
     margin: 0;
@@ -563,14 +595,14 @@ const quickActions = [
 }
 .dash-stat__value {
     margin: 0.45rem 0 0;
-    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-family: var(--erp-font-display, 'Cormorant Garamond', Georgia, serif);
     font-size: 1.85rem;
     font-weight: 600;
     line-height: 1.1;
-    color: var(--erp-cream, #f3efe6);
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
 }
 .dash-stats--money .dash-stat__value {
-    color: var(--erp-gold-soft, #e2c98a);
+    color: var(--erp-heading, var(--erp-gold-soft, #e2c98a));
 }
 
 .dash-grid {
@@ -596,8 +628,8 @@ const quickActions = [
     gap: 0.75rem;
     padding: 0.65rem 0.75rem;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.04);
+    background: var(--erp-tint, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.04));
     font-size: 0.85rem;
     color: var(--erp-muted, #9a958c);
 }
@@ -624,28 +656,28 @@ const quickActions = [
     font-weight: 700;
 }
 .dash-row--split .is-cash {
-    background: rgba(125, 206, 160, 0.12);
-    color: #9fe0b8;
+    background: var(--erp-ok-bg, rgba(125, 206, 160, 0.12));
+    color: var(--erp-ok, #9fe0b8);
 }
 .dash-row--split .is-bank {
-    background: rgba(125, 180, 230, 0.12);
-    color: #9ec8f0;
+    background: var(--erp-info-bg, rgba(125, 180, 230, 0.12));
+    color: var(--erp-info, #9ec8f0);
 }
 .dash-row--split .is-total {
-    background: rgba(243, 239, 230, 0.1);
-    color: var(--erp-cream, #f3efe6);
+    background: var(--erp-total-bg, rgba(243, 239, 230, 0.1));
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
 }
 .dash-row__vals {
     display: inline-flex;
     align-items: baseline;
     gap: 0.25rem;
 }
-.is-ok { color: #7dcea0; }
-.is-bad { color: #e8a0a0; }
+.is-ok { color: var(--erp-ok, #7dcea0); }
+.is-bad { color: var(--erp-bad, #e8a0a0); }
 .is-cream { color: var(--erp-cream, #f3efe6); }
-.is-boy { color: #7eb6e8; }
-.is-girl { color: #e8a0c8; }
-.sep { color: rgba(243, 239, 230, 0.35); }
+.is-boy { color: var(--erp-boy, #7eb6e8); }
+.is-girl { color: var(--erp-girl, #e8a0c8); }
+.sep { color: var(--erp-sep, rgba(243, 239, 230, 0.35)); }
 .hint {
     font-size: 0.7rem;
     font-weight: 500;
@@ -670,7 +702,7 @@ const quickActions = [
     transition: background 0.15s ease;
 }
 .dash-task:hover {
-    background: rgba(198, 167, 94, 0.08);
+    background: var(--erp-hover, rgba(198, 167, 94, 0.08));
 }
 .dash-badge {
     min-width: 1.5rem;
@@ -679,12 +711,12 @@ const quickActions = [
     text-align: center;
     font-size: 0.7rem;
     font-weight: 700;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--erp-badge-bg, rgba(255, 255, 255, 0.06));
     color: var(--erp-muted, #9a958c);
 }
 .dash-badge.is-warn {
-    background: rgba(198, 167, 94, 0.18);
-    color: var(--erp-gold-soft, #e2c98a);
+    background: var(--erp-warn-bg, rgba(198, 167, 94, 0.18));
+    color: var(--erp-warn-text, var(--erp-gold-soft, #e2c98a));
 }
 
 .dash-quick {
@@ -699,8 +731,8 @@ const quickActions = [
     padding: 0.7rem 0.5rem;
     border-radius: 10px;
     border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
-    background: rgba(255, 255, 255, 0.02);
-    color: var(--erp-cream, #f3efe6);
+    background: var(--erp-surface-quiet, rgba(255, 255, 255, 0.02));
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
     font-size: 0.72rem;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -710,7 +742,7 @@ const quickActions = [
 }
 .dash-quick__item:hover {
     border-color: var(--erp-gold, #c6a75e);
-    background: rgba(198, 167, 94, 0.1);
+    background: var(--erp-tint-strong, rgba(198, 167, 94, 0.1));
     color: var(--erp-gold-soft, #e2c98a);
 }
 
@@ -750,7 +782,7 @@ const quickActions = [
 }
 .dash-table td {
     padding: 0.45rem 0.5rem 0.45rem 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    border-top: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
     color: var(--erp-muted, #9a958c);
 }
 .dash-table th:last-child,
@@ -765,8 +797,8 @@ const quickActions = [
     font-weight: 600;
 }
 .dash-table .num { text-align: right; }
-.dash-table .total { color: var(--erp-gold-soft, #e2c98a); font-weight: 700; }
-.dash-table .is-new { color: #c6b4f0; }
+.dash-table .total { color: var(--erp-heading, var(--erp-gold-soft, #e2c98a)); font-weight: 700; }
+.dash-table .is-new { color: var(--erp-new, #c6b4f0); }
 .dash-table__summary {
     position: sticky;
     bottom: 0;
@@ -779,7 +811,7 @@ const quickActions = [
     font-weight: 800;
 }
 .dash-table__summary .name { color: var(--erp-gold, #c6a75e); }
-.dash-table__summary .total { color: var(--erp-gold-soft, #e2c98a); }
+.dash-table__summary .total { color: var(--erp-heading, var(--erp-gold-soft, #e2c98a)); }
 
 .dash-fee {
     display: flex;
@@ -807,19 +839,19 @@ const quickActions = [
     height: 0.6rem;
     border-radius: 3px;
 }
-.dash-fee__legend .is-collected::before { background: #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.55); }
-.dash-fee__legend .is-due::before { background: #f43f5e; box-shadow: 0 0 8px rgba(244, 63, 94, 0.55); }
+.dash-fee__legend .is-collected::before { background: var(--erp-chart-1, #34d399); box-shadow: var(--erp-chart-1-glow, 0 0 8px rgba(52, 211, 153, 0.55)); }
+.dash-fee__legend .is-due::before { background: var(--erp-chart-2, #f43f5e); box-shadow: var(--erp-chart-2-glow, 0 0 8px rgba(244, 63, 94, 0.55)); }
 .dash-fee__row {
     min-width: 0;
     padding: 0.6rem 0.75rem;
     border-radius: 0.7rem;
-    background: rgba(255, 255, 255, 0.035);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--erp-tint, rgba(255, 255, 255, 0.035));
+    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
     transition: background 0.2s ease, border-color 0.2s ease;
 }
 .dash-fee__row:hover {
-    background: rgba(255, 255, 255, 0.065);
-    border-color: rgba(198, 167, 94, 0.3);
+    background: var(--erp-hover, rgba(255, 255, 255, 0.065));
+    border-color: var(--erp-hover-border, rgba(198, 167, 94, 0.3));
 }
 .dash-fee__head {
     display: flex;
@@ -840,15 +872,15 @@ const quickActions = [
     font-weight: 800;
     font-variant-numeric: tabular-nums;
 }
-.dash-fee__amts .is-collected { color: #34d399; }
-.dash-fee__amts .is-due { color: #f43f5e; }
+.dash-fee__amts .is-collected { color: var(--erp-chart-1-text, #34d399); }
+.dash-fee__amts .is-due { color: var(--erp-chart-2-text, #f43f5e); }
 .dash-fee__stack {
     display: flex;
     height: 0.65rem;
     overflow: hidden;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    background: var(--erp-chart-track, rgba(255, 255, 255, 0.08));
+    box-shadow: var(--erp-chart-track-shadow, inset 0 1px 2px rgba(0, 0, 0, 0.3));
 }
 .dash-fee__stack .seg {
     display: block;
@@ -857,11 +889,11 @@ const quickActions = [
     transition: width 0.35s ease;
 }
 .dash-fee__stack .seg.is-collected {
-    background: linear-gradient(90deg, #15803d, #34d399);
+    background: var(--erp-chart-1, linear-gradient(90deg, #15803d, #34d399));
 }
 .dash-fee__stack .seg.is-due {
-    background: linear-gradient(90deg, #be123c, #f43f5e);
-    box-shadow: 0 0 10px rgba(244, 63, 94, 0.35);
+    background: var(--erp-chart-2, linear-gradient(90deg, #be123c, #f43f5e));
+    box-shadow: var(--erp-chart-2-glow, 0 0 10px rgba(244, 63, 94, 0.35));
 }
 
 .dash-cat__summary {
@@ -880,7 +912,7 @@ const quickActions = [
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 800;
-    background: rgba(255, 255, 255, 0.045);
+    background: var(--erp-tint, rgba(255, 255, 255, 0.045));
     border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.25));
 }
 .dash-cat__summary-item em {
@@ -893,7 +925,7 @@ const quickActions = [
     margin-right: 0.1rem;
 }
 .dash-cat__summary-item.is-rte {
-    background: rgba(198, 167, 94, 0.14);
+    background: var(--erp-tint-strong, rgba(198, 167, 94, 0.14));
     border-color: var(--erp-gold, #c6a75e);
 }
 .dash-cat__summary-item.is-rte em { color: var(--erp-gold-soft, #e2c98a); }
@@ -914,8 +946,8 @@ const quickActions = [
 .dash-cat__class {
     padding: 0.55rem 0.65rem;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
+    background: var(--erp-tint, rgba(255, 255, 255, 0.025));
 }
 .dash-cat__title {
     display: flex;
@@ -937,19 +969,19 @@ const quickActions = [
     padding: 0.2rem 0.45rem;
     border-radius: 999px;
     font-size: 0.68rem;
-    background: hsl(var(--cat-hue, 40) 35% 18% / 0.85);
-    border: 1px solid hsl(var(--cat-hue, 40) 45% 40% / 0.35);
+    background: var(--erp-chip-bg, hsl(var(--cat-hue, 40) 35% 18% / 0.85));
+    border: 1px solid var(--erp-chip-border, hsl(var(--cat-hue, 40) 45% 40% / 0.35));
     color: var(--erp-cream, #f3efe6);
 }
 .dash-cat__chip em {
     font-style: normal;
     font-weight: 600;
     margin-right: 0.15rem;
-    color: hsl(var(--cat-hue, 40) 70% 72%);
+    color: var(--erp-chip-label, hsl(var(--cat-hue, 40) 70% 72%));
 }
 .dash-cat__chip strong { font-weight: 700; }
 .dash-cat__chip.is-rte {
-    background: rgba(198, 167, 94, 0.16);
+    background: var(--erp-tint-strong, rgba(198, 167, 94, 0.16));
     border-color: var(--erp-gold, #c6a75e);
 }
 .dash-cat__chip.is-rte em { color: var(--erp-gold-soft, #e2c98a); }
@@ -966,7 +998,7 @@ const quickActions = [
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.65rem 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    border-top: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
     font-size: 0.85rem;
 }
 .dash-feed li:first-child { border-top: 0; padding-top: 0.15rem; }
@@ -987,8 +1019,8 @@ const quickActions = [
 .dash-activity li {
     padding: 0.6rem 0.75rem;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.04);
+    background: var(--erp-tint, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.04));
     font-size: 0.85rem;
     color: var(--erp-muted, #9a958c);
 }
