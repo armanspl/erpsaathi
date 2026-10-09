@@ -244,20 +244,43 @@ class SchoolProvisioner
             return;
         }
 
+        // No GRANT OPTION (usual for a non-root app user) — fine as long as the account can
+        // already use the new database, e.g. via a one-time root grant on `%\_db`.*.
+        if ($this->canUseTenantDatabase($dbName)) {
+            return;
+        }
+
         $hintUser = (string) (config('database.connections.mysql.username')
             ?: config('database.connections.master.username')
             ?: 'erpsaathi');
 
         throw new \RuntimeException(
             "MySQL user cannot access new school database `{$dbName}`. "
-            .'As a MySQL admin (root), run: '
-            ."GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$hintUser}'@'localhost'; "
-            ."GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$hintUser}'@'127.0.0.1'; "
-            .'FLUSH PRIVILEGES;'
+            .'As a MySQL admin (root), run once (covers every school database, all named *_db): '
+            ."GRANT ALL PRIVILEGES ON `%\\_db`.* TO '{$hintUser}'@'localhost'; "
+            ."GRANT ALL PRIVILEGES ON `%\\_db`.* TO '{$hintUser}'@'127.0.0.1'; "
+            .'FLUSH PRIVILEGES; — then add the school again.'
             .($lastError ? ' ('.$lastError->getMessage().')' : ''),
             0,
             $lastError
         );
+    }
+
+    /** Whether the tenant (mysql) account can already create/drop tables in $dbName — what migrate needs. */
+    protected function canUseTenantDatabase(string $dbName): bool
+    {
+        try {
+            $this->tenants->configureTemporaryConnection('tenant_provision', $dbName);
+            $db = DB::connection('tenant_provision');
+            $db->statement('CREATE TABLE IF NOT EXISTS `__provision_access_check` (`id` int)');
+            $db->statement('DROP TABLE `__provision_access_check`');
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        } finally {
+            DB::purge('tenant_provision');
+        }
     }
 
     /**
