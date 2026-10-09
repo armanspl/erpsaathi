@@ -9,6 +9,7 @@ use App\Models\ImportExportLog;
 use App\Models\SalarySlip;
 use App\Models\Staff;
 use App\Models\Teacher;
+use App\Services\Payroll\CasualLeavePolicy;
 use App\Services\Payroll\EmployeeMatcher;
 use App\Services\Payroll\ReadsStaffSheets;
 use App\Services\Payroll\SalaryHistory;
@@ -18,6 +19,7 @@ use App\Support\PeopleCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
@@ -535,8 +537,32 @@ class SalaryMonthlyImportController extends Controller
             $basic = $row['basic_salary'];
             $cl = $row['cl'];
             $absent = $row['absent'];
-            // PRESENT is sometimes a formula (=E-F) — fall back to Days - Absent - CL.
-            $present = $row['present'] ?? max(0, $daysInMonth - $absent - $cl);
+            // Payable days = Days − Absent. CL is paid leave and must not reduce pay.
+            // Sheet PRESENT is sometimes a formula — fall back when missing.
+            $present = $row['present'] ?? max(0, $daysInMonth - $absent);
+
+            $existing = SalarySlip::where('employee_type', $employeeType)
+                ->where('employee_id', $employeeId)
+                ->where('period', $period)
+                ->first();
+
+            try {
+                CasualLeavePolicy::assertValid(
+                    $employeeType,
+                    (int) $employeeId,
+                    $period,
+                    (float) $cl,
+                    (int) $daysInMonth,
+                    $existing?->id,
+                );
+            } catch (ValidationException $e) {
+                $stats['failed']++;
+                $msg = collect($e->errors())->flatten()->first() ?: 'CL policy validation failed.';
+                $this->recordFailure($log->id, $row, $msg, $now, $rowLogRows, $failedRowRows, $failedRowsResponse);
+
+                continue;
+            }
+
             $payload = self::computeSlip($basic, $daysInMonth, $present, $absent, $cl, $row['advance']) + [
                 'sheet_name' => mb_substr(trim($sheetName), 0, 60),
                 'sheet_block' => $row['block'],
@@ -547,11 +573,6 @@ class SalaryMonthlyImportController extends Controller
             if ($payment !== null) {
                 $stats['marked_paid']++;
             }
-
-            $existing = SalarySlip::where('employee_type', $employeeType)
-                ->where('employee_id', $employeeId)
-                ->where('period', $period)
-                ->first();
 
             if ($existing && $existing->status === 'Paid') {
                 $stats['skipped_paid']++;
@@ -629,16 +650,17 @@ class SalaryMonthlyImportController extends Controller
     public static function computeSlip(float $basic, int $daysInMonth, float $present, float $absent, float $cl, float $advance, float $otherEarnings = 0.0, float $otherDeductions = 0.0): array
     {
         $daysInMonth = max(1, $daysInMonth);
-        $totalDays = $present + $cl;
-        $thisMonth = round($basic / $daysInMonth * $totalDays, 2);
+        // CL is paid leave — payable days = Days − Absent (CL stays a separate balance field).
+        $payableDays = max(0, $daysInMonth - $absent);
+        $thisMonth = round($basic / $daysInMonth * $payableDays, 2);
 
         return [
             'basic_salary' => $basic,
             'days_in_month' => $daysInMonth,
-            'present' => $present,
+            'present' => $payableDays,
             'absent' => $absent,
             'cl' => $cl,
-            'total_days' => $totalDays,
+            'total_days' => $payableDays,
             'per_day_rate' => round($basic / $daysInMonth, 2),
             'this_month_salary' => $thisMonth,
             'advance' => $advance,

@@ -30,11 +30,14 @@ class RegisterReportController extends Controller
             'format' => 'nullable|in:csv,xlsx,pdf',
         ]);
 
+        $session = AcademicSession::fromRequest($request, true);
         $students = $this->baseStudentQuery($data)
             ->orderBy('school_class_id')
             ->orderByRaw('CAST(roll_no AS UNSIGNED), roll_no')
             ->orderBy('name')
             ->get();
+
+        $fees = $this->feePositionsByStudent($students, $session);
 
         $rows = $students->map(fn (Student $s) => [
             'admission_no' => $s->admission_no,
@@ -44,18 +47,25 @@ class RegisterReportController extends Controller
             'roll_no' => $s->roll_no,
             'father' => $s->father?->name,
             'mobile' => $s->mobile ?: $s->father?->phone,
+            'collected' => $fees[$s->id]['collected'] ?? 0,
+            'due' => $fees[$s->id]['due'] ?? 0,
         ])->values();
 
         if (! empty($data['format'])) {
-            $header = ['Admission No', 'Name', 'Class', 'Section', 'Roll No', 'Father Name', 'Mobile'];
+            $header = ['Admission No', 'Name', 'Class', 'Section', 'Roll No', 'Father Name', 'Mobile', 'Collected', 'Due'];
             $table = $rows->map(fn (array $r) => [
-                $r['admission_no'], $r['name'], $r['school_class'], $r['section'], $r['roll_no'], $r['father'], $r['mobile'],
+                $r['admission_no'], $r['name'], $r['school_class'], $r['section'], $r['roll_no'], $r['father'], $r['mobile'], $r['collected'], $r['due'],
             ])->all();
 
             return TabularExport::stream($header, $table, 'report-class-wise', 'Class-wise Register', $data['format']);
         }
 
-        return response()->json(['rows' => $rows]);
+        return response()->json([
+            'session' => $session?->name,
+            'rows' => $rows,
+            'total_collected' => round($rows->sum('collected'), 2),
+            'total_due' => round($rows->sum('due'), 2),
+        ]);
     }
 
     /** Sentinel for the "no address recorded" bucket in the area-wise picker. */
@@ -77,17 +87,30 @@ class RegisterReportController extends Controller
             'format' => 'nullable|in:csv,xlsx,pdf',
         ]);
 
+        $session = AcademicSession::fromRequest($request, true);
         $students = $this->baseStudentQuery($data)->orderBy('name')->get();
+        $fees = $this->feePositionsByStudent($students, $session);
 
         $normalize = static fn (Student $s): string => trim(preg_replace('/\s+/', ' ', (string) $s->address));
 
         $areas = $students
             ->groupBy($normalize)
-            ->map(fn ($list, $address) => [
-                'value' => $address === '' ? self::AREA_BLANK : $address,
-                'label' => $address === '' ? 'No address on file' : $address,
-                'count' => $list->count(),
-            ])
+            ->map(function ($list, $address) use ($fees) {
+                $collected = 0.0;
+                $due = 0.0;
+                foreach ($list as $s) {
+                    $collected += $fees[$s->id]['collected'] ?? 0;
+                    $due += $fees[$s->id]['due'] ?? 0;
+                }
+
+                return [
+                    'value' => $address === '' ? self::AREA_BLANK : $address,
+                    'label' => $address === '' ? 'No address on file' : $address,
+                    'count' => $list->count(),
+                    'collected' => round($collected, 2),
+                    'due' => round($due, 2),
+                ];
+            })
             ->sortBy(fn ($a) => $a['label'] === 'No address on file' ? 'zzzz' : strtolower($a['label']))
             ->values();
 
@@ -107,15 +130,17 @@ class RegisterReportController extends Controller
                 'father' => $s->father?->name,
                 'mobile' => $s->mobile ?: $s->father?->phone,
                 'vehicle' => $vehicleByStudent[$s->id] ?? null,
+                'collected' => $fees[$s->id]['collected'] ?? 0,
+                'due' => $fees[$s->id]['due'] ?? 0,
             ])->values();
         }
 
         if (! empty($data['format'])) {
             $areaLabel = $area === self::AREA_BLANK ? 'No address on file' : (string) ($area ?? '');
-            $header = ['Address', 'Admission No', 'Name', 'Father Name', 'Mobile', 'Vehicle'];
+            $header = ['Address', 'Admission No', 'Name', 'Father Name', 'Mobile', 'Vehicle', 'Collected', 'Due'];
             $table = [];
             foreach (($rows ?? collect()) as $r) {
-                $table[] = [$areaLabel, $r['admission_no'], $r['name'], $r['father'], $r['mobile'], $r['vehicle']];
+                $table[] = [$areaLabel, $r['admission_no'], $r['name'], $r['father'], $r['mobile'], $r['vehicle'], $r['collected'], $r['due']];
             }
 
             return TabularExport::stream(
@@ -127,10 +152,16 @@ class RegisterReportController extends Controller
             );
         }
 
-        return response()->json(['areas' => $areas, 'rows' => $rows]);
+        return response()->json([
+            'session' => $session?->name,
+            'areas' => $areas,
+            'rows' => $rows,
+            'total_collected' => $rows ? round($rows->sum('collected'), 2) : null,
+            'total_due' => $rows ? round($rows->sum('due'), 2) : null,
+        ]);
     }
 
-    /** Father-wise register: fathers with 2+ children in school, with each child's automatic due. */
+    /** Father-wise register: real sibling groups (father + shared mother/address), with collected/due. */
     public function fatherWise(Request $request): mixed
     {
         $data = $request->validate([
@@ -143,37 +174,47 @@ class RegisterReportController extends Controller
             'schoolClass:id,name',
             'section:id,name',
             'father:id,name,phone',
+            'mother:id,name',
         ])
             ->where('status', 'Active')
             ->whereNotNull('father_id')
             ->orderBy('name')
             ->get();
 
-        $byFather = $students->groupBy('father_id')->filter(fn ($list) => $list->count() >= 2);
-
-        $dueByStudent = [];
-        if ($session) {
-            $flat = $byFather->flatten(1);
-            FeeCalculator::flushRuntimeCache();
-            FeeCalculator::warmForStudents($flat, collect([$session]));
-            $balance = app(FeeBalanceService::class);
-            $monthKeys = $this->monthKeysTillCurrent($session);
-            foreach ($flat as $s) {
-                $calc = FeeCalculator::forStudent($s, $session);
-                $keys = $balance->filterMonthsFromFeeStart($s, $monthKeys);
-                $paidInfo = $balance->paidByHead($s, $session);
-                $dueByStudent[$s->id] = round($balance->remainingForMonths($s, $session, $keys, $calc, $paidInfo)['due'], 2);
+        $families = collect();
+        foreach ($students->groupBy('father_id') as $list) {
+            if ($list->count() < 2) {
+                continue;
+            }
+            foreach ($this->siblingClusters($list) as $cluster) {
+                if ($cluster->count() >= 2) {
+                    $families->push($cluster);
+                }
             }
         }
 
-        $fathers = $byFather->map(function ($list) use ($dueByStudent) {
+        $fees = $this->feePositionsByStudent($families->flatten(1), $session);
+
+        $normalizeAddress = static fn (Student $s): string => self::normalizeText($s->address);
+
+        $fathers = $families->map(function ($list) use ($fees, $normalizeAddress) {
             $father = $list->first()->father;
-            $children = $list->map(fn (Student $s) => [
-                'admission_no' => $s->admission_no,
-                'name' => $s->name,
-                'school_class' => trim(($s->schoolClass?->name ?? '').' '.($s->section?->name ?? '')),
-                'due' => $dueByStudent[$s->id] ?? 0,
-            ])->values();
+            $addresses = $list->map($normalizeAddress)->filter()->unique()->values();
+            $addressMatch = $addresses->count() <= 1;
+
+            $children = $list->map(function (Student $s) use ($fees, $normalizeAddress) {
+                $address = $normalizeAddress($s);
+
+                return [
+                    'admission_no' => $s->admission_no,
+                    'name' => $s->name,
+                    'school_class' => trim(($s->schoolClass?->name ?? '').' '.($s->section?->name ?? '')),
+                    'mother' => $s->mother?->name,
+                    'address' => $address !== '' ? $address : null,
+                    'collected' => $fees[$s->id]['collected'] ?? 0,
+                    'due' => $fees[$s->id]['due'] ?? 0,
+                ];
+            })->values();
 
             // The parent record's own phone is rarely filled in; the student's `mobile`
             // reliably holds the guardian's contact number (same fallback the Class-wise
@@ -184,6 +225,8 @@ class RegisterReportController extends Controller
                 'father' => $father?->name ?? '—',
                 'phone' => $phone,
                 'children_count' => $children->count(),
+                'address_match' => $addressMatch,
+                'total_collected' => round($children->sum('collected'), 2),
                 'total_due' => round($children->sum('due'), 2),
                 'children' => $children,
             ];
@@ -192,11 +235,14 @@ class RegisterReportController extends Controller
             ->values();
 
         if (! empty($data['format'])) {
-            $header = ['Father Name', 'Phone', 'Children', 'Admission No', 'Student', 'Class', 'Due'];
+            $header = ['Father Name', 'Phone', 'Children', 'Address Match', 'Admission No', 'Student', 'Class', 'Mother', 'Address', 'Collected', 'Due'];
             $table = [];
             foreach ($fathers as $f) {
                 foreach ($f['children'] as $c) {
-                    $table[] = [$f['father'], $f['phone'], $f['children_count'], $c['admission_no'], $c['name'], $c['school_class'], $c['due']];
+                    $table[] = [
+                        $f['father'], $f['phone'], $f['children_count'], $f['address_match'] ? 'Yes' : 'No',
+                        $c['admission_no'], $c['name'], $c['school_class'], $c['mother'], $c['address'], $c['collected'], $c['due'],
+                    ];
                 }
             }
 
@@ -216,6 +262,8 @@ class RegisterReportController extends Controller
             'format' => 'nullable|in:csv,xlsx,pdf',
         ]);
 
+        $session = AcademicSession::fromRequest($request, true);
+
         $vehicles = Vehicle::with([
             'driver:id,name,phone',
             'routes:id,vehicle_id,name,route_code',
@@ -232,8 +280,14 @@ class RegisterReportController extends Controller
             ->filter(fn (StudentTransport $t) => $t->student && $t->student->status === 'Active')
             ->groupBy('route_id');
 
-        $vehicleRows = $vehicles->map(function (Vehicle $v) use ($assignments) {
-            $trips = $v->routes->map(function ($route, $i) use ($assignments) {
+        $studentIds = $assignments->flatten(1)->pluck('student_id')->unique()->filter()->values()->all();
+        $feeStudents = $studentIds === []
+            ? collect()
+            : Student::whereIn('id', $studentIds)->get();
+        $fees = $this->feePositionsByStudent($feeStudents, $session);
+
+        $vehicleRows = $vehicles->map(function (Vehicle $v) use ($assignments, $fees) {
+            $trips = $v->routes->map(function ($route, $i) use ($assignments, $fees) {
                 $students = $assignments->get($route->id, collect())
                     ->sortBy(fn (StudentTransport $t) => $t->student->name)
                     ->map(fn (StudentTransport $t) => [
@@ -241,6 +295,8 @@ class RegisterReportController extends Controller
                         'name' => $t->student->name,
                         'school_class' => trim(($t->student->schoolClass?->name ?? '').' '.($t->student->section?->name ?? '')),
                         'stop' => $t->routeStop?->stop_name,
+                        'collected' => $fees[$t->student->id]['collected'] ?? 0,
+                        'due' => $fees[$t->student->id]['due'] ?? 0,
                     ])->values();
 
                 return [
@@ -248,6 +304,8 @@ class RegisterReportController extends Controller
                     'route' => $route->name,
                     'route_code' => $route->route_code,
                     'student_count' => $students->count(),
+                    'total_collected' => round($students->sum('collected'), 2),
+                    'total_due' => round($students->sum('due'), 2),
                     'students' => $students,
                 ];
             })->values();
@@ -259,19 +317,21 @@ class RegisterReportController extends Controller
                 'driver_phone' => $v->driver?->phone,
                 'trip_count' => $trips->count(),
                 'student_count' => $trips->sum('student_count'),
+                'total_collected' => round($trips->sum('total_collected'), 2),
+                'total_due' => round($trips->sum('total_due'), 2),
                 'trips' => $trips,
             ];
         })->values();
 
         if (! empty($data['format'])) {
-            $header = ['Vehicle', 'Driver', 'Trip', 'Route', 'Admission No', 'Student', 'Class', 'Stop'];
+            $header = ['Vehicle', 'Driver', 'Trip', 'Route', 'Admission No', 'Student', 'Class', 'Stop', 'Collected', 'Due'];
             $table = [];
             foreach ($vehicleRows as $v) {
                 foreach ($v['trips'] as $t) {
                     foreach ($t['students'] as $s) {
                         $table[] = [
                             $v['vehicle_no'], $v['driver'], 'Trip '.$t['trip_no'], $t['route'],
-                            $s['admission_no'], $s['name'], $s['school_class'], $s['stop'],
+                            $s['admission_no'], $s['name'], $s['school_class'], $s['stop'], $s['collected'], $s['due'],
                         ];
                     }
                 }
@@ -280,7 +340,10 @@ class RegisterReportController extends Controller
             return TabularExport::stream($header, $table, 'report-vehicle-wise', 'Vehicle-wise Register', $data['format']);
         }
 
-        return response()->json(['vehicles' => $vehicleRows]);
+        return response()->json([
+            'session' => $session?->name,
+            'vehicles' => $vehicleRows,
+        ]);
     }
 
     /**
@@ -311,6 +374,134 @@ class RegisterReportController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * Split same-father students into sibling clusters that share mother and/or address.
+     * Empty mother/address never counts as a match (avoids false merges).
+     *
+     * @param  \Illuminate\Support\Collection<int, Student>  $siblings
+     * @return list<\Illuminate\Support\Collection<int, Student>>
+     */
+    private function siblingClusters($siblings): array
+    {
+        $list = $siblings->values();
+        $n = $list->count();
+        if ($n === 0) {
+            return [];
+        }
+
+        $hasSignal = false;
+        foreach ($list as $s) {
+            if ($this->studentFamilySignals($s) !== []) {
+                $hasSignal = true;
+                break;
+            }
+        }
+
+        // No mother/address data at all — keep the whole father group (legacy behaviour).
+        if (! $hasSignal) {
+            return [$list];
+        }
+
+        $parent = range(0, $n - 1);
+        $find = function (int $i) use (&$parent, &$find): int {
+            return $parent[$i] === $i ? $i : ($parent[$i] = $find($parent[$i]));
+        };
+        $union = function (int $a, int $b) use (&$parent, $find): void {
+            $ra = $find($a);
+            $rb = $find($b);
+            if ($ra !== $rb) {
+                $parent[$rb] = $ra;
+            }
+        };
+
+        for ($i = 0; $i < $n; $i++) {
+            for ($j = $i + 1; $j < $n; $j++) {
+                if ($this->studentsShareFamilySignal($list[$i], $list[$j])) {
+                    $union($i, $j);
+                }
+            }
+        }
+
+        $groups = [];
+        for ($i = 0; $i < $n; $i++) {
+            $root = $find($i);
+            $groups[$root] ??= collect();
+            $groups[$root]->push($list[$i]);
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function studentFamilySignals(Student $s): array
+    {
+        $signals = [];
+        if ($s->mother_id) {
+            $signals[] = 'mother_id:'.$s->mother_id;
+        }
+        $motherName = self::normalizeText($s->mother?->name);
+        if ($motherName !== '') {
+            $signals[] = 'mother:'.$motherName;
+        }
+        $address = self::normalizeText($s->address);
+        if ($address !== '') {
+            $signals[] = 'address:'.$address;
+        }
+
+        return $signals;
+    }
+
+    private function studentsShareFamilySignal(Student $a, Student $b): bool
+    {
+        $sa = $this->studentFamilySignals($a);
+        $sb = $this->studentFamilySignals($b);
+        if ($sa === [] || $sb === []) {
+            return false;
+        }
+
+        return count(array_intersect($sa, $sb)) > 0;
+    }
+
+    private static function normalizeText(?string $value): string
+    {
+        return trim(preg_replace('/\s+/', ' ', (string) $value));
+    }
+
+    /**
+     * Collected (paid) and due per student for months from session start through current.
+     *
+     * @param  iterable<int, Student>  $students
+     * @return array<int, array{collected: float, due: float}>
+     */
+    private function feePositionsByStudent(iterable $students, ?AcademicSession $session): array
+    {
+        $students = collect($students)->filter()->values();
+        if (! $session || $students->isEmpty()) {
+            return [];
+        }
+
+        FeeCalculator::flushRuntimeCache();
+        FeeCalculator::warmForStudents($students, collect([$session]));
+        $balance = app(FeeBalanceService::class);
+        $monthKeys = $this->monthKeysTillCurrent($session);
+        $out = [];
+
+        foreach ($students as $s) {
+            $calc = FeeCalculator::forStudent($s, $session);
+            $keys = $balance->filterMonthsFromFeeStart($s, $monthKeys);
+            $paidInfo = $balance->paidByHead($s, $session);
+            $pos = $balance->remainingForMonths($s, $session, $keys, $calc, $paidInfo);
+            $out[$s->id] = [
+                'collected' => round((float) ($pos['paid'] ?? 0), 2),
+                'due' => round((float) ($pos['due'] ?? 0), 2),
+            ];
+        }
+
+        return $out;
     }
 
     /**

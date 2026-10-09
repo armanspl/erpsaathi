@@ -261,7 +261,7 @@ class ErpFeeStructureController extends Controller
         ];
     }
 
-    /** Transport routes with stop fares — shown alongside faculty plans in the list. */
+    /** Transport routes with stop fares — shown alongside school-fee (Faculty) plans in the list. */
     private function presentTransportRoutes(Request $request): \Illuminate\Support\Collection
     {
         $query = TransportRoute::query()

@@ -343,18 +343,38 @@
                             </div>
                             <div>
                                 <label class="form-label">CL</label>
-                                <input v-model.number="form.cl" type="number" min="0" step="0.5" class="form-input" @input="onAttendanceInput('cl')" />
+                                <input
+                                    v-model.number="form.cl"
+                                    type="number"
+                                    min="0"
+                                    :step="clStep"
+                                    :max="clMaxAllowed"
+                                    class="form-input"
+                                    :class="clError ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/30' : ''"
+                                    @input="onAttendanceInput('cl')"
+                                />
                             </div>
                             <div>
-                                <label class="form-label">Present</label>
-                                <input v-model.number="form.present" type="number" min="0" step="0.5" class="form-input" @input="presentTouched = true" />
-                                <p class="mt-0.5 text-[11px] text-slate-400">Auto = Days − Absent − CL</p>
+                                <label class="form-label">Payable Days</label>
+                                <input v-model.number="form.present" type="number" min="0" step="0.5" class="form-input" readonly />
+                                <p class="mt-0.5 text-[11px] text-slate-400">Auto = Days − Absent (CL is paid leave)</p>
                             </div>
                             <div>
                                 <label class="form-label">ADV (advance)</label>
                                 <input v-model.number="form.advance" type="number" min="0" step="1" class="form-input" />
                                 <p v-if="slipAdvances.length" class="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">Advance paid {{ inr(slipAdvanceTotal) }}</p>
                             </div>
+                        </div>
+                        <div v-if="form.employee_id" class="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                            <div class="font-semibold">Casual Leave balance</div>
+                            <div v-if="loadingClBalance" class="mt-1 text-emerald-700/80 dark:text-emerald-300/80">Loading CL balance...</div>
+                            <dl v-else-if="clPreview" class="mt-1.5 grid gap-1 sm:grid-cols-3">
+                                <div><dt class="text-emerald-700/70 dark:text-emerald-300/70">CL Balance</dt><dd class="font-semibold">{{ formatDays(clPreview.yearly_remaining) }} / {{ formatDays(clPreview.yearly_entitlement) }}</dd></div>
+                                <div><dt class="text-emerald-700/70 dark:text-emerald-300/70">Monthly CL Used</dt><dd class="font-semibold">{{ formatDays(clPreview.monthly_used) }} / {{ formatDays(clPreview.monthly_limit) }}</dd></div>
+                                <div><dt class="text-emerald-700/70 dark:text-emerald-300/70">Monthly CL Remaining</dt><dd class="font-semibold">{{ formatDays(clPreview.monthly_remaining) }}</dd></div>
+                            </dl>
+                            <p v-else class="mt-1 text-emerald-700/80 dark:text-emerald-300/80">Select a staff member to see CL balance.</p>
+                            <p v-if="clError" class="mt-1.5 font-medium text-rose-600 dark:text-rose-400">{{ clError }}</p>
                         </div>
                         <div v-if="slipAdvances.length" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                             <div class="font-semibold">Advance already paid for {{ MONTHS[Number(form.month) - 1] }} {{ form.year }} — deducted as ADV</div>
@@ -369,15 +389,18 @@
                                 <button type="button" class="font-semibold underline" @click="form.advance = slipAdvanceTotal">Use {{ inr(slipAdvanceTotal) }}</button>
                             </p>
                         </div>
-                        <p v-if="daysOver" class="mt-2 text-xs text-rose-600 dark:text-rose-400">Present + Absent + CL is more than {{ form.days_in_month }} days.</p>
+                        <p v-if="daysOver" class="mt-2 text-xs text-rose-600 dark:text-rose-400">Absent cannot be more than {{ form.days_in_month }} days.</p>
+                        <p v-else-if="clOverPayable" class="mt-2 text-xs text-rose-600 dark:text-rose-400">CL cannot be more than {{ form.present }} payable days.</p>
 
                         <dl class="mt-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-xs sm:grid-cols-5 dark:bg-slate-800/60">
-                            <div><dt class="text-slate-400">Total days</dt><dd class="font-semibold text-slate-800 dark:text-slate-100">{{ calc.totalDays }}</dd></div>
+                            <div><dt class="text-slate-400">Total Days</dt><dd class="font-semibold text-slate-800 dark:text-slate-100">{{ form.days_in_month }}</dd></div>
+                            <div><dt class="text-slate-400">Payable Days</dt><dd class="font-semibold text-slate-800 dark:text-slate-100">{{ calc.totalDays }}</dd></div>
                             <div><dt class="text-slate-400">Per day</dt><dd class="font-semibold text-slate-800 dark:text-slate-100">{{ inr(calc.perDay) }}</dd></div>
                             <div><dt class="text-slate-400">This month salary</dt><dd class="font-semibold text-slate-800 dark:text-slate-100">{{ inr(calc.thisMonth) }}</dd></div>
                             <div><dt class="text-slate-400">ADV</dt><dd class="font-semibold text-slate-800 dark:text-slate-100">− {{ inr(form.advance || 0) }}</dd></div>
-                            <div><dt class="text-slate-400">G. Salary (net)</dt><dd class="text-base font-bold text-emerald-700 dark:text-emerald-400">{{ inr(calc.net) }}</dd></div>
+                            <div class="sm:col-span-5"><dt class="text-slate-400">G. Salary (net)</dt><dd class="text-base font-bold text-emerald-700 dark:text-emerald-400">{{ inr(calc.net) }}</dd></div>
                         </dl>
+                        <p class="mt-1.5 text-[11px] text-slate-400">Salary = Basic ÷ Days × Payable Days. Payable Days = Days − Absent. CL is paid leave and does not reduce salary.</p>
                     </div>
 
                     <!-- Optional extras -->
@@ -730,6 +753,9 @@ const form = reactive(blankForm());
 const presentTouched = ref(false);
 const people = reactive({ teacher: null, staff: null, driver: null });
 const loadingPeople = ref(false);
+const clBalance = ref(null);
+const clSettings = ref({ allow_half_day: false, monthly_limit: 2, yearly_limit: 12 });
+const loadingClBalance = ref(false);
 
 const payOpen = ref(false);
 const paying = ref(null);
@@ -739,22 +765,103 @@ const historyFor = ref(null);
 
 const staffOptions = computed(() => people[form.employee_type] || []);
 const calendarDays = computed(() => daysIn(form.year, form.month));
-const daysOver = computed(() => (Number(form.present) || 0) + (Number(form.absent) || 0) + (Number(form.cl) || 0) > (Number(form.days_in_month) || 0) + 0.001);
+const daysOver = computed(() => (Number(form.absent) || 0) > (Number(form.days_in_month) || 0) + 0.001);
+const clOverPayable = computed(() => (Number(form.cl) || 0) > (Number(form.present) || 0) + 0.001);
 
-/** Same formulas as the sheet (and SalaryMonthlyImportController::computeSlip). */
+/** Same formulas as SalaryMonthlyImportController::computeSlip — CL is paid leave. */
 const calc = computed(() => {
     const days = Math.max(1, Number(form.days_in_month) || 1);
     const basic = Number(form.basic_salary) || 0;
-    const totalDays = (Number(form.present) || 0) + (Number(form.cl) || 0);
-    const thisMonth = Math.round((basic / days) * totalDays * 100) / 100;
+    const payableDays = Math.max(0, days - (Number(form.absent) || 0));
+    const thisMonth = Math.round((basic / days) * payableDays * 100) / 100;
     const extra = form.earnings.reduce((s, r) => s + (Number(r.amount) || 0), 0) - form.deduction_items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     return {
-        totalDays,
+        totalDays: payableDays,
         perDay: Math.round((basic / days) * 100) / 100,
         thisMonth,
         net: Math.round((thisMonth + extra - (Number(form.advance) || 0)) * 100) / 100,
     };
 });
+
+const clStep = computed(() => (clSettings.value.allow_half_day ? 0.5 : 1));
+
+/** Live preview: remaining after the CL currently typed on the form. */
+const clPreview = computed(() => {
+    if (!clBalance.value) return null;
+    const entered = Math.max(0, Number(form.cl) || 0);
+    const yearlyRemaining = Math.max(0, Math.round((clBalance.value.yearly_remaining - entered) * 100) / 100);
+    const monthlyUsed = Math.round((clBalance.value.monthly_used + entered) * 100) / 100;
+    const monthlyRemaining = Math.max(0, Math.round((clBalance.value.monthly_remaining - entered) * 100) / 100);
+    return {
+        ...clBalance.value,
+        yearly_remaining: yearlyRemaining,
+        monthly_used: monthlyUsed,
+        monthly_remaining: monthlyRemaining,
+    };
+});
+
+const clMaxAllowed = computed(() => {
+    const payable = Math.max(0, (Number(form.days_in_month) || 0) - (Number(form.absent) || 0));
+    if (!clBalance.value) return payable;
+    return Math.min(
+        payable,
+        clBalance.value.monthly_remaining,
+        clBalance.value.yearly_remaining,
+    );
+});
+
+const clError = computed(() => {
+    const cl = Number(form.cl) || 0;
+    if (cl < 0) return 'CL cannot be negative.';
+    if (!clSettings.value.allow_half_day && Math.abs(cl - Math.round(cl)) > 0.001) {
+        return 'Half-day CL is not allowed. Enter a whole number of CL days.';
+    }
+    if (clSettings.value.allow_half_day && Math.abs((cl * 2) - Math.round(cl * 2)) > 0.001) {
+        return 'CL may be entered in half-day steps only (e.g. 0.5, 1, 1.5).';
+    }
+    const payable = Math.max(0, (Number(form.days_in_month) || 0) - (Number(form.absent) || 0));
+    if (cl > payable + 0.001) {
+        return `CL cannot be more than the ${payable} payable days in this month.`;
+    }
+    if (!clBalance.value || cl < 0.001) return '';
+    if (cl > clBalance.value.monthly_remaining + 0.001) {
+        const max = formatDays(clBalance.value.monthly_limit);
+        return `Monthly CL limit exceeded. Maximum ${max} CL days are allowed in this month.`;
+    }
+    if (cl > clBalance.value.yearly_remaining + 0.001) {
+        return 'Yearly CL balance exhausted. No CL days are remaining for this leave year.';
+    }
+    return '';
+});
+
+function formatDays(value) {
+    const n = Number(value) || 0;
+    return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+
+async function loadClBalance() {
+    if (!form.employee_id || !formOpen.value) {
+        clBalance.value = null;
+        return;
+    }
+    loadingClBalance.value = true;
+    try {
+        const { data } = await client.get('/finance-payroll/salary-slips/cl-balance', {
+            params: {
+                employee_type: form.employee_type,
+                employee_id: form.employee_id,
+                period: `${form.year}-${form.month}`,
+                exclude_slip_id: editing.value?.id || undefined,
+            },
+        });
+        clSettings.value = data.settings || clSettings.value;
+        clBalance.value = data.balance || null;
+    } catch {
+        clBalance.value = null;
+    } finally {
+        loadingClBalance.value = false;
+    }
+}
 
 function periodLabel(period) {
     if (!period) return '—';
@@ -829,7 +936,9 @@ async function loadPeople(type, force = false) {
     if (people[type] && !force) return;
     loadingPeople.value = true;
     try {
-        const { data } = await client.get('/finance-payroll/salary-slips/employees', { params: { type } });
+        const { data } = await client.get('/finance-payroll/salary-slips/employees', {
+            params: { type, period: `${form.year}-${form.month}` },
+        });
         people[type] = data;
     } catch {
         people[type] = [];
@@ -841,6 +950,7 @@ async function loadPeople(type, force = false) {
 
 function onStaffTypeChange() {
     form.employee_id = null;
+    clBalance.value = null;
     loadPeople(form.employee_type);
 }
 
@@ -850,23 +960,25 @@ function onMemberChange() {
     if (person && person.salary != null && !editing.value) {
         form.basic_salary = person.salary;
     }
+    loadClBalance();
 }
 
 /** Changing the month sets its number of days (and re-derives Present unless typed by hand). */
 function onMonthChange() {
     form.days_in_month = calendarDays.value;
     onAttendanceInput('days');
+    loadClBalance();
 }
 
 function onAttendanceInput() {
-    if (!presentTouched.value) {
-        form.present = Math.max(0, (Number(form.days_in_month) || 0) - (Number(form.absent) || 0) - (Number(form.cl) || 0));
-    }
+    // Payable days = Days − Absent. CL is paid leave and does not reduce payable days.
+    form.present = Math.max(0, (Number(form.days_in_month) || 0) - (Number(form.absent) || 0));
 }
 
 function openCreate() {
     editing.value = null;
     presentTouched.value = false;
+    clBalance.value = null;
     Object.assign(form, blankForm());
     formOpen.value = true;
     loadPeople(form.employee_type, true);
@@ -887,7 +999,7 @@ function openEdit(slip) {
         days_in_month: Number(slip.days_in_month) || daysIn(y, m),
         absent: Number(slip.absent) || 0,
         cl: Number(slip.cl) || 0,
-        present: slip.present != null ? Number(slip.present) : (Number(slip.days_in_month) || daysIn(y, m)),
+        present: Math.max(0, (Number(slip.days_in_month) || daysIn(y, m)) - (Number(slip.absent) || 0)),
         advance: Number(slip.advance) || 0,
         earnings: extraEarnings.map((r) => ({ ...r })),
         deduction_items: (slip.deduction_items || []).map((r) => ({ ...r })),
@@ -897,15 +1009,19 @@ function openEdit(slip) {
         paid_on: slip.paid_on ? String(slip.paid_on).slice(0, 10) : new Date().toISOString().slice(0, 10),
         remarks: slip.remarks || '',
     });
-    // Keep the stored Present as-is when editing an imported/old slip.
-    presentTouched.value = true;
+    presentTouched.value = false;
     formOpen.value = true;
     loadPeople(form.employee_type, true);
+    loadClBalance();
 }
 
 async function save() {
     if (!form.employee_id) {
         pushToast('Select a staff member.', 'error');
+        return;
+    }
+    if (clError.value) {
+        pushToast(clError.value, 'error');
         return;
     }
     saving.value = true;

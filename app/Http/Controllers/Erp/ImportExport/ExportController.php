@@ -14,6 +14,7 @@ use App\Models\ImportExportLog;
 use App\Models\Income;
 use App\Models\SalarySlip;
 use App\Models\Student;
+use App\Models\StudentFeeDiscountMonth;
 use App\Models\StudentSessionHistory;
 use App\Models\StudentTransport;
 use App\Models\TransportRoute;
@@ -1479,7 +1480,88 @@ class ExportController extends Controller
             $rows[] = $row;
         }
 
+        // Waived discount months — not payments. Shown on INCOME with ₹0 and REMARKS = Discount.
+        foreach ($this->incomeDiscountMonthRows($session, $allSessions, $headCodes) as $discountRow) {
+            $rows[] = $discountRow;
+        }
+
         return [$headers, $rows];
+    }
+
+    /**
+     * One INCOME row per student discount month (session-scoped). Amounts stay 0 — waiver only.
+     *
+     * @param  list<string>  $headCodes
+     * @return list<array<int, mixed>>
+     */
+    private function incomeDiscountMonthRows(?AcademicSession $session, bool $allSessions, array $headCodes): array
+    {
+        $query = StudentFeeDiscountMonth::query()
+            ->with([
+                'student:id,name,admission_no,address,address_line_2,school_class_id',
+                'student.schoolClass:id,name',
+                'academicSession:id,name,start_date,end_date',
+            ])
+            ->when(! $allSessions && $session, fn ($q) => $q->where('academic_session_id', $session->id));
+
+        $rows = [];
+        foreach ($query->get() as $disc) {
+            $student = $disc->student;
+            $sess = $disc->academicSession;
+            if (! $student || ! $sess) {
+                continue;
+            }
+
+            $monthNums = array_fill_keys($disc->monthNumbers(), true);
+            if ($monthNums === []) {
+                continue;
+            }
+
+            $address = trim(implode(' ', array_filter([
+                $student->address ?? null,
+                $student->address_line_2 ?? null,
+            ])));
+
+            foreach ($sess->months() as $month) {
+                $key = $month['key'] ?? null;
+                if (! is_string($key) || ! preg_match('/^\d{4}-\d{2}$/', $key)) {
+                    continue;
+                }
+                $num = (int) substr($key, 5, 2);
+                if (! isset($monthNums[$num])) {
+                    continue;
+                }
+
+                try {
+                    $dateObj = \Carbon\Carbon::createFromFormat('Y-m-d', $key.'-01')->startOfDay();
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $row = [
+                    $this->fiscalYearLabel($dateObj),
+                    $this->excelDateSerial($dateObj->copy()->startOfMonth()),
+                    $this->excelDateSerial($dateObj),
+                    $student->admission_no ?? '',
+                    $student->name ?? '',
+                    $address,
+                    $student->schoolClass->name ?? '',
+                ];
+                foreach ($headCodes as $_code) {
+                    $row[] = 0;
+                }
+                $row[] = 0; // OTHER
+                $row[] = 0; // GRAND TOTAL — not collected
+                $row[] = $sess->name ?? '';
+                $row[] = ''; // RECEIPT
+                $row[] = 'Discount'; // REMARKS
+                $row[] = 'Discount'; // PMNT MODE
+
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
     }
 
     /**

@@ -886,7 +886,7 @@ class FeeDueController extends Controller
             $total = collect($items)->sum('amount');
 
             return FeePayment::create([
-                'receipt_no' => $this->nextReceiptNo(),
+                'receipt_no' => FeePayment::nextReceiptNo($session),
                 'student_id' => $data['student_id'],
                 'academic_session_id' => $session->id,
                 'items' => $items,
@@ -988,21 +988,6 @@ class FeeDueController extends Controller
         }
 
         return 'Till '.$till->format('M Y');
-    }
-
-    private function nextReceiptNo(): string
-    {
-        $year = now()->year;
-        $prefix = "RCPT-{$year}-";
-        $last = FeePayment::where('receipt_no', 'like', $prefix.'%')
-            ->orderByDesc('id')
-            ->value('receipt_no');
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = ((int) $m[1]) + 1;
-        }
-
-        return $prefix.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 
     /** Header session picker label, same convention as ExportController. */

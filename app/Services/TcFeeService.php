@@ -178,7 +178,9 @@ class TcFeeService
             $head = $due->feeHead ?: FeeHead::find($due->fee_head_id);
 
             return FeePayment::create([
-                'receipt_no' => $this->nextReceiptNo(),
+                'receipt_no' => FeePayment::nextReceiptNo(
+                    $sessionId ? AcademicSession::find($sessionId) : null
+                ),
                 'student_id' => $student->id,
                 'academic_session_id' => $sessionId,
                 'items' => [[
@@ -392,20 +394,5 @@ class TcFeeService
         }
 
         return $mode;
-    }
-
-    private function nextReceiptNo(): string
-    {
-        $year = now()->year;
-        $prefix = "RCPT-{$year}-";
-        $last = FeePayment::where('receipt_no', 'like', $prefix.'%')
-            ->orderByDesc('id')
-            ->value('receipt_no');
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = ((int) $m[1]) + 1;
-        }
-
-        return $prefix.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 }

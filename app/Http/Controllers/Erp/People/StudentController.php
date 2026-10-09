@@ -18,8 +18,10 @@ use App\Models\Section;
 use App\Models\Student;
 use App\Models\StudentAdditionalDetail;
 use App\Models\StudentDocument;
+use App\Models\StudentFeeDiscountMonth;
 use App\Models\StudentSessionHistory;
 use App\Models\StudentUdiseDetail;
+use App\Services\FeeBalanceService;
 use App\Services\DefaultSchoolBranchService;
 use App\Services\TcFeeService;
 use Illuminate\Http\Request;
@@ -171,9 +173,9 @@ class StudentController extends Controller
         return response()->json($query->orderByDesc('admission_date')->orderByDesc('id')->get());
     }
 
-    public function show(Student $student)
+    public function show(Request $request, Student $student)
     {
-        return response()->json($this->loadRelations($student));
+        return response()->json($this->loadRelations($student, $request));
     }
 
     public function store(Request $request)
@@ -204,6 +206,7 @@ class StudentController extends Controller
             $this->saveUdiseDetail($student, $udiseData);
             $this->saveDocuments($student, $request);
             $this->saveSessionHistory($student, $request);
+            $this->saveFeeDiscountMonths($student, $request);
 
             return $student;
         });
@@ -211,7 +214,7 @@ class StudentController extends Controller
         AdmissionsCache::forget();
         PeopleCache::forget();
 
-        return response()->json($this->loadRelations($student), 201);
+        return response()->json($this->loadRelations($student, $request), 201);
     }
 
     public function update(Request $request, Student $student)
@@ -235,12 +238,13 @@ class StudentController extends Controller
             $this->saveUdiseDetail($student, $udiseData);
             $this->saveDocuments($student, $request);
             $this->saveSessionHistory($student, $request);
+            $this->saveFeeDiscountMonths($student, $request);
         });
 
         AdmissionsCache::forget();
         PeopleCache::forget();
 
-        return response()->json($this->loadRelations($student));
+        return response()->json($this->loadRelations($student, $request));
     }
 
     public function destroy(Student $student)
@@ -295,7 +299,7 @@ class StudentController extends Controller
         $student->update($data);
         AdmissionsCache::forget();
 
-        return response()->json($this->loadRelations($student));
+        return response()->json($this->loadRelations($student, $request));
     }
 
     /**
@@ -334,7 +338,7 @@ class StudentController extends Controller
         return response()->json(['success' => true]);
     }
 
-    private function loadRelations(Student $student): Student
+    private function loadRelations(Student $student, ?Request $request = null): Student
     {
         $student->load([
             'schoolClass:id,name', 'section:id,name,school_class_id', 'branch:id,name',
@@ -345,8 +349,77 @@ class StudentController extends Controller
         ]);
 
         $student->setAttribute('tc_certificate', $this->tcCertificateInfo($student));
+        $student->setAttribute('discount_months', $this->discountMonthsForRequest($student, $request));
 
         return $student;
+    }
+
+    /**
+     * Calendar month numbers (1–12) waived for the selected / current academic session.
+     *
+     * @return list<int>
+     */
+    private function discountMonthsForRequest(Student $student, ?Request $request = null): array
+    {
+        $session = AcademicSession::fromRequest($request, true);
+        if (! $session) {
+            return [];
+        }
+
+        return app(FeeBalanceService::class)->waiverMonthNumbers($student, $session);
+    }
+
+    /** Persist session-scoped discount months from the student form (JSON or array). */
+    private function saveFeeDiscountMonths(Student $student, Request $request): void
+    {
+        // Always save when the People > Students form posts this field (including empty = clear).
+        if (! $request->has('discount_months') && ! $request->exists('discount_months')) {
+            return;
+        }
+
+        $raw = $request->input('discount_months');
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : array_filter(array_map('trim', explode(',', $raw)));
+        }
+        if (! is_array($raw)) {
+            $raw = [];
+        }
+
+        $months = collect($raw)
+            ->map(fn ($m) => (int) $m)
+            ->filter(fn ($m) => $m >= 1 && $m <= 12)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $session = $request->filled('academic_session_id')
+            ? AcademicSession::find($request->input('academic_session_id'))
+            : AcademicSession::fromRequest($request, true);
+
+        if (! $session) {
+            return;
+        }
+
+        FeeBalanceService::flushRuntimeCache();
+
+        if ($months === []) {
+            StudentFeeDiscountMonth::query()
+                ->where('student_id', $student->id)
+                ->where('academic_session_id', $session->id)
+                ->delete();
+
+            return;
+        }
+
+        StudentFeeDiscountMonth::query()->updateOrCreate(
+            [
+                'student_id' => $student->id,
+                'academic_session_id' => $session->id,
+            ],
+            ['months' => $months]
+        );
     }
 
     /** The student's Transfer Certificate, if one has ever been issued — powers the TC info shown on People > Students > view. */

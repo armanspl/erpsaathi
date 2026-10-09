@@ -41,6 +41,12 @@ class SchoolSetting extends Model
         'established_year',
         'current_branch',
         'student_portal_visibility',
+        'cl_yearly_limit',
+        'cl_monthly_limit',
+        'cl_leave_year',
+        'cl_allow_carry_forward',
+        'cl_max_carry_forward',
+        'cl_allow_half_day',
     ];
 
     protected $appends = [
@@ -58,6 +64,11 @@ class SchoolSetting extends Model
             'signatures' => 'array',
             'stamps' => 'array',
             'student_portal_visibility' => 'array',
+            'cl_yearly_limit' => 'decimal:2',
+            'cl_monthly_limit' => 'decimal:2',
+            'cl_allow_carry_forward' => 'boolean',
+            'cl_max_carry_forward' => 'decimal:2',
+            'cl_allow_half_day' => 'boolean',
         ];
     }
 

@@ -13,6 +13,7 @@ use App\Models\Staff;
 use App\Models\Teacher;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
+use App\Services\Payroll\CasualLeavePolicy;
 use App\Services\Payroll\SalaryHistory;
 use App\Support\EmployeeCustomFields;
 use Illuminate\Http\Request;
@@ -76,6 +77,10 @@ class SalarySlipController extends Controller
             $columns[] = 'department';
         }
 
+        $period = $request->filled('period') && preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', (string) $request->string('period'))
+            ? (string) $request->string('period')
+            : now()->format('Y-m');
+
         return response()->json(
             $class::query()->orderByRaw("status = 'active' desc")->orderBy('name')
                 ->get($columns)
@@ -86,8 +91,31 @@ class SalarySlipController extends Controller
                     'status' => $e->status,
                     'salary' => $e->salary !== null ? (float) $e->salary : null,
                     'designation' => EmployeeCustomFields::get($e->custom_field_values, 'Designation') ?: ($data['type'] === 'staff' ? (string) $e->department : ''),
+                    'cl_balance' => CasualLeavePolicy::balance($data['type'], (int) $e->id, $period),
                 ])
         );
+    }
+
+    /** CL balance for Create Salary Slip / staff profiles. */
+    public function clBalance(Request $request)
+    {
+        $data = $request->validate([
+            'employee_type' => ['required', Rule::in(['teacher', 'staff', 'driver'])],
+            'employee_id' => 'required|integer',
+            'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'exclude_slip_id' => 'nullable|integer',
+        ]);
+        $this->assertEmployeeExists($data['employee_type'], (int) $data['employee_id']);
+
+        return response()->json([
+            'settings' => CasualLeavePolicy::settings(),
+            'balance' => CasualLeavePolicy::balance(
+                $data['employee_type'],
+                (int) $data['employee_id'],
+                $data['period'],
+                isset($data['exclude_slip_id']) ? (int) $data['exclude_slip_id'] : null,
+            ),
+        ]);
     }
 
     /** Create Salary Slip form — the same columns as a row of the school's salary sheet. */
@@ -232,11 +260,28 @@ class SalarySlipController extends Controller
         $data['days_in_month'] ??= cal_days_in_month(CAL_GREGORIAN, $month, $year);
         $data['absent'] = (float) ($data['absent'] ?? 0);
         $data['cl'] = (float) ($data['cl'] ?? 0);
-        $data['present'] = isset($data['present']) ? (float) $data['present'] : max(0, $data['days_in_month'] - $data['absent'] - $data['cl']);
+        // Payable days = Days − Absent. CL is paid leave and does not reduce salary days.
+        $data['present'] = max(0, $data['days_in_month'] - $data['absent']);
 
-        if ($data['present'] + $data['absent'] + $data['cl'] > $data['days_in_month'] + 0.001) {
-            throw ValidationException::withMessages(['present' => "Present + Absent + CL is more than the {$data['days_in_month']} days in this month."]);
+        if ($data['absent'] > $data['days_in_month'] + 0.001) {
+            throw ValidationException::withMessages(['absent' => "Absent cannot be more than the {$data['days_in_month']} days in this month."]);
         }
+        if ($data['cl'] > $data['present'] + 0.001) {
+            throw ValidationException::withMessages(['cl' => "CL cannot be more than the {$data['present']} payable days in this month."]);
+        }
+
+        $excludeSlipId = $request->route('salarySlip') instanceof SalarySlip
+            ? (int) $request->route('salarySlip')->id
+            : null;
+
+        CasualLeavePolicy::assertValid(
+            $data['employee_type'],
+            (int) $data['employee_id'],
+            $data['period'],
+            $data['cl'],
+            (int) $data['days_in_month'],
+            $excludeSlipId,
+        );
 
         return $data;
     }

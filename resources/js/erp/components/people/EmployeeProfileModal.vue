@@ -22,6 +22,35 @@
 
             <!-- Body -->
             <div class="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+                <section>
+                    <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Casual Leave</h3>
+                    <dl class="grid grid-cols-1 gap-x-6 gap-y-2.5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 sm:grid-cols-2 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                        <template v-if="loadingCl">
+                            <div class="sm:col-span-2 text-sm text-emerald-800/80 dark:text-emerald-200/80">Loading CL balance...</div>
+                        </template>
+                        <template v-else-if="clBalance">
+                            <div>
+                                <dt class="text-xs text-emerald-700/70 dark:text-emerald-300/70">Yearly entitlement</dt>
+                                <dd class="mt-0.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{{ formatCl(clBalance.yearly_entitlement) }} days</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs text-emerald-700/70 dark:text-emerald-300/70">CL used</dt>
+                                <dd class="mt-0.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{{ formatCl(clBalance.yearly_used) }} days</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs text-emerald-700/70 dark:text-emerald-300/70">CL remaining</dt>
+                                <dd class="mt-0.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300">{{ formatCl(clBalance.yearly_remaining) }} / {{ formatCl(clBalance.yearly_entitlement) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs text-emerald-700/70 dark:text-emerald-300/70">This month</dt>
+                                <dd class="mt-0.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{{ formatCl(clBalance.monthly_used) }} used · {{ formatCl(clBalance.monthly_remaining) }} left (limit {{ formatCl(clBalance.monthly_limit) }})</dd>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div class="sm:col-span-2 text-sm text-slate-500">CL balance unavailable.</div>
+                        </template>
+                    </dl>
+                </section>
                 <section v-for="section in sections" :key="section.title">
                     <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{{ section.title }}</h3>
                     <dl class="grid grid-cols-1 gap-x-6 gap-y-2.5 rounded-xl border border-slate-200 p-3.5 sm:grid-cols-2 dark:border-slate-700">
@@ -45,7 +74,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import client from '../../api/client';
 import { statusBadgeClass } from '../../utils/colors';
 import { normalizeCustomFields } from '../../utils/customFields';
 
@@ -57,6 +87,39 @@ const props = defineProps({
     canEdit: { type: Boolean, default: true },
 });
 const emit = defineEmits(['close', 'edit']);
+
+const clBalance = ref(null);
+const loadingCl = ref(false);
+
+function formatCl(value) {
+    const n = Number(value) || 0;
+    return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+
+async function loadClBalance() {
+    if (!props.open || !props.person?.id) {
+        clBalance.value = null;
+        return;
+    }
+    loadingCl.value = true;
+    try {
+        const period = new Date().toISOString().slice(0, 7);
+        const { data } = await client.get('/finance-payroll/salary-slips/cl-balance', {
+            params: {
+                employee_type: props.type,
+                employee_id: props.person.id,
+                period,
+            },
+        });
+        clBalance.value = data.balance || null;
+    } catch {
+        clBalance.value = null;
+    } finally {
+        loadingCl.value = false;
+    }
+}
+
+watch(() => [props.open, props.person?.id, props.type], loadClBalance, { immediate: true });
 
 function onKeydown(event) {
     if (event.key === 'Escape' && props.open) emit('close');

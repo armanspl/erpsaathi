@@ -142,6 +142,12 @@ class Student extends Model implements AuthenticatableContract
         return $this->hasMany(StudentSessionHistory::class);
     }
 
+    /** Session-scoped months where fee is fully waived (not a payment). */
+    public function feeDiscountMonths(): HasMany
+    {
+        return $this->hasMany(StudentFeeDiscountMonth::class);
+    }
+
     /** Optional/elective subjects this student is enrolled in, per academic session — see StudentSubjectEnrollmentService. */
     public function subjectEnrollments(): HasMany
     {

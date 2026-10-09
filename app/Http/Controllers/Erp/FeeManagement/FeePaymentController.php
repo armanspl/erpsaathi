@@ -231,6 +231,23 @@ class FeePaymentController extends Controller
             $calc['breakdown'] ?? [],
             $paidByHead
         );
+        $waivedMonths = $balance->waivedMonthKeys($student, $session);
+
+        // Month-aware totals through current month so discount months reduce due (not fake payments).
+        $monthKeys = [];
+        if ($session) {
+            $monthKeys = $balance->filterMonthsFromFeeStart(
+                $student,
+                collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all()
+            );
+            $now = now()->format('Y-m');
+            $monthKeys = array_values(array_filter($monthKeys, fn ($k) => (string) $k <= $now));
+            $remaining = $balance->remainingForMonths($student, $session, $monthKeys, $calc, $paidByHead);
+            $calc['total_fee'] = $remaining['charge'];
+            $calc['total_discount'] = $remaining['discount'];
+            $calc['total_paid'] = $remaining['paid'];
+            $calc['due'] = $remaining['due'];
+        }
 
         $transportHead = FeeHead::query()->firstOrCreate(
             ['name' => 'Transport'],
@@ -240,6 +257,8 @@ class FeePaymentController extends Controller
         return response()->json([
             ...$calc,
             'paid_months' => $paidMonths,
+            'waived_months' => $waivedMonths,
+            'discount_months' => $balance->waiverMonthNumbers($student, $session),
             'paid_by_head' => $paidByHead['totals'],
             'paid_by_head_discount' => $paidByHead['discounts'],
             'paid_by_head_month' => $paidByHead['by_month'],
@@ -489,7 +508,7 @@ class FeePaymentController extends Controller
         }
 
         $payment = FeePayment::create([
-            'receipt_no' => $this->nextReceiptNo($session),
+            'receipt_no' => FeePayment::nextReceiptNo($session),
             'student_id' => $data['student_id'],
             'academic_session_id' => $session->id,
             'items' => $items->values()->all(),
@@ -947,13 +966,4 @@ class FeePaymentController extends Controller
         ];
     }
 
-    private function nextReceiptNo(?AcademicSession $session = null): string
-    {
-        $sessionDigits = $session ? preg_replace('/\D+/', '', (string) $session->name) : '';
-        $token = $sessionDigits !== '' ? $sessionDigits : now()->format('Y');
-        $prefix = "RCP-{$token}-";
-        $count = FeePayment::where('receipt_no', 'like', $prefix.'%')->count() + 1;
-
-        return sprintf('%s%05d', $prefix, $count);
-    }
 }

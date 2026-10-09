@@ -279,6 +279,61 @@
 
                 <button type="button" class="btn-primary" :disabled="saving" @click="saveTemplates">{{ saving ? 'Saving...' : 'Save templates & signatures' }}</button>
             </div>
+
+            <!-- CASUAL LEAVE -->
+            <form v-show="tab === 'cl'" class="space-y-5" @submit.prevent="saveCl">
+                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Casual Leave (CL) Settings</h2>
+                    <p class="mt-1 text-xs text-slate-500">These limits apply to teachers, staff and drivers when creating salary slips. CL balance is tracked from saved salary slips.</p>
+                    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label">Yearly CL Limit</label>
+                            <input v-model.number="form.cl_yearly_limit" type="number" min="0" max="366" step="0.5" class="form-input" required />
+                            <p class="mt-1 text-[11px] text-slate-400">Maximum CL days per staff member in one leave year (e.g. 12).</p>
+                        </div>
+                        <div>
+                            <label class="form-label">Monthly CL Limit</label>
+                            <input v-model.number="form.cl_monthly_limit" type="number" min="0" max="31" step="0.5" class="form-input" required />
+                            <p class="mt-1 text-[11px] text-slate-400">Maximum CL that can be used in one month (e.g. 2).</p>
+                        </div>
+                        <div>
+                            <label class="form-label">Leave Year</label>
+                            <select v-model="form.cl_leave_year" class="form-input">
+                                <option value="calendar">Calendar Year (January–December)</option>
+                                <option value="academic">Academic Session</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Allow Half Day CL</label>
+                            <select v-model="form.cl_allow_half_day" class="form-input">
+                                <option :value="false">No — whole days only</option>
+                                <option :value="true">Yes — allow 0.5 day steps</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Allow Carry Forward</label>
+                            <select v-model="form.cl_allow_carry_forward" class="form-input">
+                                <option :value="false">No</option>
+                                <option :value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Maximum Carry Forward</label>
+                            <input
+                                v-model.number="form.cl_max_carry_forward"
+                                type="number"
+                                min="0"
+                                max="366"
+                                step="0.5"
+                                class="form-input"
+                                :disabled="!form.cl_allow_carry_forward"
+                            />
+                            <p class="mt-1 text-[11px] text-slate-400">Used only when carry forward is enabled.</p>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary" :disabled="saving">{{ saving ? 'Saving...' : 'Save CL settings' }}</button>
+            </form>
         </template>
 
         <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFilePicked" />
@@ -296,6 +351,7 @@ const tabs = [
     { key: 'layout', label: 'Layout' },
     { key: 'navigation', label: 'Navigation' },
     { key: 'templates', label: 'Templates & Signatures' },
+    { key: 'cl', label: 'Casual Leave' },
 ];
 
 const tab = ref('general');
@@ -339,6 +395,12 @@ const form = reactive({
     compact_sidebar: false,
     signatures: [],
     stamps: [],
+    cl_yearly_limit: 12,
+    cl_monthly_limit: 2,
+    cl_leave_year: 'calendar',
+    cl_allow_carry_forward: false,
+    cl_max_carry_forward: 0,
+    cl_allow_half_day: false,
 });
 
 function applyData(data) {
@@ -348,6 +410,12 @@ function applyData(data) {
         stamps: (data.stamps || []).map((s) => ({ ...s })),
         show_watermark: data.show_watermark !== false,
         compact_sidebar: !!data.compact_sidebar,
+        cl_yearly_limit: data.cl_yearly_limit != null ? Number(data.cl_yearly_limit) : 12,
+        cl_monthly_limit: data.cl_monthly_limit != null ? Number(data.cl_monthly_limit) : 2,
+        cl_leave_year: data.cl_leave_year === 'academic' ? 'academic' : 'calendar',
+        cl_allow_carry_forward: !!data.cl_allow_carry_forward,
+        cl_max_carry_forward: data.cl_max_carry_forward != null ? Number(data.cl_max_carry_forward) : 0,
+        cl_allow_half_day: !!data.cl_allow_half_day,
     });
     if (data.current_branch) erpStore.currentBranch = data.current_branch;
     applySchoolSettings(data);
@@ -494,5 +562,17 @@ function saveTemplates(options = {}) {
             image_path: image_path || null,
         })),
     }, options);
+}
+
+function saveCl() {
+    return putPayload({
+        school_name: form.school_name,
+        cl_yearly_limit: Number(form.cl_yearly_limit) || 0,
+        cl_monthly_limit: Number(form.cl_monthly_limit) || 0,
+        cl_leave_year: form.cl_leave_year === 'academic' ? 'academic' : 'calendar',
+        cl_allow_carry_forward: !!form.cl_allow_carry_forward,
+        cl_max_carry_forward: form.cl_allow_carry_forward ? (Number(form.cl_max_carry_forward) || 0) : 0,
+        cl_allow_half_day: !!form.cl_allow_half_day,
+    });
 }
 </script>

@@ -82,12 +82,16 @@
         <!-- CLASS WISE -->
         <template v-else-if="activeTab.id === 'class-wise'">
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
                     <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100">Students</h2>
-                    <span class="text-xs text-slate-400">{{ classRows.length }} row(s)</span>
+                    <div class="flex flex-wrap items-center gap-3 text-xs">
+                        <span class="text-slate-400">{{ classRows.length }} row(s)</span>
+                        <span class="font-semibold text-emerald-700 dark:text-emerald-300">Collected ₹{{ money(classTotals.collected) }}</span>
+                        <span class="font-semibold text-amber-700 dark:text-amber-300">Due ₹{{ money(classTotals.due) }}</span>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[720px] text-left text-sm">
+                    <table class="w-full min-w-[920px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('admission_no')">Adm No {{ sortArrow('admission_no') }}</th>
@@ -96,10 +100,12 @@
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('roll_no')">Roll {{ sortArrow('roll_no') }}</th>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('father')">Father Name {{ sortArrow('father') }}</th>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('mobile')">Mobile {{ sortArrow('mobile') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort('collected')">Collected {{ sortArrow('collected') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort('due')">Due {{ sortArrow('due') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-if="!classRows.length"><td colspan="6" class="px-4 py-12 text-center text-slate-400">No students match these filters.</td></tr>
+                            <tr v-if="!classRows.length"><td colspan="8" class="px-4 py-12 text-center text-slate-400">No students match these filters.</td></tr>
                             <tr v-for="r in pagedClassRows" :key="r.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                 <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
                                 <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
@@ -107,6 +113,8 @@
                                 <td class="px-3 py-2.5 text-slate-500">{{ r.roll_no || '—' }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ r.father || '—' }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ r.mobile || '—' }}</td>
+                                <td class="px-3 py-2.5 text-right font-semibold text-emerald-700 dark:text-emerald-300">₹{{ money(r.collected) }}</td>
+                                <td class="px-3 py-2.5 text-right font-semibold" :class="r.due > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'">₹{{ money(r.due) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -141,7 +149,12 @@
                             :class="filters.area === a.value ? 'bg-primary-50 dark:bg-primary-500/10' : ''"
                             @click="filters.area = a.value"
                         >
-                            <span class="font-medium" :class="filters.area === a.value ? 'text-primary-700 dark:text-primary-300' : 'text-slate-700 dark:text-slate-200'">{{ a.label }}</span>
+                            <span class="min-w-0 flex-1">
+                                <span class="block font-medium" :class="filters.area === a.value ? 'text-primary-700 dark:text-primary-300' : 'text-slate-700 dark:text-slate-200'">{{ a.label }}</span>
+                                <span class="mt-0.5 block text-[11px] text-slate-400">
+                                    Collected ₹{{ money(a.collected) }} · Due ₹{{ money(a.due) }}
+                                </span>
+                            </span>
                             <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ a.count }} student(s)</span>
                         </button>
                     </li>
@@ -152,12 +165,16 @@
                 Click an address above to see its students.
             </div>
             <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
                     <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ selectedAreaLabel }}</h2>
-                    <span class="text-xs font-semibold text-slate-500 dark:text-slate-300">{{ areaRows.length }} student(s) from this address</span>
+                    <div class="flex flex-wrap items-center gap-3 text-xs">
+                        <span class="font-semibold text-slate-500 dark:text-slate-300">{{ areaRows.length }} student(s)</span>
+                        <span class="font-semibold text-emerald-700 dark:text-emerald-300">Collected ₹{{ money(areaTotals.collected) }}</span>
+                        <span class="font-semibold text-amber-700 dark:text-amber-300">Due ₹{{ money(areaTotals.due) }}</span>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[720px] text-left text-sm">
+                    <table class="w-full min-w-[880px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('admission_no')">Adm No {{ sortArrow2('admission_no') }}</th>
@@ -165,16 +182,20 @@
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('father')">Father Name {{ sortArrow2('father') }}</th>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('mobile')">Mobile {{ sortArrow2('mobile') }}</th>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('vehicle')">Vehicle {{ sortArrow2('vehicle') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('collected')">Collected {{ sortArrow2('collected') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort2('due')">Due {{ sortArrow2('due') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-if="!areaRows.length"><td colspan="5" class="px-4 py-12 text-center text-slate-400">No students at this address.</td></tr>
+                            <tr v-if="!areaRows.length"><td colspan="7" class="px-4 py-12 text-center text-slate-400">No students at this address.</td></tr>
                             <tr v-for="r in pagedAreaRows" :key="r.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                 <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
                                 <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ r.father || '—' }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ r.mobile || '—' }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ r.vehicle || '—' }}</td>
+                                <td class="px-3 py-2.5 text-right font-semibold text-emerald-700 dark:text-emerald-300">₹{{ money(r.collected) }}</td>
+                                <td class="px-3 py-2.5 text-right font-semibold" :class="r.due > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'">₹{{ money(r.due) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -195,7 +216,7 @@
 
         <!-- FATHER WISE -->
         <template v-else-if="activeTab.id === 'father-wise'">
-            <p class="text-xs text-slate-400">Only guardians with two or more children currently studying are listed. Due is the automatic outstanding balance up to the current month for the selected session.</p>
+            <p class="text-xs text-slate-400">Only true sibling groups are listed: same father plus a shared mother and/or address. Students linked to the same father but with a different mother/address are kept out. Collected and due are up to the current month for the selected session.</p>
             <div v-if="!fathers.length" class="rounded-2xl border border-dashed border-slate-300 px-4 py-16 text-center text-sm text-slate-400 dark:border-slate-700">
                 No guardian has two or more enrolled children.
             </div>
@@ -205,16 +226,28 @@
                         <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ f.father }}</h2>
                         <p class="text-xs text-slate-400"><span v-if="f.phone">{{ f.phone }} · </span>{{ f.children_count }} children</p>
                     </div>
-                    <span class="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">Total due ₹{{ money(f.total_due) }}</span>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span
+                            class="rounded-full px-2.5 py-1 text-xs font-semibold"
+                            :class="f.address_match ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'"
+                        >
+                            {{ f.address_match ? 'Address match' : 'Address mismatch' }}
+                        </span>
+                        <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Collected ₹{{ money(f.total_collected) }}</span>
+                        <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">Due ₹{{ money(f.total_due) }}</span>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[560px] text-left text-sm">
+                    <table class="w-full min-w-[860px] text-left text-sm">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('admission_no')">Adm No {{ sortArrow3('admission_no') }}</th>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('name')">Name {{ sortArrow3('name') }}</th>
                                 <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('school_class')">Class {{ sortArrow3('school_class') }}</th>
-                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('due')">Dues {{ sortArrow3('due') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('mother')">Mother {{ sortArrow3('mother') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('address')">Address {{ sortArrow3('address') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('collected')">Collected {{ sortArrow3('collected') }}</th>
+                                <th class="cursor-pointer whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort3('due')">Due {{ sortArrow3('due') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -222,7 +255,10 @@
                                 <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ c.admission_no }}</td>
                                 <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ c.name }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ c.school_class || '—' }}</td>
-                                <td class="px-3 py-2.5 font-semibold" :class="c.due > 0 ? 'text-teal-600' : 'text-slate-400'">₹{{ money(c.due) }}</td>
+                                <td class="px-3 py-2.5 text-slate-500">{{ c.mother || '—' }}</td>
+                                <td class="max-w-[220px] px-3 py-2.5 text-slate-500" :class="!f.address_match ? 'text-rose-600 dark:text-rose-300' : ''">{{ c.address || '—' }}</td>
+                                <td class="px-3 py-2.5 text-right font-semibold text-emerald-700 dark:text-emerald-300">₹{{ money(c.collected) }}</td>
+                                <td class="px-3 py-2.5 text-right font-semibold" :class="c.due > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'">₹{{ money(c.due) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -252,29 +288,38 @@
                         <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ v.vehicle_no }}<span v-if="v.type" class="ml-1 font-normal text-slate-400">· {{ v.type }}</span></h2>
                         <p class="text-xs text-slate-400"><span v-if="v.driver">{{ v.driver }}<span v-if="v.driver_phone"> · {{ v.driver_phone }}</span> · </span>{{ v.trip_count }} trip(s) · {{ v.student_count }} student(s)</p>
                     </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <span class="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Collected ₹{{ money(v.total_collected) }}</span>
+                        <span class="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">Due ₹{{ money(v.total_due) }}</span>
+                    </div>
                 </div>
                 <div v-if="!v.trips.length" class="px-4 py-6 text-center text-xs text-slate-400">No routes assigned to this vehicle.</div>
                 <div v-for="t in v.trips" :key="t.trip_no" class="border-t border-slate-100 first:border-t-0 dark:border-slate-800">
-                    <div class="bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
-                        Trip {{ t.trip_no }} — {{ t.route }}<span v-if="t.route_code" class="text-slate-400"> ({{ t.route_code }})</span> · {{ t.student_count }} student(s)
+                    <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
+                        <span>Trip {{ t.trip_no }} — {{ t.route }}<span v-if="t.route_code" class="text-slate-400"> ({{ t.route_code }})</span> · {{ t.student_count }} student(s)</span>
+                        <span class="normal-case tracking-normal text-slate-500">Collected ₹{{ money(t.total_collected) }} · Due ₹{{ money(t.total_due) }}</span>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full min-w-[560px] text-left text-sm">
+                        <table class="w-full min-w-[720px] text-left text-sm">
                             <thead class="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                                 <tr>
                                     <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('admission_no')">Adm No {{ sortArrow4('admission_no') }}</th>
                                     <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('name')">Name {{ sortArrow4('name') }}</th>
                                     <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('school_class')">Class {{ sortArrow4('school_class') }}</th>
                                     <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('stop')">Stop {{ sortArrow4('stop') }}</th>
+                                    <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('collected')">Collected {{ sortArrow4('collected') }}</th>
+                                    <th class="cursor-pointer whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold uppercase text-slate-500" @click="toggleSort4('due')">Due {{ sortArrow4('due') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                                <tr v-if="!t.students.length"><td colspan="4" class="px-4 py-6 text-center text-slate-400">No students on this trip.</td></tr>
+                                <tr v-if="!t.students.length"><td colspan="6" class="px-4 py-6 text-center text-slate-400">No students on this trip.</td></tr>
                                 <tr v-for="s in sortedTripStudents(t)" :key="s.admission_no" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                     <td class="px-3 py-2.5 font-mono text-xs text-slate-500">{{ s.admission_no }}</td>
                                     <td class="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</td>
                                     <td class="px-3 py-2.5 text-slate-500">{{ s.school_class || '—' }}</td>
                                     <td class="px-3 py-2.5 text-slate-500">{{ s.stop || '—' }}</td>
+                                    <td class="px-3 py-2.5 text-right font-semibold text-emerald-700 dark:text-emerald-300">₹{{ money(s.collected) }}</td>
+                                    <td class="px-3 py-2.5 text-right font-semibold" :class="s.due > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'">₹{{ money(s.due) }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -327,8 +372,10 @@ const sections = ref([]);
 const filters = reactive({ branch_id: null, school_class_id: null, section_id: null, search: '', area: null });
 
 const classRows = ref([]);
+const classTotals = reactive({ collected: 0, due: 0 });
 const areaOptions = ref([]);
 const areaRows = ref([]);
+const areaTotals = reactive({ collected: 0, due: 0 });
 const fathers = ref([]);
 const vehicles = ref([]);
 
@@ -476,10 +523,14 @@ async function reload() {
         const { data } = await client.get(tab.endpoint, { params: currentParams() });
         if (tab.id === 'class-wise') {
             classRows.value = data.rows || [];
+            classTotals.collected = data.total_collected ?? classRows.value.reduce((s, r) => s + Number(r.collected || 0), 0);
+            classTotals.due = data.total_due ?? classRows.value.reduce((s, r) => s + Number(r.due || 0), 0);
             classPage.value = 1;
         } else if (tab.id === 'area-wise') {
             areaOptions.value = data.areas || [];
             areaRows.value = data.rows || [];
+            areaTotals.collected = data.total_collected ?? areaRows.value.reduce((s, r) => s + Number(r.collected || 0), 0);
+            areaTotals.due = data.total_due ?? areaRows.value.reduce((s, r) => s + Number(r.due || 0), 0);
             areaPage.value = 1;
         } else if (tab.id === 'father-wise') {
             fathers.value = data.fathers || [];

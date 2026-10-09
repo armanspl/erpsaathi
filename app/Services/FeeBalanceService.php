@@ -7,6 +7,7 @@ use App\Models\FeeHead;
 use App\Models\FeePayment;
 use App\Models\ManualFeeDue;
 use App\Models\Student;
+use App\Models\StudentFeeDiscountMonth;
 use App\Models\StudentTransport;
 
 /**
@@ -22,11 +23,18 @@ class FeeBalanceService
 
     private static bool $transportWarmed = false;
 
+    /** @var array<string, list<int>> studentId:sessionId => calendar month numbers (1–12) */
+    private static array $waiverMonthsByKey = [];
+
+    private static bool $waiverWarmed = false;
+
     public static function flushRuntimeCache(): void
     {
         self::$transportByStudent = [];
         self::$transportHeadId = null;
         self::$transportWarmed = false;
+        self::$waiverMonthsByKey = [];
+        self::$waiverWarmed = false;
     }
 
     /**
@@ -60,6 +68,109 @@ class FeeBalanceService
 
         self::$transportHeadId = (int) (FeeHead::query()->where('name', 'Transport')->value('id') ?? 0);
         self::$transportWarmed = true;
+
+        $sessionIds = collect($sessions instanceof AcademicSession ? [$sessions] : ($sessions ?? []))
+            ->pluck('id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $this->warmWaiverMonths($studentIds, $sessionIds);
+    }
+
+    /**
+     * Prefetch discount/waiver months for a cohort.
+     *
+     * @param  list<int>  $studentIds
+     * @param  list<int>  $sessionIds
+     */
+    public function warmWaiverMonths(array $studentIds, array $sessionIds): void
+    {
+        if ($studentIds === [] || $sessionIds === []) {
+            self::$waiverWarmed = true;
+
+            return;
+        }
+
+        foreach ($studentIds as $sid) {
+            foreach ($sessionIds as $sessId) {
+                self::$waiverMonthsByKey[$sid.':'.$sessId] = [];
+            }
+        }
+
+        $rows = StudentFeeDiscountMonth::query()
+            ->whereIn('student_id', $studentIds)
+            ->whereIn('academic_session_id', $sessionIds)
+            ->get(['student_id', 'academic_session_id', 'months']);
+
+        foreach ($rows as $row) {
+            self::$waiverMonthsByKey[$row->student_id.':'.$row->academic_session_id] = $row->monthNumbers();
+        }
+
+        self::$waiverWarmed = true;
+    }
+
+    /**
+     * Calendar month numbers (1–12) waived for this student in the session.
+     *
+     * @return list<int>
+     */
+    public function waiverMonthNumbers(Student $student, ?AcademicSession $session): array
+    {
+        if (! $session) {
+            return [];
+        }
+
+        $key = $student->id.':'.$session->id;
+        if (array_key_exists($key, self::$waiverMonthsByKey)) {
+            return self::$waiverMonthsByKey[$key];
+        }
+
+        $row = StudentFeeDiscountMonth::query()
+            ->where('student_id', $student->id)
+            ->where('academic_session_id', $session->id)
+            ->first();
+
+        $months = $row?->monthNumbers() ?? [];
+        self::$waiverMonthsByKey[$key] = $months;
+
+        return $months;
+    }
+
+    public function isMonthWaived(Student $student, ?AcademicSession $session, string $monthKey): bool
+    {
+        if (! $session || ! preg_match('/^\d{4}-\d{2}$/', $monthKey)) {
+            return false;
+        }
+
+        $monthNum = (int) substr($monthKey, 5, 2);
+
+        return in_array($monthNum, $this->waiverMonthNumbers($student, $session), true);
+    }
+
+    /**
+     * Y-m keys in the session that are configured as discount months (and after fee start).
+     *
+     * @return list<string>
+     */
+    public function waivedMonthKeys(Student $student, ?AcademicSession $session): array
+    {
+        if (! $session) {
+            return [];
+        }
+
+        $nums = array_fill_keys($this->waiverMonthNumbers($student, $session), true);
+        if ($nums === []) {
+            return [];
+        }
+
+        $keys = collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all();
+        $keys = $this->filterMonthsFromFeeStart($student, $keys);
+
+        return array_values(array_filter(
+            $keys,
+            fn ($k) => isset($nums[(int) substr((string) $k, 5, 2)])
+        ));
     }
 
     /** Y-m key from which this student is billable (fee start or admission month). */
@@ -294,6 +405,13 @@ class FeeBalanceService
         $paid = [];
 
         foreach (array_keys($monthKeys) as $monthKey) {
+            // Discount months are cleared for the student (not a payment) — treat as settled.
+            if ($this->isMonthWaived($student, $session, (string) $monthKey)) {
+                $paid[$monthKey] = true;
+
+                continue;
+            }
+
             $monthNum = (int) substr($monthKey, 5, 2);
             $required = 0.0;
             $got = 0.0;
@@ -423,7 +541,7 @@ class FeeBalanceService
 
         [$transportFare, $transportHeadId, $transportFeeStart] = $this->transportFareAndHead($student);
 
-        $applyUnit = static function (string $headKey, float $unit, ?string $monthKey) use (
+        $applyUnit = static function (string $headKey, float $unit, ?string $monthKey, bool $waive = false) use (
             &$charge,
             &$paid,
             &$discount,
@@ -443,6 +561,16 @@ class FeeBalanceService
                 $mPaid = (float) ($paidTotals[$headKey] ?? 0);
                 $mDisc = (float) ($paidDiscounts[$headKey] ?? 0);
             }
+
+            if ($waive) {
+                // Full month waiver: any real payment still counts as paid; remainder is discount (not income).
+                $fromPaid = min($mPaid, $unit);
+                $paid += $fromPaid;
+                $discount += max(0.0, $unit - $fromPaid);
+
+                return;
+            }
+
             $covered = min($unit, $mPaid + $mDisc);
             $fromPaid = min($mPaid, $covered);
             $fromDisc = max(0.0, $covered - $fromPaid);
@@ -452,6 +580,7 @@ class FeeBalanceService
 
         foreach ($monthKeys as $monthKey) {
             $monthNum = (int) substr($monthKey, 5, 2);
+            $waive = $this->isMonthWaived($student, $session, $monthKey);
 
             foreach ($breakdown as $plan) {
                 $freq = $normalizeFreq($plan);
@@ -466,14 +595,14 @@ class FeeBalanceService
                 }
 
                 if ($freq === 'monthly') {
-                    $applyUnit($headKey, $unit, $monthKey);
+                    $applyUnit($headKey, $unit, $monthKey, $waive);
                 } elseif ($freq === 'quarterly') {
                     if (in_array($monthNum, [4, 7, 10, 1], true)) {
-                        $applyUnit($headKey, $unit, $monthKey);
+                        $applyUnit($headKey, $unit, $monthKey, $waive);
                     }
                 } elseif (in_array($freq, ['annual', 'one_time'], true)) {
                     if ($firstBillableMonth && $monthKey === $firstBillableMonth) {
-                        $applyUnit($headKey, $unit, null);
+                        $applyUnit($headKey, $unit, null, $waive);
                     }
                 }
             }
@@ -484,7 +613,7 @@ class FeeBalanceService
                 && $this->transportAppliesInMonth($student, $monthKey, $transportFeeStart)
                 && ($headFilter === null || isset($headFilter[(int) $transportHeadId]))
             ) {
-                $applyUnit((string) $transportHeadId, $transportFare, $monthKey);
+                $applyUnit((string) $transportHeadId, $transportFare, $monthKey, $waive);
             }
         }
 
@@ -529,6 +658,7 @@ class FeeBalanceService
         $rows = [];
         foreach ($monthKeys as $monthKey) {
             $monthNum = (int) substr($monthKey, 5, 2);
+            $waive = $this->isMonthWaived($student, $session, $monthKey);
             $cats = [];
             $charge = 0.0;
             $paid = 0.0;
@@ -560,9 +690,15 @@ class FeeBalanceService
                     $mPaid = (float) ($paidByMonth[$headKey][$monthKey] ?? 0);
                     $mDisc = (float) ($discountByMonth[$headKey][$monthKey] ?? 0);
                 }
-                $covered = min($unit, $mPaid + $mDisc);
-                $fromPaid = min($mPaid, $covered);
-                $fromDisc = max(0.0, $covered - $fromPaid);
+
+                if ($waive) {
+                    $fromPaid = min($mPaid, $unit);
+                    $fromDisc = max(0.0, $unit - $fromPaid);
+                } else {
+                    $covered = min($unit, $mPaid + $mDisc);
+                    $fromPaid = min($mPaid, $covered);
+                    $fromDisc = max(0.0, $covered - $fromPaid);
+                }
 
                 $cats[$name] = ($cats[$name] ?? 0) + $unit;
                 $charge += $unit;
@@ -578,11 +714,38 @@ class FeeBalanceService
                 $headKey = (string) $transportHeadId;
                 $mPaid = (float) ($paidByMonth[$headKey][$monthKey] ?? 0);
                 $mDisc = (float) ($discountByMonth[$headKey][$monthKey] ?? 0);
-                $covered = min($transportFare, $mPaid + $mDisc);
+                if ($waive) {
+                    $fromPaid = min($mPaid, $transportFare);
+                    $fromDisc = max(0.0, $transportFare - $fromPaid);
+                } else {
+                    $covered = min($transportFare, $mPaid + $mDisc);
+                    $fromPaid = min($mPaid, $covered);
+                    $fromDisc = max(0.0, $covered - $fromPaid);
+                }
                 $cats['Transport'] = ($cats['Transport'] ?? 0) + $transportFare;
                 $charge += $transportFare;
-                $paid += min($mPaid, $covered);
-                $concession += max(0.0, $covered - min($mPaid, $covered));
+                $paid += $fromPaid;
+                $concession += $fromDisc;
+            }
+
+            $due = round(max(0, $charge - $paid - $concession), 2);
+            $status = 'Due';
+            if ($due <= 0.0001) {
+                if ($waive && $paid <= 0.0001) {
+                    $status = 'Waived';
+                } elseif ($waive && $paid > 0.0001) {
+                    $status = 'Waived';
+                } elseif ($paid > 0.0001 && $concession > 0.0001 && abs($paid - $charge) > 0.0001) {
+                    $status = 'Partial';
+                } elseif ($paid > 0.0001) {
+                    $status = 'Paid';
+                } elseif ($concession > 0.0001) {
+                    $status = 'Waived';
+                } else {
+                    $status = 'Paid';
+                }
+            } elseif ($paid > 0.0001 || $concession > 0.0001) {
+                $status = 'Partial';
             }
 
             $rows[] = [
@@ -591,7 +754,9 @@ class FeeBalanceService
                 'charge' => round($charge, 2),
                 'paid' => round($paid, 2),
                 'concession' => round($concession, 2),
-                'due' => round(max(0, $charge - $paid - $concession), 2),
+                'due' => $due,
+                'waived' => $waive,
+                'status' => $status,
                 'categories' => collect($cats)
                     ->map(fn ($amt, $name) => $name.': ₹'.number_format($amt, 0, '.', ','))
                     ->implode(', ') ?: '—',
@@ -647,9 +812,14 @@ class FeeBalanceService
                     $charge = $unit;
                     $mPaid = (float) ($paidTotals[$headKey] ?? 0);
                     $mDisc = (float) ($paidDiscounts[$headKey] ?? 0);
-                    $covered = min($unit, $mPaid + $mDisc);
-                    $paid = min($mPaid, $covered);
-                    $concession = max(0.0, $covered - $paid);
+                    if ($this->isMonthWaived($student, $session, $firstBillableMonth)) {
+                        $paid = min($mPaid, $unit);
+                        $concession = max(0.0, $unit - $paid);
+                    } else {
+                        $covered = min($unit, $mPaid + $mDisc);
+                        $paid = min($mPaid, $covered);
+                        $concession = max(0.0, $covered - $paid);
+                    }
                 }
             } else {
                 foreach ($monthKeys as $monthKey) {
@@ -657,12 +827,19 @@ class FeeBalanceService
                     if ($freq === 'quarterly' && ! in_array($monthNum, [4, 7, 10, 1], true)) {
                         continue;
                     }
+                    $waive = $this->isMonthWaived($student, $session, $monthKey);
                     $mPaid = (float) ($paidByMonth[$headKey][$monthKey] ?? 0);
                     $mDisc = (float) ($discountByMonth[$headKey][$monthKey] ?? 0);
-                    $covered = min($unit, $mPaid + $mDisc);
                     $charge += $unit;
-                    $paid += min($mPaid, $covered);
-                    $concession += max(0.0, $covered - min($mPaid, $covered));
+                    if ($waive) {
+                        $fromPaid = min($mPaid, $unit);
+                        $paid += $fromPaid;
+                        $concession += max(0.0, $unit - $fromPaid);
+                    } else {
+                        $covered = min($unit, $mPaid + $mDisc);
+                        $paid += min($mPaid, $covered);
+                        $concession += max(0.0, $covered - min($mPaid, $covered));
+                    }
                 }
             }
 
@@ -689,12 +866,19 @@ class FeeBalanceService
                 if (! $this->transportAppliesInMonth($student, $monthKey, $transportFeeStart)) {
                     continue;
                 }
+                $waive = $this->isMonthWaived($student, $session, $monthKey);
                 $mPaid = (float) ($paidByMonth[$headKey][$monthKey] ?? 0);
                 $mDisc = (float) ($discountByMonth[$headKey][$monthKey] ?? 0);
-                $covered = min($transportFare, $mPaid + $mDisc);
                 $charge += $transportFare;
-                $paid += min($mPaid, $covered);
-                $concession += max(0.0, $covered - min($mPaid, $covered));
+                if ($waive) {
+                    $fromPaid = min($mPaid, $transportFare);
+                    $paid += $fromPaid;
+                    $concession += max(0.0, $transportFare - $fromPaid);
+                } else {
+                    $covered = min($transportFare, $mPaid + $mDisc);
+                    $paid += min($mPaid, $covered);
+                    $concession += max(0.0, $covered - min($mPaid, $covered));
+                }
             }
             if ($charge > 0) {
                 $rows[] = [

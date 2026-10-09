@@ -8,7 +8,7 @@
             </div>
             <div class="rounded-lg bg-sky-50 p-3 text-center dark:bg-sky-500/10">
                 <p class="text-lg font-bold text-sky-600 dark:text-sky-400">₹{{ due.total_discount.toLocaleString('en-IN') }}</p>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">Discount</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Discount / Waiver</p>
             </div>
             <div class="rounded-lg bg-emerald-50 p-3 text-center dark:bg-emerald-500/10">
                 <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">₹{{ due.total_paid.toLocaleString('en-IN') }}</p>

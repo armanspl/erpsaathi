@@ -584,6 +584,7 @@ Route::prefix('finance-payroll')->name('finance-payroll.')->group(function () {
     Route::get('salary-structures', [SalaryStructureController::class, 'index'])->name('salary-structures.index');
     Route::get('salary-slips', [SalarySlipController::class, 'index'])->name('salary-slips.index');
     Route::get('salary-slips/employees', [SalarySlipController::class, 'employees'])->name('salary-slips.employees');
+    Route::get('salary-slips/cl-balance', [SalarySlipController::class, 'clBalance'])->name('salary-slips.cl-balance');
     Route::get('salary-history', [SalaryHistoryController::class, 'index'])->name('salary-history.index');
     Route::get('salary-history/{batchId}', [SalaryHistoryController::class, 'show'])->name('salary-history.show');
     Route::middleware('erp.permission:finance.manage|finance-and-payroll.salary-history.rollback')

@@ -504,6 +504,7 @@
                                             <th class="px-2 py-2 font-semibold uppercase text-slate-500">Paid</th>
                                             <th class="px-2 py-2 font-semibold uppercase text-slate-500">Concession</th>
                                             <th class="px-2 py-2 font-semibold uppercase text-slate-500">Due</th>
+                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Status</th>
                                             <th class="px-2 py-2 font-semibold uppercase text-slate-500">Categories</th>
                                         </tr>
                                     </thead>
@@ -514,10 +515,21 @@
                                             <td class="px-2 py-2">₹{{ money(m.paid) }}</td>
                                             <td class="px-2 py-2">₹{{ money(m.concession) }}</td>
                                             <td class="px-2 py-2 font-semibold text-teal-600">₹{{ money(m.due) }}</td>
+                                            <td class="px-2 py-2">
+                                                <span
+                                                    class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                                                    :class="{
+                                                        'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300': m.status === 'Paid',
+                                                        'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300': m.status === 'Waived',
+                                                        'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300': m.status === 'Partial',
+                                                        'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300': m.status === 'Due' || !m.status,
+                                                    }"
+                                                >{{ m.status || (m.due > 0 ? 'Due' : 'Paid') }}</span>
+                                            </td>
                                             <td class="px-2 py-2 text-slate-500">{{ m.categories }}</td>
                                         </tr>
                                         <tr v-if="!autoDetail.months.length">
-                                            <td colspan="6" class="px-2 py-6 text-center text-slate-400">No month rows for this scope.</td>
+                                            <td colspan="7" class="px-2 py-6 text-center text-slate-400">No month rows for this scope.</td>
                                         </tr>
                                     </tbody>
                                 </table>

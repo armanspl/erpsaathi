@@ -66,6 +66,12 @@ class SchoolSettingController extends Controller
             'stamps.*.id' => 'nullable|string|max:64',
             'stamps.*.label' => 'nullable|string|max:100',
             'stamps.*.image_path' => 'nullable|string|max:500',
+            'cl_yearly_limit' => 'nullable|numeric|min:0|max:366',
+            'cl_monthly_limit' => 'nullable|numeric|min:0|max:31',
+            'cl_leave_year' => 'nullable|in:calendar,academic',
+            'cl_allow_carry_forward' => 'nullable|boolean',
+            'cl_max_carry_forward' => 'nullable|numeric|min:0|max:366',
+            'cl_allow_half_day' => 'nullable|boolean',
         ]);
 
         $setting = SchoolSetting::current();

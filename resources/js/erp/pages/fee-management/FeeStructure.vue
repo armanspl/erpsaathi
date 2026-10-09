@@ -5,7 +5,7 @@
             <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                     <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Fee Structure</h1>
-                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Define faculty and transport fee structures for the session.</p>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Define school fee and transport fee structures for the session.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" class="btn-outline inline-flex items-center gap-1.5" @click="openCreate">
@@ -17,6 +17,20 @@
                     </button>
                 </div>
             </div>
+
+            <nav class="flex flex-wrap gap-6 border-b border-slate-200 dark:border-slate-800">
+                <button
+                    v-for="tab in structureTabs"
+                    :key="tab.id"
+                    type="button"
+                    class="relative -mb-px pb-3 text-sm font-medium transition"
+                    :class="activeTab === tab.id ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 hover:text-slate-600'"
+                    @click="activeTab = tab.id"
+                >
+                    {{ tab.label }}
+                    <span v-if="activeTab === tab.id" class="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary-600" />
+                </button>
+            </nav>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -49,7 +63,9 @@
                 </div>
 
                 <div v-if="loading" class="px-6 py-16 text-center text-sm text-slate-400">Loading...</div>
-                <div v-else-if="!sortedPlans.length" class="px-6 py-16 text-center text-sm text-slate-400">No fee structures yet. Create one to get started.</div>
+                <div v-else-if="!sortedPlans.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                    No {{ activeTab === 'Transport' ? 'transport' : 'school fee' }} structures yet. Create one to get started.
+                </div>
 
                 <table v-else class="w-full text-left text-sm">
                     <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
@@ -80,7 +96,7 @@
                                     </div>
                                 </td>
                                 <td class="px-4 py-3">
-                                    <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ plan.type }}</span>
+                                    <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ typeLabel(plan.type) }}</span>
                                 </td>
                                 <td class="max-w-xs truncate px-4 py-3 text-xs text-slate-500" :title="plan.scope_summary">{{ plan.scope_summary || '—' }}</td>
                                 <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
@@ -136,10 +152,20 @@
 
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <label class="form-label">Fee structure type</label>
-                <select v-model="form.type" class="form-input" @change="onTypeChange">
-                    <option value="Faculty">Faculty</option>
-                    <option value="Transport">Transport</option>
-                </select>
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        v-for="tab in structureTabs"
+                        :key="tab.id"
+                        type="button"
+                        class="rounded-lg border px-3 py-2 text-sm font-medium transition"
+                        :class="form.type === tab.id
+                            ? 'border-primary-600 bg-primary-50 text-primary-700 dark:border-primary-500 dark:bg-primary-500/10 dark:text-primary-300'
+                            : 'border-slate-200 text-slate-500 hover:border-slate-300 dark:border-slate-700 dark:text-slate-400'"
+                        @click="setFormType(tab.id)"
+                    >
+                        {{ tab.label }}
+                    </button>
+                </div>
             </div>
 
             <!-- Transport: select existing routes and set stop fees -->
@@ -379,6 +405,13 @@ const expanded = reactive({});
 const viewMode = ref('table');
 const sortKey = ref('title');
 const sortDir = ref('asc');
+/** API still uses Faculty; UI label is School Fee. */
+const activeTab = ref('Faculty');
+
+const structureTabs = [
+    { id: 'Faculty', label: 'School Fee' },
+    { id: 'Transport', label: 'Transport' },
+];
 
 const filters = reactive({ branch_id: null, school_class_id: null });
 const editingId = ref(null);
@@ -399,8 +432,15 @@ const viewModes = [
 
 const sessionFiltered = computed(() => plans.value.filter((p) => p.is_transport || matchesSelectedSession(p.academic_session?.name)));
 
+const tabFiltered = computed(() => {
+    if (activeTab.value === 'Transport') {
+        return sessionFiltered.value.filter((p) => p.is_transport || p.type === 'Transport');
+    }
+    return sessionFiltered.value.filter((p) => !p.is_transport && p.type !== 'Transport');
+});
+
 const sortedPlans = computed(() => {
-    const rows = [...sessionFiltered.value];
+    const rows = [...tabFiltered.value];
     rows.sort((a, b) => {
         let av = a[sortKey.value];
         let bv = b[sortKey.value];
@@ -416,6 +456,11 @@ const sortedPlans = computed(() => {
     });
     return rows;
 });
+
+function typeLabel(type) {
+    if (type === 'Faculty') return 'School Fee';
+    return type || '—';
+}
 
 function formatMoney(n) {
     return Number(n || 0).toLocaleString('en-IN');
@@ -585,11 +630,18 @@ async function onTypeChange() {
     }
 }
 
-function resetForm() {
+async function setFormType(type) {
+    if (form.type === type) return;
+    form.type = type;
+    activeTab.value = type;
+    await onTypeChange();
+}
+
+function resetForm(type = activeTab.value) {
     editingId.value = null;
     Object.assign(form, {
         academic_session_id: defaultSessionId(),
-        type: 'Faculty',
+        type: type === 'Transport' ? 'Transport' : 'Faculty',
         status: 'active',
         scopes: [],
         items: [{ label: '', amount: null, frequency: 'monthly' }],
@@ -597,14 +649,16 @@ function resetForm() {
     });
 }
 
-function openCreate() {
-    resetForm();
+async function openCreate() {
+    resetForm(activeTab.value);
     mode.value = 'edit';
+    await onTypeChange();
 }
 
 function openEdit(plan) {
     if (plan.is_transport) {
         editingId.value = null;
+        activeTab.value = 'Transport';
         Object.assign(form, {
             academic_session_id: defaultSessionId(),
             type: 'Transport',
@@ -633,6 +687,7 @@ function openEdit(plan) {
     }
 
     editingId.value = plan.id;
+    activeTab.value = plan.type === 'Transport' ? 'Transport' : 'Faculty';
     Object.assign(form, {
         academic_session_id: plan.academic_session_id,
         type: plan.type,

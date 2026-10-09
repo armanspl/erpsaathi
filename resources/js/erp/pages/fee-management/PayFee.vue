@@ -110,7 +110,8 @@
                                         @change="toggleMonth(m.key, $event.target.checked)"
                                     />
                                     <span>{{ m.label }}</span>
-                                    <span v-if="isMonthPaid(m.key)" class="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">(Paid)</span>
+                                    <span v-if="isMonthWaived(m.key)" class="rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">(Discount)</span>
+                                    <span v-else-if="isMonthPaid(m.key)" class="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">(Paid)</span>
                                     <span v-else-if="isMonthBeforeFeeStart(m.key)" class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">(Before start)</span>
                                 </label>
                             </div>
@@ -271,6 +272,7 @@ const student = ref(null);
 const due = ref(null);
 const loadingDue = ref(false);
 const paidMonths = ref([]);
+const waivedMonths = ref([]);
 const feeStartMonth = ref(null);
 const paidByHead = ref({});
 const paidByHeadDiscount = ref({});
@@ -394,8 +396,12 @@ function studentClassLabel(s) {
     return `${branch} / ${klass} / ${section}`;
 }
 
+function isMonthWaived(key) {
+    return waivedMonths.value.includes(key);
+}
+
 function isMonthPaid(key) {
-    return paidMonths.value.includes(key);
+    return paidMonths.value.includes(key) && !isMonthWaived(key);
 }
 
 function isMonthBeforeFeeStart(key) {
@@ -403,10 +409,11 @@ function isMonthBeforeFeeStart(key) {
 }
 
 function isMonthLocked(key) {
-    return isMonthPaid(key) || isMonthBeforeFeeStart(key);
+    return isMonthPaid(key) || isMonthWaived(key) || isMonthBeforeFeeStart(key);
 }
 
 function monthLabelClass(key) {
+    if (isMonthWaived(key)) return 'cursor-not-allowed text-sky-700 dark:text-sky-300';
     if (isMonthPaid(key)) return 'cursor-not-allowed text-emerald-600';
     if (isMonthBeforeFeeStart(key)) return 'cursor-not-allowed text-slate-400 line-through';
     return 'text-slate-700 dark:text-slate-200';
@@ -584,6 +591,7 @@ async function loadDue() {
     Object.keys(amounts).forEach((k) => delete amounts[k]);
     selectedMonths.value = [];
     paidMonths.value = [];
+    waivedMonths.value = [];
     feeStartMonth.value = null;
     paidByHead.value = {};
     paidByHeadDiscount.value = {};
@@ -608,6 +616,7 @@ async function loadDue() {
         const data = dueRes.data;
         due.value = data;
         paidMonths.value = Array.isArray(data.paid_months) ? data.paid_months : [];
+        waivedMonths.value = Array.isArray(data.waived_months) ? data.waived_months : [];
         feeStartMonth.value = data.fee_start_month || null;
         transportFeeStartMonth.value = data.transport_fee_start_month || null;
         paidByHead.value = data.paid_by_head && typeof data.paid_by_head === 'object' ? data.paid_by_head : {};
@@ -661,6 +670,7 @@ function clearStudent() {
     due.value = null;
     selectedMonths.value = [];
     paidMonths.value = [];
+    waivedMonths.value = [];
     feeStartMonth.value = null;
     paidByHead.value = {};
     paidByHeadDiscount.value = {};

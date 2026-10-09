@@ -236,6 +236,32 @@
                     <p class="mt-1 text-xs text-slate-400">Fees are charged only from this month onward.</p>
                 </div>
             </div>
+            <div>
+                <label class="form-label">Discount Months</label>
+                <p class="mb-2 text-xs text-slate-400">
+                    For the selected academic session, fee in these months is fully waived (₹0 payable). This is not a payment — collection stays ₹0.
+                </p>
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        v-for="m in discountMonthOptions"
+                        :key="m.value"
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition"
+                        :class="isDiscountMonthSelected(m.value)
+                            ? 'border-primary-600 bg-primary-50 text-primary-700 dark:border-primary-500 dark:bg-primary-500/10 dark:text-primary-300'
+                            : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300'"
+                        @click="toggleDiscountMonth(m.value)"
+                    >
+                        <span
+                            class="flex h-3.5 w-3.5 items-center justify-center rounded border text-[10px]"
+                            :class="isDiscountMonthSelected(m.value)
+                                ? 'border-primary-600 bg-primary-600 text-white'
+                                : 'border-slate-300 dark:border-slate-600'"
+                        >{{ isDiscountMonthSelected(m.value) ? '✓' : '' }}</span>
+                        {{ m.label }}
+                    </button>
+                </div>
+            </div>
 
             <!-- Family -->
             <h4 class="form-section-heading">Family</h4>
@@ -771,6 +797,7 @@ function blankForm() {
         gender: null, mobile: '', status: 'Active', father_id: null, mother_id: null, guardian_id: null,
         dob: '', blood_group: '', category: '', religion: '', nationality: '', aadhar_no: '', email: '',
         address: '', city: '', state: '', pincode: '', admission_date: '', fee_start_month: '',
+        discount_months: [],
         student_pen: '', name_as_per_aadhaar: '', admission_type: 'New', is_in_udise: false,
         house: '', family: '',
         height: null, weight: null, vision_left: '', vision_right: '', dental_hygiene: '',
@@ -786,6 +813,41 @@ function blankForm() {
 }
 
 const form = reactive(blankForm());
+
+const discountMonthOptions = [
+    { value: 1, label: 'January' },
+    { value: 2, label: 'February' },
+    { value: 3, label: 'March' },
+    { value: 4, label: 'April' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'June' },
+    { value: 7, label: 'July' },
+    { value: 8, label: 'August' },
+    { value: 9, label: 'September' },
+    { value: 10, label: 'October' },
+    { value: 11, label: 'November' },
+    { value: 12, label: 'December' },
+];
+
+function normalizeDiscountMonths(raw) {
+    return [...new Set(
+        (Array.isArray(raw) ? raw : [])
+            .map((m) => Number(m))
+            .filter((m) => m >= 1 && m <= 12),
+    )].sort((a, b) => a - b);
+}
+
+function isDiscountMonthSelected(month) {
+    return normalizeDiscountMonths(form.discount_months).includes(Number(month));
+}
+
+function toggleDiscountMonth(month) {
+    const value = Number(month);
+    const current = normalizeDiscountMonths(form.discount_months);
+    form.discount_months = current.includes(value)
+        ? current.filter((m) => m !== value)
+        : [...current, value].sort((a, b) => a - b);
+}
 
 // Held outside `form`/reactive() on purpose — Vue's reactive() deep-proxies nested objects,
 // and a Proxy-wrapped File fails native browser checks (e.g. FormData.append expects a real
@@ -1049,6 +1111,7 @@ function fillFormFromStudent(full) {
         pincode: full.pincode || '',
         admission_date: toDateInput(full.admission_date),
         fee_start_month: toMonthInput(full.fee_start_month) || toMonthInput(full.admission_date),
+        discount_months: normalizeDiscountMonths(full.discount_months),
         student_pen: full.udise_detail?.student_pen || detail.pen_no || '',
         name_as_per_aadhaar: full.udise_detail?.name_as_per_aadhaar || '',
         admission_type: full.udise_detail?.admission_type || 'New',
@@ -1123,6 +1186,8 @@ function buildFormData() {
     Object.entries(form).forEach(([key, value]) => {
         if (key === 'custom_field_values') {
             formData.append(key, JSON.stringify(value || {}));
+        } else if (key === 'discount_months') {
+            formData.append(key, JSON.stringify(normalizeDiscountMonths(value)));
         } else if (typeof value === 'boolean') {
             formData.append(key, value ? '1' : '0');
         } else {

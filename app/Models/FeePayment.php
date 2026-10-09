@@ -76,4 +76,56 @@ class FeePayment extends Model
     {
         return $this->hasMany(FeePaymentAudit::class)->latest('id');
     }
+
+    /**
+     * Next fee receipt number: RCP-{session}-{month}-{seq}
+     * Example: RCP-2026-27-10-0001 (academic year 2026-27, October, sequence 0001).
+     */
+    public static function nextReceiptNo(?AcademicSession $session = null): string
+    {
+        $session ??= AcademicSession::query()->where('is_current', true)->first();
+        $yearToken = static::sessionYearToken($session);
+        $month = now()->format('m');
+        $prefix = "RCP-{$yearToken}-{$month}-";
+
+        $max = 0;
+        foreach (static::query()->where('receipt_no', 'like', $prefix.'%')->pluck('receipt_no') as $no) {
+            if (preg_match('/(\d+)$/', (string) $no, $m)) {
+                $max = max($max, (int) $m[1]);
+            }
+        }
+
+        return $prefix.str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /** Academic year as YYYY-YY (e.g. 2026-27). */
+    public static function sessionYearToken(?AcademicSession $session): string
+    {
+        $name = trim((string) ($session?->name ?? ''));
+
+        if (preg_match('/^(\d{4})-(\d{4})$/', $name, $m)) {
+            return $m[1].'-'.substr($m[2], -2);
+        }
+        if (preg_match('/^(\d{4})-(\d{2})$/', $name, $m)) {
+            return $m[1].'-'.$m[2];
+        }
+
+        if ($session?->start_date) {
+            $startY = (int) $session->start_date->format('Y');
+            $endY = $session->end_date
+                ? (int) $session->end_date->format('Y')
+                : $startY + 1;
+
+            return sprintf('%04d-%02d', $startY, $endY % 100);
+        }
+
+        $year = (int) now()->format('Y');
+        $month = (int) now()->format('n');
+        // Indian academic year typically starts in April.
+        if ($month >= 4) {
+            return sprintf('%04d-%02d', $year, ($year + 1) % 100);
+        }
+
+        return sprintf('%04d-%02d', $year - 1, $year % 100);
+    }
 }
