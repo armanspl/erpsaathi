@@ -202,7 +202,10 @@ class TermResultCalculator
                     }
                 }
 
-                if ($any) {
+                // Drawing is kept on the subject list so Co-Scholastic "Drawing & Art" can
+                // mirror its grade, but it must not inflate OVERALL MARKS / % / rank.
+                $isDrawing = str_contains(mb_strtolower((string) $subject['subject_name']), 'drawing');
+                if ($any && ! $isDrawing) {
                     $obtained += $subjObt;
                     $maxTotal += $subjMax;
                 }

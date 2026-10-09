@@ -63,8 +63,11 @@ class ExamResultCalculator
                     $mark = $studentMarks->firstWhere('exam_schedule_id', $s->id);
                     $absent = (bool) ($mark?->is_absent);
                     $obt = $absent ? null : ($mark?->marks_obtained !== null ? (float) $mark->marks_obtained : null);
+                    $isDrawing = str_contains(mb_strtolower((string) ($s->subject->name ?? '')), 'drawing');
                     // Absent: preserve status, do not count as zero toward obtained or max.
-                    if (! $absent) {
+                    // Drawing stays on the subject list for Co-Scholastic mirroring, but is
+                    // excluded from OVERALL MARKS / % / rank (same as Term/Half Yearly PDFs).
+                    if (! $absent && ! $isDrawing) {
                         $maxTotal += (float) $s->max_marks;
                         if ($obt !== null) {
                             $obtained += $obt;

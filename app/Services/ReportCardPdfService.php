@@ -32,7 +32,14 @@ class ReportCardPdfService
         $sessionName = $this->shortSessionLabel($session?->name ?: ($school['session_year'] ?? ''));
 
         $escape = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
-        $subjects = collect($row['subjects'] ?? []);
+        // Keep Drawing available for Co-Scholastic "Drawing & Art", but never print it in the
+        // scholastic marks table / chart, and never let it feed OVERALL MARKS.
+        if (! isset($row['all_subjects'])) {
+            $row['all_subjects'] = $row['subjects'] ?? [];
+        }
+        $subjects = collect($row['subjects'] ?? [])
+            ->reject(fn ($s) => str_contains(mb_strtolower((string) ($s['subject_name'] ?? '')), 'drawing'))
+            ->values();
         $grades = GradeSystem::orderByDesc('min_percentage')->get();
         $isAnnual = ($row['format'] ?? '') === 'annual_term';
 
@@ -42,9 +49,21 @@ class ReportCardPdfService
         $className = $student?->schoolClass?->name ?? ($row['school_class_name'] ?? '—');
         $sectionName = $student?->section?->name ?? ($row['section_name'] ?? '—');
 
-        $obtained = (float) ($row['obtained'] ?? 0);
-        $maxTotal = (float) ($row['max_total'] ?? 0);
-        $percentage = (float) ($row['percentage'] ?? 0);
+        // OVERALL MARKS always match the printed (non-Drawing) scholastic table.
+        $obtained = 0.0;
+        $maxTotal = 0.0;
+        foreach ($subjects as $s) {
+            if (($s['marks_obtained'] ?? null) === null) {
+                continue;
+            }
+            $obtained += (float) $s['marks_obtained'];
+            $maxTotal += (float) ($s['max_marks'] ?? 0);
+        }
+        $percentage = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 2) : 0.0;
+        $gradeBand = $grades->first(fn ($g) => $percentage >= (float) $g->min_percentage);
+        if ($gradeBand) {
+            $row['grade'] = $gradeBand->grade;
+        }
         $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.');
 
         $classTeacher = $student?->school_class_id

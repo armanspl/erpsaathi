@@ -149,7 +149,10 @@ class AnnualReportCalculator
                     : null;
                 $overallMaxSubject = 100.0;
 
-                if ($overall !== null) {
+                // Drawing stays on the subject list for Co-Scholastic mirroring, but must not
+                // inflate OVERALL MARKS / % / rank on the annual report card.
+                $isDrawing = str_contains(mb_strtolower((string) $subject['subject_name']), 'drawing');
+                if ($overall !== null && ! $isDrawing) {
                     $overallObtained += $overall;
                     $overallMax += $overallMaxSubject;
                 }
@@ -430,6 +433,9 @@ class AnnualReportCalculator
             $hasTotal = false;
 
             foreach ($subjectRows as $subject) {
+                if (str_contains(mb_strtolower((string) ($subject['subject_name'] ?? '')), 'drawing')) {
+                    continue;
+                }
                 $block = collect($subject['terms'] ?? [])->firstWhere('term_id', $termId);
                 if (! $block) {
                     continue;

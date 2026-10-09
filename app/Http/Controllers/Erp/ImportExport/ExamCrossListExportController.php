@@ -101,9 +101,8 @@ class ExamCrossListExportController extends Controller
         // Subject columns come from the first row — every row in a single class/term shares the
         // same subject set (StudentSubjectEnrollmentService already filters optional subjects
         // per student before TermResultCalculator builds these rows). Drawing is left out of the
-        // printed subject columns here too, matching the Report Card's own marks table (its grade
-        // still feeds the Co-Scholastic "Drawing & Art" row there) — Total Marks/%age/Rank below
-        // still include it since those come straight from the already-computed row totals.
+        // printed subject columns and of Total Marks/%age/Rank — matching the Report Card
+        // (Drawing grade still feeds Co-Scholastic "Drawing & Art" there, not the marks total).
         $subjectNames = collect($rows[0]['subjects'] ?? [])
             ->pluck('subject_name')
             ->reject(fn ($name) => str_contains(mb_strtolower((string) $name), 'drawing'))
@@ -119,6 +118,7 @@ class ExamCrossListExportController extends Controller
         $studentIds = collect($rows)->pluck('student_id')->all();
         $attendance = $this->attendanceFor($studentIds, $term);
 
+        // Total Marks / %age / Rank already exclude Drawing (TermResultCalculator).
         usort($rows, fn ($a, $b) => (int) ($a['roll_no'] ?? PHP_INT_MAX) <=> (int) ($b['roll_no'] ?? PHP_INT_MAX));
 
         $sheetRows = [];
