@@ -161,15 +161,28 @@ class SchoolController extends Controller
         }
 
         try {
-            $provisioner->destroyCompletely($school);
+            $result = $provisioner->destroyCompletely($school);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 500);
         }
 
+        if (! ($result['db_dropped'] ?? true)) {
+            $db = $result['db_name'] ?? $school->db_name;
+
+            return response()->json([
+                'message' => "School removed from Super Admin, but MySQL user cannot DROP database `{$db}`. "
+                    ."As MySQL root run: DROP DATABASE IF EXISTS `{$db}`; "
+                    .'Also grant DROP for future schools, e.g. GRANT ALL ON `%_db`.* TO \'erpsaathi\'@\'localhost\';',
+                'db_dropped' => false,
+                'db_name' => $db,
+            ]);
+        }
+
         return response()->json([
             'message' => 'School permanently deleted. Tenant database and domain mappings removed.',
+            'db_dropped' => true,
         ]);
     }
 }

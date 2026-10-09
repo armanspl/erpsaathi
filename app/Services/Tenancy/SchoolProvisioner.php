@@ -180,6 +180,84 @@ class SchoolProvisioner
         DB::connection('master')->statement(
             "CREATE DATABASE IF NOT EXISTS `{$safe}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
         );
+
+        // CREATE DATABASE alone does not grant SELECT/INSERT on the new schema. On servers
+        // where the app user is not a full root (e.g. 'erpsaathi'@'localhost'), migrate then
+        // fails with "SELECT command denied … for table 'migrations'".
+        $this->grantTenantDatabaseAccess($safe);
+    }
+
+    /**
+     * Ensure the app MySQL account(s) can read/write the newly created school database.
+     */
+    protected function grantTenantDatabaseAccess(string $dbName): void
+    {
+        $accounts = [];
+
+        try {
+            $current = (string) (DB::connection('master')->selectOne('select current_user() as u')?->u ?? '');
+            if ($current !== '' && str_contains($current, '@')) {
+                $accounts[] = $current;
+            }
+        } catch (Throwable) {
+            //
+        }
+
+        foreach (['mysql', 'master'] as $connection) {
+            $user = (string) config("database.connections.{$connection}.username", '');
+            if ($user === '') {
+                continue;
+            }
+            // Cover the common MySQL host variants — localhost (socket) vs 127.0.0.1 (TCP)
+            // are different accounts. '%' covers remote app servers.
+            foreach (['localhost', '127.0.0.1', '%'] as $host) {
+                $accounts[] = $user.'@'.$host;
+            }
+        }
+
+        $accounts = array_values(array_unique($accounts));
+        $granted = false;
+        $lastError = null;
+
+        foreach ($accounts as $account) {
+            [$user, $host] = array_pad(explode('@', $account, 2), 2, 'localhost');
+            $user = str_replace('`', '``', $user);
+            $host = str_replace('`', '``', $host);
+            try {
+                DB::connection('master')->statement(
+                    "GRANT ALL PRIVILEGES ON `{$dbName}`.* TO `{$user}`@`{$host}`"
+                );
+                $granted = true;
+            } catch (Throwable $e) {
+                // Account may not exist for that host — try the next one.
+                $lastError = $e;
+            }
+        }
+
+        if ($granted) {
+            try {
+                DB::connection('master')->statement('FLUSH PRIVILEGES');
+            } catch (Throwable) {
+                // Some hosted MySQL setups disallow FLUSH; GRANT still applies.
+            }
+
+            return;
+        }
+
+        $hintUser = (string) (config('database.connections.mysql.username')
+            ?: config('database.connections.master.username')
+            ?: 'erpsaathi');
+
+        throw new \RuntimeException(
+            "MySQL user cannot access new school database `{$dbName}`. "
+            .'As a MySQL admin (root), run: '
+            ."GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$hintUser}'@'localhost'; "
+            ."GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$hintUser}'@'127.0.0.1'; "
+            .'FLUSH PRIVILEGES;'
+            .($lastError ? ' ('.$lastError->getMessage().')' : ''),
+            0,
+            $lastError
+        );
     }
 
     /**
@@ -302,14 +380,20 @@ class SchoolProvisioner
     /**
      * Permanently remove a school: drop tenant DB, delete master rows (domains cascade),
      * and remove tenant storage under storage/app/schools/{slug}.
+     *
+     * If the MySQL user lacks DROP privilege (common for limited accounts like erpsaathi),
+     * master registry + storage are still removed so failed schools can be cleared from
+     * Super Admin. The orphan DB name is returned for a root-level cleanup.
+     *
+     * @return array{db_dropped: bool, db_name: string}
      */
-    public function destroyCompletely(School $school): void
+    public function destroyCompletely(School $school): array
     {
         $dbName = (string) $school->db_name;
         $storagePath = $school->storage_path
             ?: (rtrim(config('tenancy.storage_root'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$school->slug);
 
-        $this->dropDatabase($dbName);
+        $dbDropped = $this->dropDatabase($dbName);
 
         DB::connection('master')->transaction(function () use ($school) {
             SchoolDomain::query()->where('school_id', $school->id)->delete();
@@ -317,9 +401,17 @@ class SchoolProvisioner
         });
 
         $this->removeTenantStorage($storagePath);
+
+        return [
+            'db_dropped' => $dbDropped,
+            'db_name' => $dbName,
+        ];
     }
 
-    protected function dropDatabase(string $dbName): void
+    /**
+     * @return bool true when the database was dropped (or never existed / already gone)
+     */
+    protected function dropDatabase(string $dbName): bool
     {
         $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $dbName);
         $masterDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string) config('database.connections.master.database'));
@@ -328,10 +420,30 @@ class SchoolProvisioner
             throw new \InvalidArgumentException('Refusing to drop an invalid or master database.');
         }
 
-        // Never drop the configured default app DB name unless it is clearly this school's db.
-        // (First school is already blocked above.)
+        try {
+            DB::connection('master')->statement("DROP DATABASE IF EXISTS `{$safe}`");
 
-        DB::connection('master')->statement("DROP DATABASE IF EXISTS `{$safe}`");
+            return true;
+        } catch (Throwable $e) {
+            // 1044 Access denied / 1227 privilege — limited app users often can CREATE but not DROP.
+            // Do not block Super Admin from removing a failed school from the registry.
+            if ($this->isMysqlPrivilegeError($e)) {
+                return false;
+            }
+
+            throw $e;
+        }
+    }
+
+    protected function isMysqlPrivilegeError(Throwable $e): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, '1044')
+            || str_contains($message, '1142')
+            || str_contains($message, '1227')
+            || str_contains($message, 'Access denied')
+            || str_contains($message, 'command denied');
     }
 
     protected function removeTenantStorage(string $path): void
