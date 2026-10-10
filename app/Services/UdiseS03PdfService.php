@@ -15,9 +15,47 @@ use Dompdf\Options;
  */
 class UdiseS03PdfService
 {
+    private const BASE_PT = 9.3;
+
+    private const MIN_PT = 5.0;
+
+    /** Below this single-line size, a two-line split is tried instead. */
+    private const TWO_LINE_BELOW_PT = 6.5;
+
+    /** Measured content width (pt) of each value cell, keyed by data-fit; null while measuring. */
+    private ?array $fitWidths = null;
+
+    private ?\Dompdf\FontMetrics $fontMetrics = null;
+
     public function __construct(private DocumentDataBuilder $dataBuilder) {}
 
     public function binary(Student $student, array $overrides = []): string
+    {
+        // Pass 1: lay the form out with empty values and measure every value cell.
+        $this->fitWidths = null;
+        $widths = [];
+        $measure = $this->makeDompdf();
+        $measure->setCallbacks([['event' => 'end_frame', 'f' => function ($frame) use (&$widths) {
+            $node = $frame->get_node();
+            if ($node instanceof \DOMElement && $node->hasAttribute('data-fit')) {
+                $widths[$node->getAttribute('data-fit')] = (float) $frame->get_content_box()['w'];
+            }
+        }]]);
+        $measure->loadHtml($this->html($student, $overrides));
+        $measure->render();
+
+        // Pass 2: real values, each shrunk only as far as its own cell needs.
+        $this->fitWidths = $widths;
+        $this->fontMetrics = $measure->getFontMetrics();
+        $dompdf = $this->makeDompdf();
+        $dompdf->loadHtml($this->html($student, $overrides));
+        $dompdf->render();
+        $this->fitWidths = null;
+
+        return $dompdf->output();
+    }
+
+    private function makeDompdf(): Dompdf
     {
         $options = new Options();
         $options->set('isRemoteEnabled', true);
@@ -25,11 +63,9 @@ class UdiseS03PdfService
         $options->set('isHtml5ParserEnabled', true);
 
         $dompdf = new Dompdf($options);
-        $dompdf->loadHtml($this->html($student, $overrides));
         $dompdf->setPaper('a4', 'portrait');
-        $dompdf->render();
 
-        return $dompdf->output();
+        return $dompdf;
     }
 
     public function streamDownload(Student $student, string $filename, array $overrides = [])
@@ -42,74 +78,81 @@ class UdiseS03PdfService
     }
 
     /**
-     * Shrinks font-size for long values so a single row never breaks the
-     * underline/box layout, instead of letting text overflow or wrap.
+     * Value cell whose font shrinks only when the full text is wider than the cell
+     * (width measured in pass 1); short values keep the normal size. Never truncates:
+     * if even MIN_PT is too wide, the text wraps inside the cell instead.
      */
-    private function fitSize(string $text, float $base = 9.3, int $threshold = 16, float $min = 7.2): float
-    {
-        $len = mb_strlen(trim($text));
-        if ($len <= $threshold) {
-            return $base;
-        }
-
-        $size = $base - ($len - $threshold) * 0.13;
-
-        return max($min, round($size, 1));
-    }
-
-    /** Inline style attr (only emitted when shrink is actually needed). */
-    private function fitStyle(string $rawText, float $base = 9.3, int $threshold = 16, float $min = 7.2): string
-    {
-        $size = $this->fitSize($rawText, $base, $threshold, $min);
-
-        return $size < $base ? ' style="font-size:'.$size.'pt"' : '';
-    }
-
-    /**
-     * Breaks long text into two lines at the nearest word boundary near $len,
-     * instead of shrinking font size indefinitely. Falls back to a hard break
-     * if no suitable space is found.
-     */
-    private function wrapTwoLines(string $text, int $len = 16): array
-    {
-        $text = trim($text);
-        if (mb_strlen($text) <= $len) {
-            return [$text];
-        }
-
-        $window = mb_substr($text, 0, $len + 1);
-        $breakAt = mb_strrpos($window, ' ');
-
-        // agar koi accha space nahi mila (ya bahut shuru mein hai), hard break kar do
-        if ($breakAt === false || $breakAt < (int) ($len * 0.5)) {
-            $breakAt = $len;
-        }
-
-        $first = trim(mb_substr($text, 0, $breakAt));
-        $second = trim(mb_substr($text, $breakAt));
-
-        return [$first, $second];
-    }
-
-    /**
-     * Builds the value HTML + inline style for a field that should wrap to
-     * two lines instead of shrinking when it exceeds $threshold characters.
-     *
-     * @return array{0: string, 1: string} [html, styleAttr]
-     */
-    private function wrapOrFit(callable $e, string $raw, int $threshold = 24, int $wrapLen = 16, float $base = 9.3, int $fitThreshold = 20): array
+    private function fitTd(string $key, string $raw, string $attrs = ' class="f-val"'): string
     {
         $raw = trim($raw);
-        $len = mb_strlen($raw);
+        $attrs .= ' data-fit="'.$key.'"';
 
-        if ($len > $threshold) {
-            $html = implode('<br>', array_map($e, $this->wrapTwoLines($raw, $wrapLen)));
-            $style = ' style="font-size:8pt; white-space:normal; overflow:visible; line-height:1.15;"';
-
-            return [$html, $style];
+        if ($this->fitWidths === null || $raw === '') {
+            return '<td'.$attrs.'>&nbsp;</td>';
         }
 
-        return [$e($raw), $this->fitStyle($raw, $base, $fitThreshold)];
+        $html = htmlspecialchars($raw, ENT_QUOTES, 'UTF-8');
+        $avail = $this->fitWidths[$key] ?? 0.0;
+        if ($avail <= 0 || ! $this->fontMetrics) {
+            return '<td'.$attrs.'>'.$html.'</td>';
+        }
+
+        $width = $this->textWidth($raw);
+        if ($width <= $avail) {
+            return '<td'.$attrs.'>'.$html.'</td>';
+        }
+
+        $size = $this->sizeFor($width, $avail);
+        if ($size >= self::TWO_LINE_BELOW_PT) {
+            return '<td'.$attrs.' style="font-size:'.$size.'pt;">'.$html.'</td>';
+        }
+
+        // Very long: two balanced lines at a larger size reads better than one tiny line.
+        $words = preg_split('/\s+/u', $raw);
+        $best = null;
+        for ($i = 1; $i < count($words); $i++) {
+            $lines = [implode(' ', array_slice($words, 0, $i)), implode(' ', array_slice($words, $i))];
+            $w = max($this->textWidth($lines[0]), $this->textWidth($lines[1]));
+            if ($best === null || $w < $best[0]) {
+                $best = [$w, $lines];
+            }
+        }
+        if ($best) {
+            $two = $this->sizeFor($best[0], $avail);
+            if ($two > $size && $two >= self::MIN_PT) {
+                $two = min($two, 7.5);
+                $lines = array_map(fn ($l) => htmlspecialchars($l, ENT_QUOTES, 'UTF-8'), $best[1]);
+
+                return '<td'.$this->twoLineAttrs($attrs).' style="font-size:'.$two.'pt;">'.implode('<br>', $lines).'</td>';
+            }
+        }
+
+        // Still too wide even at the minimum: wrap inside the cell rather than cut text.
+        return $size >= self::MIN_PT
+            ? '<td'.$attrs.' style="font-size:'.$size.'pt;">'.$html.'</td>'
+            : '<td'.$this->twoLineAttrs($attrs).' style="font-size:'.self::MIN_PT.'pt; word-wrap:break-word;">'.$html.'</td>';
+    }
+
+    private function twoLineAttrs(string $attrs): string
+    {
+        return str_replace('class="f-val"', 'class="f-val two"', $attrs);
+    }
+
+    /** Invisible first row that fixes the column widths (Dompdf ignores <col> widths). */
+    private function sizerRow(array $widthsPt): string
+    {
+        return '<tr class="sz">'.implode('', array_map(fn ($w) => '<td style="width:'.$w.'pt"></td>', $widthsPt)).'</tr>';
+    }
+
+    private function textWidth(string $text): float
+    {
+        return (float) $this->fontMetrics->getTextWidth($text, $this->fontMetrics->getFont('DejaVu Sans', 'normal'), self::BASE_PT);
+    }
+
+    /** Largest size (0.1pt steps, ≤ base) at which text $widthAtBase pt wide at BASE_PT fits $avail. */
+    private function sizeFor(float $widthAtBase, float $avail): float
+    {
+        return min(self::BASE_PT, floor(self::BASE_PT * ($avail * 0.97) / $widthAtBase * 10) / 10);
     }
 
     /** @param  array<string, mixed>  $overrides */
@@ -202,14 +245,10 @@ class UdiseS03PdfService
         $districtDisplay = strtoupper((string) $district);
         $blockDisplay = strtoupper((string) $block);
 
-        $existingRows = $this->detailRowsHtml($existing, $e);
-        $updatedRows = $this->detailRowsHtml($updated, $e);
-
-        // FOR strip Name: wraps to 2 lines instead of shrinking, same as the detail rows.
-        [$forNameHtml, $forNameStyle] = $this->wrapOrFit($e, (string) $forName, 24, 16, 9.3, 12);
+        $existingRows = $this->detailRowsHtml('ex', $existing, $e);
+        $updatedRows = $this->detailRowsHtml('up', $updated, $e);
 
         $cb = fn (bool $on) => $on ? '☑' : '☐';
-        $nb = fn (string $v) => $v !== '' ? $v : '&nbsp;';
 
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>
             @page { margin: 15mm 15mm 12mm; size: A4 portrait; }
@@ -236,7 +275,10 @@ class UdiseS03PdfService
             .box { border: 0.8pt solid #000; padding: 3pt 8pt; }
             table.fields { width: 100%; border-collapse: collapse; }
             table.fields td { border: none; padding: 5pt 2pt 3pt; font-size: 9.3pt; vertical-align: bottom; }
-            table.fields td.f-lbl { width: 40%; font-weight: bold; white-space: nowrap; }
+            table.fields td.f-lbl { width: 130pt; font-weight: bold; white-space: nowrap; }
+            /* Two-line / wrapped values stay within the normal single-line row height. */
+            table.meta td.f-val.two, table.fields td.f-val.two { line-height: 1.05; padding-top: 1pt; padding-bottom: 1pt; white-space: normal; }
+            tr.sz td { padding: 0 !important; height: 0; border: none !important; }
             .checks-row { margin-top: 2pt; }
             .chk-item { display: inline-block; margin-right: 26pt; font-size: 9.3pt; font-weight: bold; }
             .undertaking-body { font-size: 9pt; line-height: 1.3; margin: 3pt 0 0; }
@@ -256,44 +298,38 @@ class UdiseS03PdfService
             <div class="note">(To be filled by the Current School of the Student &amp; Submitted to Block/District Education Officer or Equivalent)</div>
 
             <table class="meta">
-                <colgroup>
-                    <col style="width:17%"><col style="width:16%"><col style="width:15%">
-                    <col style="width:15%"><col style="width:15%"><col style="width:22%">
-                </colgroup>
+                '.$this->sizerRow([87, 85, 88, 105, 40, 105]).'
                 <tr>
                     <td class="hdr-only" colspan="2">SUBMITTED BY</td>
                     <td class="f-lbl">Academic Year:</td>
-                    <td class="f-val" colspan="3"'.$this->fitStyle((string) $academicYear).'>'.$nb($e($academicYear)).'</td>
+                    '.$this->fitTd('academic_year', (string) $academicYear, ' class="f-val" colspan="3"').'
                 </tr>
                 <tr>
                     <td class="f-lbl">UDISE Code:</td>
-                    <td class="f-val"'.$this->fitStyle((string) $udiseCode).'>'.$nb($e($udiseCode)).'</td>
+                    '.$this->fitTd('udise_code', (string) $udiseCode).'
                     <td class="f-lbl">School Name:</td>
-                    <td class="f-val" colspan="3"'.$this->fitStyle((string) $schoolName, 9.3, 22).'>'.$nb($e($schoolName)).'</td>
+                    '.$this->fitTd('school_name', $schoolName, ' class="f-val" colspan="3"').'
                 </tr>
                 <tr>
                     <td class="f-lbl">State:</td>
-                    <td class="f-val"'.$this->fitStyle($stateDisplay, 9.3, 12).'>'.$nb($e($stateDisplay)).'</td>
+                    '.$this->fitTd('state', $stateDisplay).'
                     <td class="f-lbl">District:</td>
-                    <td class="f-val"'.$this->fitStyle($districtDisplay, 9.3, 12).'>'.$nb($e($districtDisplay)).'</td>
+                    '.$this->fitTd('district', $districtDisplay).'
                     <td class="f-lbl">Block:</td>
-                    <td class="f-val"'.$this->fitStyle($blockDisplay, 9.3, 10).'>'.$nb($e($blockDisplay)).'</td>
+                    '.$this->fitTd('block', $blockDisplay).'
                 </tr>
             </table>
 
             <div class="sec">FOR</div>
             <table class="meta">
-                <colgroup>
-                    <col style="width:17%"><col style="width:16%"><col style="width:15%">
-                    <col style="width:15%"><col style="width:15%"><col style="width:22%">
-                </colgroup>
+                '.$this->sizerRow([87, 80, 40, 141, 90, 72]).'
                 <tr>
                     <td class="f-lbl">Student\'s PEN:</td>
-                    <td class="f-val"'.$this->fitStyle((string) $pen).'>'.$nb($e($pen)).'</td>
+                    '.$this->fitTd('pen', (string) $pen).'
                     <td class="f-lbl">Name:</td>
-                    <td class="f-val"'.$forNameStyle.'>'.($forNameHtml !== '' ? $forNameHtml : '&nbsp;').'</td>
+                    '.$this->fitTd('for_name', (string) $forName).'
                     <td class="f-lbl">Mobile Number:</td>
-                    <td class="f-val"'.$this->fitStyle((string) $mobile).'>'.$nb($e($mobile)).'</td>
+                    '.$this->fitTd('mobile', (string) $mobile).'
                 </tr>
             </table>
 
@@ -330,8 +366,8 @@ class UdiseS03PdfService
                 <td>
                     <div class="sign-h">Head of the School</div>
                     <table class="signfields">
-                        <tr><td class="f-lbl">Name:</td><td class="f-val">'.$nb($e($principalNameDisplay)).'</td></tr>
-                        <tr><td class="f-lbl">Designation:</td><td class="f-val">'.$nb($e($principalDesignationDisplay)).'</td></tr>
+                        <tr><td class="f-lbl">Name:</td>'.$this->fitTd('principal_name', $principalNameDisplay).'</tr>
+                        <tr><td class="f-lbl">Designation:</td>'.$this->fitTd('principal_designation', $principalDesignationDisplay).'</tr>
                         <tr><td class="f-lbl">Signature:</td><td>&nbsp;</td></tr>
                         <tr><td class="f-lbl">Seal:</td><td>&nbsp;</td></tr>
                     </table>
@@ -352,7 +388,7 @@ class UdiseS03PdfService
     }
 
     /** @param  array<string, string>  $data */
-    private function detailRowsHtml(array $data, callable $e): string
+    private function detailRowsHtml(string $prefix, array $data, callable $e): string
     {
         $fields = [
             'name' => 'Name',
@@ -367,9 +403,7 @@ class UdiseS03PdfService
 
         $html = '';
         foreach ($fields as $key => $label) {
-            $raw = (string) ($data[$key] ?? '');
-            [$v, $style] = $this->wrapOrFit($e, $raw, 24, 16, 9.3, 20);
-            $html .= '<tr><td class="f-lbl">'.$e($label).':</td><td class="f-val"'.$style.'>'.($v !== '' ? $v : '&nbsp;').'</td></tr>';
+            $html .= '<tr><td class="f-lbl">'.$e($label).':</td>'.$this->fitTd($prefix.'_'.$key, (string) ($data[$key] ?? '')).'</tr>';
         }
 
         return $html;
