@@ -56,6 +56,7 @@ use App\Http\Controllers\Erp\FeeManagement\ErpFeeStructureController;
 use App\Http\Controllers\Erp\FeeManagement\FeeDiscountController;
 use App\Http\Controllers\Erp\FeeManagement\FeeDueController;
 use App\Http\Controllers\Erp\FeeManagement\FeeHistoryController;
+use App\Http\Controllers\Erp\FeeManagement\DemandSlipController;
 use App\Http\Controllers\Erp\FeeManagement\MonthWiseFeeCollectionController;
 use App\Http\Controllers\Erp\FeeManagement\FeePaidController;
 use App\Http\Controllers\Erp\FeeManagement\FeeHeadController;
@@ -379,6 +380,8 @@ Route::prefix('fee-management')->name('fee-management.')->group(function () {
     Route::get('month-wise-collection/meta', [MonthWiseFeeCollectionController::class, 'meta'])->name('month-wise-collection.meta');
     Route::get('month-wise-collection', [MonthWiseFeeCollectionController::class, 'index'])->name('month-wise-collection.index');
     Route::get('month-wise-collection/export', [MonthWiseFeeCollectionController::class, 'export'])->name('month-wise-collection.export');
+    Route::get('demand-slip', [DemandSlipController::class, 'index'])->name('demand-slip.index');
+    Route::middleware('erp.permission:fee-management.demand-slip.export')->get('demand-slip/export', [DemandSlipController::class, 'export'])->name('demand-slip.export');
     Route::get('due/automatic/export', [FeeDueController::class, 'exportAutomatic'])->name('due.automatic.export');
     Route::get('due/manual/export', [FeeDueController::class, 'exportManual'])->name('due.manual.export');
     Route::get('due/manual', [FeeDueController::class, 'manualIndex'])->name('due.manual.index');
@@ -835,6 +838,7 @@ Route::prefix('documents')->name('documents.')->group(function () {
         Route::post('id-cards', [IdCardController::class, 'store'])->name('id-cards.store');
         Route::put('id-cards/{idCard}', [IdCardController::class, 'update'])->name('id-cards.update');
         Route::patch('id-cards/{idCard}/reissue', [IdCardController::class, 'reissue'])->name('id-cards.reissue');
+        Route::post('id-cards/{idCard}/photo', [IdCardController::class, 'uploadPhoto'])->name('id-cards.photo');
         Route::delete('id-cards/{idCard}', [IdCardController::class, 'destroy'])->name('id-cards.destroy');
 
         Route::post('templates/import', [TemplateController::class, 'import'])->name('templates.import');

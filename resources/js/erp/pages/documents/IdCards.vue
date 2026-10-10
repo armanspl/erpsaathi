@@ -48,6 +48,17 @@
                         </td>
                         <td class="px-4 py-3 text-right">
                             <div class="flex items-center justify-end gap-1">
+                                <button
+                                    v-if="c.holder_type === 'student'"
+                                    type="button"
+                                    :title="c.has_photo ? 'Change student photo (printed on the card)' : 'Upload student photo (printed on the card)'"
+                                    class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition"
+                                    :class="c.has_photo ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/30 dark:text-emerald-400' : 'border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400'"
+                                    :disabled="uploadingId === c.id"
+                                    @click="pickPhoto(c)"
+                                >
+                                    {{ uploadingId === c.id ? 'Uploading...' : c.has_photo ? '✓ Photo' : '+ Photo' }}
+                                </button>
                                 <button type="button" title="Edit person details" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800" @click="openEditPerson(c)">✏️</button>
                                 <button type="button" title="Download" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" :disabled="downloadingId === c.id" @click="downloadCard(c)">{{ downloadingId === c.id ? '...' : '⬇' }}</button>
                                 <button v-if="c.status === 'Active'" type="button" title="Reissue" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-amber-600 dark:hover:bg-slate-800" @click="reissue(c)">♻</button>
@@ -417,6 +428,35 @@ async function savePerson() {
         pushToast(msg, 'error');
     } finally {
         savingPerson.value = false;
+    }
+}
+
+// ---- Student photo (stored as the student's profile photo; prints on the ID card) ----
+const uploadingId = ref(null);
+function pickPhoto(card) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png';
+    input.onchange = () => uploadPhoto(card, input.files?.[0]);
+    input.click();
+}
+async function uploadPhoto(card, file) {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+        pushToast('Photo must be 2 MB or smaller.', 'error');
+        return;
+    }
+    uploadingId.value = card.id;
+    try {
+        const body = new FormData();
+        body.append('photo', file);
+        await client.post(`/documents/id-cards/${card.id}/photo`, body);
+        card.has_photo = true;
+        pushToast(`Photo saved for ${card.holder?.name || 'student'} — it now prints on the ID card.`, 'success');
+    } catch (e) {
+        pushToast(e?.response?.data?.errors?.photo?.[0] || e?.response?.data?.message || 'Could not upload the photo.', 'error');
+    } finally {
+        uploadingId.value = null;
     }
 }
 

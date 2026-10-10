@@ -974,13 +974,24 @@ class DocumentDataBuilder
         $holder = $idCard->holder;
         $classSection = '';
         $photo = '';
+        $student = [];
         if ($idCard->holder_type === 'student' && $holder) {
-            $holder->loadMissing(['schoolClass:id,name', 'section:id,name', 'documents']);
+            $holder->loadMissing(['schoolClass:id,name', 'section:id,name', 'documents', 'father:id,name']);
             $classSection = trim(($holder->schoolClass->name ?? '').($holder->section ? ' ('.$holder->section->name.')' : ''));
             $photo = $this->resolveStoredImage($holder->documents?->photo_path);
+            $student = [
+                'admission_no' => $holder->admission_no ?? '',
+                'father_name' => $holder->father?->name ?? '',
+                'dob' => $holder->dob ? Carbon::parse($holder->dob)->format('d-m-Y') : '',
+                'address' => trim(implode(', ', array_filter([$holder->address ?? null, $holder->address_line_2 ?? null]))),
+            ];
         }
 
         return array_merge($this->schoolContext(), [
+            'admission_no' => $student['admission_no'] ?? ($holder->employee_id ?? ''),
+            'father_name' => $student['father_name'] ?? '',
+            'dob' => $student['dob'] ?? '',
+            'address' => $student['address'] ?? '',
             'card_title' => 'Identity Card',
             'holder_name' => $holder->name ?? '',
             'photo' => $photo,

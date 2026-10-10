@@ -127,7 +127,8 @@ class SalaryAdvanceController extends Controller
             @page { margin: 10mm; }
             body { font-family: DejaVu Sans, sans-serif; font-size: 9pt; color: #111; }
             .copy { border: 0.8pt solid #333; padding: 10pt 12pt; }
-            .copy + .cut { border-top: 0.8pt dashed #888; margin: 4mm 0; }
+            .cut { border-top: 0.8pt dashed #888; margin: 4mm 0; text-align: center; height: 0; }
+            .cut span { position: relative; top: -2.6mm; background: #fff; padding: 0 6pt; font-size: 7pt; color: #555; letter-spacing: 0.5pt; }
             table { width: 100%; border-collapse: collapse; }
             .head td { vertical-align: middle; }
             .school { text-align: center; font-size: 8pt; color: #333; }
@@ -141,7 +142,7 @@ class SalaryAdvanceController extends Controller
             .words { margin: 7pt 0 2pt; }
             .note { margin: 0; font-size: 8pt; color: #555; }
             .sign td { padding-top: 24pt; font-size: 8.5pt; }
-        </style></head><body>'.$copy('School Copy').'<div class="cut"></div>'.$copy('Employee Copy').'</body></html>';
+        </style></head><body>'.$copy('School Copy').'<div class="cut"><span>&#9986; CUT HERE</span></div>'.$copy('Employee Copy').'</body></html>';
 
         $filename = $salaryAdvance->advance_no.'.pdf';
 

@@ -7,20 +7,26 @@
                     Students who have cleared fees till the current month, or paid in advance for future months.
                 </p>
             </div>
-            <Dropdown align="right">
-                <template #trigger>
-                    <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="exporting || !rows.length">
-                        {{ exporting ? 'Exporting…' : 'Export ▾' }}
-                    </button>
-                </template>
-                <template #panel="{ close }">
-                    <div class="w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                        <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="runExport('xlsx'); close()">📊 Excel (.xlsx)</button>
-                        <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="runExport('csv'); close()">📄 CSV</button>
-                        <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="runExport('pdf'); close()">📕 PDF</button>
-                    </div>
-                </template>
-            </Dropdown>
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="btn-outline inline-flex items-center gap-1.5 !py-1.5 !text-xs" :disabled="loading || !rows.length" @click="printPaid">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+                    Print
+                </button>
+                <Dropdown align="right">
+                    <template #trigger>
+                        <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="exporting || !rows.length">
+                            {{ exporting ? 'Exporting…' : 'Export ▾' }}
+                        </button>
+                    </template>
+                    <template #panel="{ close }">
+                        <div class="w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="runExport('xlsx'); close()">📊 Excel (.xlsx)</button>
+                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="runExport('csv'); close()">📄 CSV</button>
+                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="runExport('pdf'); close()">📕 PDF</button>
+                        </div>
+                    </template>
+                </Dropdown>
+            </div>
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -184,6 +190,7 @@ import Dropdown from '../../components/common/Dropdown.vue';
 import Pagination from '../../components/common/Pagination.vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
+import { erpStore } from '../../store';
 import { pushToast } from '../../utils/toast';
 
 const loading = ref(false);
@@ -264,6 +271,56 @@ async function runExport(format) {
     } finally {
         exporting.value = false;
     }
+}
+
+// ---- Print (in the browser): every row matching the filters, same columns as the table ----
+function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function printPaid() {
+    const list = rows.value;
+    const amt = (n, cls = '') => `<td class="num ${cls}">${money(n)}</td>`;
+    const sum = (key) => list.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+    const advance = view.value === 'advance';
+    const title = advance ? 'Advance Fee Paid Students' : 'Fee Paid Till Current Month';
+    const common = (r, i) => `<td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
+        <td>${esc([r.school_class, r.section].filter(Boolean).join(' / ') || '—')}</td><td>${esc(r.roll_no || '—')}</td>
+        <td>${esc(r.father || '—')}</td><td>${esc(r.mother || '—')}</td>`;
+
+    const head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Mother</th>'
+        + (advance
+            ? '<th>Advance months</th><th class="num">Advance paid</th><th>Paid through</th></tr>'
+            : '<th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th>Paid through</th></tr>');
+    const body = list.map((r, i) => `<tr>${common(r, i)}${advance
+        ? `<td>${esc(r.advance_months_label || '—')}</td>${amt(r.advance_paid, 'paid')}<td>${esc(r.paid_through_label || '—')}</td>`
+        : `${amt(r.total_fee)}${amt(r.total_paid, 'paid')}${amt(r.total_discount)}<td>${esc(r.paid_through_label || '—')}</td>`}</tr>`).join('');
+    const foot = `<tr><td></td><td colspan="6">TOTAL (${list.length} students)</td>${advance
+        ? `<td></td>${amt(sum('advance_paid'), 'paid')}<td></td>`
+        : `${amt(sum('total_fee'))}${amt(sum('total_paid'), 'paid')}${amt(sum('total_discount'))}<td></td>`}</tr>`;
+
+    const win = window.open('', '_blank');
+    if (!win) {
+        pushToast('Allow pop-ups for this site to print.', 'error');
+        return;
+    }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+        @page { size: A4 landscape; margin: 8mm; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+        .school { text-align: center; font-size: 16px; font-weight: bold; }
+        h1 { font-size: 13px; text-align: center; margin: 4px 0 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 10px; }
+        th, td { border: 1px solid #999; padding: 3px 5px; vertical-align: top; }
+        th { background: #eee; text-align: left; } thead { display: table-header-group; } tr { page-break-inside: avoid; }
+        .num { text-align: right; white-space: nowrap; } .paid { color: #047857; font-weight: bold; }
+        tfoot td { font-weight: bold; background: #f3f3f3; }
+    </style></head><body>
+        <div class="school">${esc(erpStore.school?.school_name || '')}</div>
+        <h1>${esc(title)}</h1>
+        <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>
+        <script>window.onload = function () { window.focus(); window.print(); };<\/script>
+    </body></html>`);
+    win.document.close();
 }
 
 watch(() => filters.school_class_id, () => {

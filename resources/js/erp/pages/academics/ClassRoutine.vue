@@ -42,7 +42,10 @@
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ formatDate(s.updated_at) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center justify-end gap-1">
-                                    <button type="button" title="Open" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" @click="openSheet(s)">
+                                    <button type="button" title="View (class wise / teacher wise / free teachers)" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" @click="openSheet(s, 'view')">
+                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                    <button type="button" title="Edit" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" @click="openSheet(s)">
                                         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
                                     </button>
                                     <button type="button" title="Export" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800" @click="openExportModal(s)">
@@ -69,17 +72,29 @@
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ editingSheet ? 'Edit Class Routine' : 'Create Class Routine' }}</h2>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ mode === 'view' ? (form.title || 'Class Routine') : editingSheet ? 'Edit Class Routine' : 'Create Class Routine' }}</h2>
                         <p class="mt-0.5 text-sm text-slate-500">{{ sheetSubtitle }}</p>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+                            <button
+                                v-for="m in [{ id: 'edit', label: 'Edit' }, { id: 'view', label: 'View' }]"
+                                :key="m.id"
+                                type="button"
+                                class="rounded-md px-3 py-1 text-xs font-semibold transition"
+                                :class="mode === m.id ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+                                @click="mode = m.id"
+                            >
+                                {{ m.label }}
+                            </button>
+                        </div>
                         <button v-if="editingSheet" type="button" class="btn-outline !text-xs" @click="openImportModal">Re-import Excel</button>
                         <button v-if="editingSheet" type="button" class="btn-outline !text-xs" @click="openExportModal(editingSheet)">Export ▾</button>
                         <button type="button" class="btn-primary" :disabled="sheetSaving" @click="saveSheet">{{ sheetSaving ? 'Saving...' : 'Save' }}</button>
                     </div>
                 </div>
 
-                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
+                <div v-if="mode === 'edit'" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
                     <div>
                         <label class="form-label">Academic Session</label>
                         <select v-model.number="form.academic_session_id" class="form-input" :disabled="!!editingSheet">
@@ -118,7 +133,17 @@
                 </ul>
             </div>
 
-            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <ClassRoutineView
+                v-if="mode === 'view'"
+                :sheet="viewSheet"
+                :classes="classes"
+                :subjects="subjects"
+                :teachers="teachers"
+                :school-name="erpStore.school?.school_name || ''"
+                :subtitle="sheetSubtitle"
+            />
+
+            <div v-else class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <nav class="flex flex-wrap gap-1">
                         <button
@@ -258,6 +283,7 @@
 import { computed, reactive, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
+import ClassRoutineView from './ClassRoutineView.vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
 import { erpStore } from '../../store';
@@ -295,6 +321,8 @@ const grid = reactive({});
 const classRemarks = reactive({});
 const activeDay = ref(1);
 const copyTargetDay = ref(null);
+// Inside an open routine: 'edit' = the editable grid, 'view' = Excel-style class/teacher-wise view.
+const mode = ref('edit');
 
 const periodsRange = computed(() => Array.from({ length: form.periods_per_day || 0 }, (_, i) => i + 1));
 
@@ -371,6 +399,20 @@ function copyDay() {
     copyTargetDay.value = null;
 }
 
+// The routine as it is in the grid right now (saved, freshly imported or typed in by hand) — what View shows.
+const viewSheet = computed(() => ({
+    title: form.title,
+    periods_per_day: form.periods_per_day,
+    days: DAYS.map((d) => ({
+        day_of_week: d.dow,
+        entries: classes.value.flatMap((c) => periodsRange.value.map((p) => {
+            const x = grid[d.dow]?.[c.id]?.[p];
+            if (!x || (!x.subject_id && !x.subject_label && !x.teacher_id && !x.teacher_label)) return null;
+            return { ...x, school_class_id: c.id, period_number: p, remarks: classRemarks[c.id] || null };
+        }).filter(Boolean)),
+    })),
+}));
+
 const sheetSubtitle = computed(() => {
     const session = sessions.value.find((s) => s.id === form.academic_session_id);
     const branch = branches.value.find((b) => b.id === form.branch_id);
@@ -422,6 +464,7 @@ function resetForm() {
 
 function openCreate() {
     editingSheet.value = null;
+    mode.value = 'edit';
     resetForm();
     importWarnings.value = null;
     activeDay.value = 1;
@@ -448,8 +491,9 @@ function daysFromServer(daysData) {
     });
 }
 
-async function openSheet(sheet) {
+async function openSheet(sheet, openMode = 'edit') {
     editingSheet.value = sheet;
+    mode.value = openMode;
     sheetsLoading.value = true;
     try {
         await loadLookups();

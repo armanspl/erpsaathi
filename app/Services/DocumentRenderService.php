@@ -234,6 +234,92 @@ class DocumentRenderService
         return $dompdf->output();
     }
 
+    /**
+     * Two identical copies of one document on a single A4 sheet (top / bottom half) with a dashed
+     * "✂ CUT HERE" line between them — e.g. school copy + parent copy of a fee receipt. Each copy is
+     * the template's own markup and styles, unscaled, pinned to its half of the sheet (so a long
+     * copy is trimmed at the cut line instead of pushing the other copy onto a second page). Falls
+     * back to the single-copy PDF only when the template is wider than A4.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function streamPdfDuplicateA4(string $category, array $data, string $filename, ?int $templateId = null): StreamedResponse
+    {
+        $template = $this->resolveTemplate($category, $templateId);
+        // Wider than A4 can't sit two-up; anything taller just gets scaled to its half (see $scale below).
+        if ((float) $template->page_width_mm > 210.5) {
+            return $this->streamPdf($category, $data, $filename, $templateId);
+        }
+
+        $full = $this->html($template, $data);
+        preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $full, $styleMatches);
+        $styles = preg_replace('/@page\s*\{[^}]*\}/i', '', implode("\n", $styleMatches[1] ?? []));
+        $body = preg_match('/<body[^>]*>(.*)<\/body>/is', $full, $bm) ? $bm[1] : $full;
+        $body = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $body);
+
+        // A copy taller than its half (many fee lines) is shrunk just enough to fit — never clipped.
+        $scale = min(1.0, 141.5 / max(1.0, $this->measureHeightMm($styles, $body, 200.0)));
+        $fit = $scale < 1.0
+            ? sprintf('<div style="width: %.2fmm; transform: scale(%.4f); transform-origin: 0 0;">', 200 / $scale, $scale)
+            : '<div>';
+
+        $copy = fn (string $top) => '<div class="dup-copy" style="top: '.$top.';">'.$fit.$body.'</div></div>';
+        $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'.$styles.'
+            @page { size: 210mm 297mm; margin: 0; }
+            html, body { margin: 0 !important; padding: 0 !important; }
+            /* 5mm all round keeps the border off the printer\'s unprintable edge and clear of the cut. */
+            .dup-copy { position: absolute; left: 0; width: 200mm; height: 143.5mm; padding: 5mm 5mm 0; overflow: hidden; }
+            .dup-cut { position: absolute; left: 0; top: 148.5mm; width: 210mm; height: 0; border-top: 0.35mm dashed #64748b; }
+            .dup-cut span { position: absolute; left: 91mm; top: -2.3mm; width: 28mm; text-align: center;
+                background: #ffffff; color: #475569; font-size: 7pt; line-height: 4.4mm; letter-spacing: 0.5pt;
+                font-family: DejaVu Sans, sans-serif; }
+        </style></head><body>'
+            .$copy('0')
+            .'<div class="dup-cut"><span>&#9986; CUT HERE</span></div>'
+            .$copy('148.5mm')
+            .'</body></html>';
+
+        $filename = Str::endsWith(strtolower($filename), '.pdf') ? $filename : $filename.'.pdf';
+
+        return response()->streamDownload(function () use ($html) {
+            $options = new Options();
+            $options->set('isRemoteEnabled', true);
+            $options->set('defaultFont', 'DejaVu Sans');
+            $options->set('isHtml5ParserEnabled', true);
+            $dompdf = new Dompdf($options);
+            $dompdf->setPaper('a4', 'portrait');
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+            echo $dompdf->output();
+        }, $filename, ['Content-Type' => 'application/pdf']);
+    }
+
+    /** Laid-out height (mm) of $body at $widthMm wide, from a throw-away Dompdf render on a very tall page. */
+    private function measureHeightMm(string $styles, string $body, float $widthMm): float
+    {
+        $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'.$styles.'
+            @page { margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }
+        </style></head><body><div id="dup-measure" style="width: '.$widthMm.'mm;">'.$body.'</div></body></html>';
+
+        $options = new Options();
+        $options->set('isRemoteEnabled', true);
+        $options->set('defaultFont', 'DejaVu Sans');
+        $options->set('isHtml5ParserEnabled', true);
+        $dompdf = new Dompdf($options);
+        $dompdf->setPaper([0, 0, $this->mmToPt($widthMm), $this->mmToPt(2000)]);
+        $heightPt = 0.0;
+        $dompdf->setCallbacks([['event' => 'end_frame', 'f' => function ($frame) use (&$heightPt) {
+            $node = $frame->get_node();
+            if ($node instanceof \DOMElement && $node->getAttribute('id') === 'dup-measure') {
+                $heightPt = (float) $frame->get_margin_height();
+            }
+        }]]);
+        $dompdf->loadHtml($html);
+        $dompdf->render();
+
+        return $heightPt * 25.4 / 72;
+    }
+
     /** @param  array<string, mixed>  $data */
     public function streamPdf(string $category, array $data, string $filename, ?int $templateId = null): StreamedResponse
     {

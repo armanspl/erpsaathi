@@ -55,7 +55,7 @@ const rawMenu = [
     {
         label: 'Fee Management',
         icon: '💰',
-        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Month-wise Fee Collection', 'Pay Fee', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
+        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Month-wise Fee Collection', 'Demand Slip', 'Pay Fee', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
     },
     {
         label: 'Finance & Payroll',

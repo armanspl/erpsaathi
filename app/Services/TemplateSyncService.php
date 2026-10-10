@@ -29,7 +29,7 @@ class TemplateSyncService
      * rollout (that's the category with the fragile one-off-migration history); add a category
      * here once its design is stable enough to want the same automatic treatment.
      */
-    public const AUTO_SYNC_CATEGORIES = ['report_card'];
+    public const AUTO_SYNC_CATEGORIES = ['report_card', 'id_card'];
 
     /** Current content hash for a (category, design_key) pair — what a synced row's template_version should equal. */
     public static function currentVersion(string $category, string $designKey): string

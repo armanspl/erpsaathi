@@ -7,11 +7,14 @@ use App\Http\Controllers\Erp\Documents\Concerns\ResolvesCardHolderType;
 use App\Models\IdCard;
 use App\Models\Staff;
 use App\Models\Student;
+use App\Models\StudentDocument;
 use App\Models\Teacher;
 use App\Services\DocumentDataBuilder;
 use App\Services\DocumentRenderService;
+use App\Support\PeopleCache;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -52,7 +55,12 @@ class IdCardController extends Controller
             $query->where('status', $request->string('status'));
         }
 
-        return response()->json($query->orderByDesc('id')->get());
+        $cards = $query->orderByDesc('id')->get();
+        // Which student cards already have a photo (it prints on the card).
+        $withPhoto = StudentDocument::whereIn('student_id', $cards->where('holder_type', 'student')->pluck('holder_id'))
+            ->whereNotNull('photo_path')->pluck('student_id')->flip();
+
+        return response()->json($cards->map(fn (IdCard $c) => [...$c->toArray(), 'has_photo' => $c->holder_type === 'student' && $withPhoto->has($c->holder_id)]));
     }
 
     public function store(Request $request)
@@ -126,6 +134,27 @@ class IdCardController extends Controller
         $idCard->loadMissing('holder');
 
         return $this->renderer->streamPdf('id_card', $this->dataBuilder->idCard($idCard), "id-card-{$idCard->card_no}.pdf");
+    }
+
+    /**
+     * Student photo for the card — saved as the student's profile photo (People › Students › documents),
+     * the same file StudentController keeps, so it shows everywhere the photo is used.
+     */
+    public function uploadPhoto(Request $request, IdCard $idCard)
+    {
+        abort_unless($idCard->holder_type === 'student', 422, 'Photos can be added to student ID cards only.');
+        $request->validate(['photo' => 'required|file|mimes:jpg,jpeg,png|max:2048']);
+
+        $student = Student::findOrFail($idCard->holder_id);
+        $doc = StudentDocument::firstOrNew(['student_id' => $student->id]);
+        if ($doc->photo_path) {
+            Storage::disk('local')->delete($doc->photo_path);
+        }
+        $doc->photo_path = $request->file('photo')->store("student-documents/{$student->id}", 'local');
+        $doc->save();
+        PeopleCache::forget();
+
+        return response()->json(['success' => true]);
     }
 
     private function nextCardNo(): string

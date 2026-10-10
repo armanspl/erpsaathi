@@ -166,7 +166,8 @@ class SalarySlipController extends Controller
     {
         $salarySlip->loadMissing('employee');
 
-        return $this->renderer->streamPdf('salary_slip', $this->dataBuilder->salarySlip($salarySlip), "{$salarySlip->slip_no}.pdf");
+        // Two identical copies (office + employee) on one A4 with a cut line.
+        return $this->renderer->streamPdfDuplicateA4('salary_slip', $this->dataBuilder->salarySlip($salarySlip), "{$salarySlip->slip_no}.pdf");
     }
 
     /** Generate Pending slips for every configured salary structure for a given period. Idempotent — skips employees who already have a slip for that period. */

@@ -20,6 +20,7 @@ use App\Models\StudentTransport;
 use App\Models\TransportRoute;
 use App\Services\FeeCalculator;
 use App\Services\SalaryBankWorkbookService;
+use App\Services\StudRecSumReport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Dompdf\Dompdf;
@@ -1628,13 +1629,7 @@ class ExportController extends Controller
     }
 
     /**
-     * Stud_Rec_Sum — per-student fee ledger matching GAS INC_EXP columns:
-     * ADM NO. | NAME | FATHER | ADDRESS | MOBILE | CLASS | VEHICLE |
-     * TOT_PMNT | REG | ADM | ANN_PMNT | ANN_DUES | TUI_PMNT | TUI CALC | TUI_DUES |
-     * TRA_PMNT | TRA CALC | TRA_DUES | DUES
-     *
-     * Payments mirror INCOME sheet SUMIFS; CALC/DUES use fee structure + transport fare
-     * (Excel style: DUES columns = paid − expected).
+     * Stud_Rec_Sum sheet — built by StudRecSumReport (shared with Fee Management › Demand Slip).
      *
      * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
      */
@@ -1646,261 +1641,19 @@ class ExportController extends Controller
                 ?? AcademicSession::query()->orderByDesc('start_date')->first();
         }
 
-        $headers = [
-            'SESSION', 'ADM NO.', 'NAME OF STUDENT', 'FATHER NAME', 'ADDRESS', 'MOBILE', 'CLASS', 'VEHICLE',
-            'TOT_PMNT', 'REG', 'ADM', 'ANN_PMNT', 'ANN_DUES', 'TUI_PMNT', 'TUI CALC', 'TUI_DUES',
-            'TRA_PMNT', 'TRA CALC', 'TRA_DUES', 'DUES',
-        ];
+        $keys = array_keys(StudRecSumReport::COLUMNS);
+        $rows = array_map(
+            fn (array $row) => array_map(fn ($key) => $row[$key], $keys),
+            StudRecSumReport::rows($session)
+        );
 
-        if (! $session) {
-            return [$headers, []];
-        }
-
-        $sessionLabel = $this->shortSessionLabel($session->name);
-
-        // Scoped to the chosen Academic Session (header picker) — same roster rule
-        // FeeReportCalculator::studentsForSessions() uses: a student counts for this session if
-        // they have a session-history row naming it, or (only when this IS the current session)
-        // they have no session-history rows at all yet (freshly admitted, never imported/promoted).
-        // Previously this pulled every student in the DB regardless of session, so an old/left
-        // student with no activity in the chosen year still showed up, and a session picked in
-        // the header had no effect on who appeared here at all.
-        $aliases = AcademicSession::nameAliases($session->name);
-        $students = Student::query()
-            ->with([
-                'father:id,name',
-                'schoolClass:id,name',
-                'udiseDetail:id,student_id,vehicle,stoppage',
-            ])
-            ->where(function ($q) use ($aliases, $session) {
-                $q->whereHas('sessionHistories', fn ($h) => $h->whereIn('session', $aliases));
-                if ($session->is_current) {
-                    $q->orWhereDoesntHave('sessionHistories');
-                }
-            })
-            ->orderBy('admission_no')
-            ->get();
-
-        if ($students->isEmpty()) {
-            return [$headers, []];
-        }
-
-        $studentIds = $students->pluck('id')->all();
-
-        $vehicleByStudent = StudentTransport::query()
-            ->whereIn('student_id', $studentIds)
-            ->where('status', 'Active')
-            ->with(['route:id,vehicle_id', 'route.vehicle:id,vehicle_no', 'routeStop:id,fare'])
-            ->orderByDesc('id')
-            ->get()
-            ->unique('student_id')
-            ->keyBy('student_id');
-
-        $headCodeById = FeeHead::query()->get(['id', 'name'])
-            ->mapWithKeys(fn (FeeHead $h) => [(string) $h->id => $this->incomeHeadCode((string) $h->name)])
-            ->all();
-
-        $paidByStudent = [];
-        foreach ($studentIds as $id) {
-            $paidByStudent[$id] = [
-                'TOT' => 0.0, 'REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0,
-            ];
-        }
-
-        $payments = FeePayment::query()
-            ->whereIn('student_id', $studentIds)
-            ->where('academic_session_id', $session->id)
-            ->where(function ($q) {
-                $q->whereNull('status')->orWhereNotIn('status', ['Refunded', 'Rolled Back']);
-            })
-            ->orderBy('id')
-            ->get(['id', 'student_id', 'items', 'amount', 'refunded_amount', 'fine_amount', 'status']);
-
-        foreach ($payments as $payment) {
-            $sid = (int) $payment->student_id;
-            if (! isset($paidByStudent[$sid])) {
-                continue;
-            }
-
-            $gross = (float) $payment->amount;
-            $net = $gross - (float) $payment->refunded_amount;
-            if ($net <= 0 || $gross <= 0) {
-                continue;
-            }
-            $scale = $net / $gross;
-
-            $items = is_array($payment->items) ? $payment->items : [];
-            if ($items === [] && $net > 0 && (float) $payment->fine_amount <= 0) {
-                $items[] = ['fee_head_name' => 'Fee', 'amount' => $gross];
-            }
-
-            foreach ($items as $item) {
-                $amount = (float) ($item['amount'] ?? 0) * $scale;
-                if ($amount == 0.0) {
-                    continue;
-                }
-                $code = '';
-                $feeHeadId = (int) ($item['fee_head_id'] ?? 0);
-                if ($feeHeadId && isset($headCodeById[(string) $feeHeadId])) {
-                    $code = $headCodeById[(string) $feeHeadId];
-                } else {
-                    $code = $this->incomeHeadCode(trim((string) ($item['fee_head_name'] ?? 'Fee')) ?: 'Fee');
-                }
-                $paidByStudent[$sid]['TOT'] += $amount;
-                if (isset($paidByStudent[$sid][$code])) {
-                    $paidByStudent[$sid][$code] += $amount;
-                }
-            }
-
-            $fine = (float) $payment->fine_amount * $scale;
-            if ($fine > 0) {
-                $paidByStudent[$sid]['TOT'] += $fine;
-            }
-        }
-
-        FeeCalculator::flushRuntimeCache();
-        FeeCalculator::warmForStudents($students, $session);
-
-        $monthKeys = collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all();
-        if ($monthKeys === [] && $session->start_date && $session->end_date) {
-            $cursor = $session->start_date->copy()->startOfMonth();
-            $end = $session->end_date->copy()->startOfMonth();
-            while ($cursor->lte($end)) {
-                $monthKeys[] = $cursor->format('Y-m');
-                $cursor->addMonth();
-            }
-        }
-        $monthCount = count($monthKeys);
-
-        $rows = [];
-        foreach ($students as $student) {
-            $paid = $paidByStudent[$student->id] ?? [
-                'TOT' => 0.0, 'REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0,
-            ];
-
-            // Structure charges only — no per-student payment re-query (was the 120s bottleneck).
-            $charge = $this->studRecSumCharges($student, $session, $monthKeys, $monthCount, $vehicleByStudent->get($student->id));
-
-            $annPmnt = round($paid['ANN'], 2);
-            $tuiPmnt = round($paid['TUI'], 2);
-            $traPmnt = round($paid['TRA'], 2);
-            $annCalc = round($charge['ANN'], 2);
-            $tuiCalc = round($charge['TUI'], 2);
-            $traCalc = round($charge['TRA'], 2);
-            $annDues = round($annPmnt - $annCalc, 2);
-            $tuiDues = round($tuiPmnt - $tuiCalc, 2);
-            $traDues = round($traPmnt - $traCalc, 2);
-
-            $vehicle = trim((string) ($student->udiseDetail?->vehicle ?? ''));
-            if ($vehicle === '') {
-                $vehicle = trim((string) ($vehicleByStudent->get($student->id)?->route?->vehicle?->vehicle_no ?? ''));
-            }
-            if ($vehicle === '') {
-                $vehicle = 'None';
-            }
-
-            $address = trim(implode(' ', array_filter([
-                $student->address ?? null,
-                $student->address_line_2 ?? null,
-            ])));
-
-            $rows[] = [
-                $sessionLabel,
-                $student->admission_no ?? '',
-                $student->name ?? '',
-                $student->father?->name ?? '',
-                $address,
-                $student->mobile ?? '',
-                $student->schoolClass->name ?? '',
-                $vehicle,
-                round($paid['TOT'], 2),
-                round($paid['REG'], 2),
-                round($paid['ADM'], 2),
-                $annPmnt,
-                $annDues,
-                $tuiPmnt,
-                $tuiCalc,
-                $tuiDues,
-                $traPmnt,
-                $traCalc,
-                $traDues,
-                round($annDues + $tuiDues + $traDues, 2),
-            ];
-        }
-
-        return [$headers, $rows];
-    }
-
-    /**
-     * Expected REG/ADM/ANN/TUI/TRA charges for Stud_Rec_Sum (no DB hits beyond FeeCalculator cache).
-     *
-     * @param  list<string>  $monthKeys
-     * @return array{REG: float, ADM: float, ANN: float, TUI: float, TRA: float}
-     */
-    private function studRecSumCharges(Student $student, AcademicSession $session, array $monthKeys, int $monthCount, ?StudentTransport $transport): array
-    {
-        $charge = ['REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0];
-
-        foreach (FeeCalculator::breakdownOnly($student, $session) as $plan) {
-            $code = $this->incomeHeadCode((string) ($plan['fee_head_name'] ?? ''));
-            if (! isset($charge[$code])) {
-                continue;
-            }
-            $unit = (float) ($plan['amount'] ?? 0);
-            if ($unit <= 0) {
-                continue;
-            }
-            $freq = strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'one_time')));
-            if (in_array($freq, ['annual', 'one_time'], true)) {
-                $charge[$code] += $unit;
-            } elseif ($freq === 'quarterly') {
-                $n = 0;
-                foreach ($monthKeys as $monthKey) {
-                    $monthNum = (int) substr((string) $monthKey, 5, 2);
-                    if (in_array($monthNum, [4, 7, 10, 1], true)) {
-                        $n++;
-                    }
-                }
-                $charge[$code] += $unit * $n;
-            } else {
-                $charge[$code] += $unit * $monthCount;
-            }
-        }
-
-        $fare = (float) ($transport?->routeStop?->fare ?? 0);
-        if ($fare > 0 && $monthCount > 0) {
-            $feeStart = $transport?->feeStartMonthKey();
-            $billable = 0;
-            foreach ($monthKeys as $monthKey) {
-                if ($feeStart && (string) $monthKey < (string) $feeStart) {
-                    continue;
-                }
-                $billable++;
-            }
-            $charge['TRA'] += $fare * $billable;
-        }
-
-        return $charge;
+        return [array_values(StudRecSumReport::COLUMNS), $rows];
     }
 
     /** Reverse of GlobalWorkbookImportController::INCOME_HEAD_CANONICAL_MAP. */
     private function incomeHeadCode(string $headName): string
     {
-        $map = [
-            'registration fee' => 'REG',
-            'admission fee' => 'ADM',
-            'session fee' => 'ANN',
-            'tution fee' => 'TUI',
-            'tuition fee' => 'TUI',
-            'transport' => 'TRA',
-            'fine' => 'FINE',
-            'transfer certificate fee' => 'TC',
-            'tc fee' => 'TC',
-        ];
-
-        $key = strtolower(trim($headName));
-
-        return $map[$key] ?? (strlen($headName) <= 12 ? strtoupper($headName) : $headName);
+        return StudRecSumReport::headCode($headName);
     }
 
     /**

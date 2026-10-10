@@ -13,10 +13,18 @@
             <div v-if="loading" class="rounded-xl bg-white px-6 py-16 text-center text-sm text-slate-400 shadow">Loading receipt...</div>
             <div v-else-if="error" class="rounded-xl bg-white px-6 py-16 text-center text-sm text-rose-600 shadow">{{ error }}</div>
 
+            <!-- Two identical copies of the same receipt (school + parent) with a cut line between. -->
+            <template v-else-if="receipt">
+            <template v-for="copyNo in 2" :key="copyNo">
+            <div v-if="copyNo === 2" class="receipt-cut my-4 flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-slate-400 print:my-0">
+                <span class="h-0 flex-1 border-t-2 border-dashed border-slate-400" />
+                <span>✂ Cut here</span>
+                <span class="h-0 flex-1 border-t-2 border-dashed border-slate-400" />
+            </div>
+            <div class="receipt-copy">
             <div
-                v-else-if="receipt"
-                id="deposit-receipt-print"
-                class="rounded-sm border border-slate-300 bg-white px-8 py-6 text-slate-800 shadow-xl print:border-0 print:shadow-none"
+                ref="copyEls"
+                class="receipt-copy-inner rounded-sm border border-slate-300 bg-white px-8 py-6 text-slate-800 shadow-xl print:shadow-none"
             >
                 <div class="text-center">
                     <div class="grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2">
@@ -112,12 +120,15 @@
                     </div>
                 </div>
             </div>
+            </div>
+            </template>
+            </template>
         </div>
     </div>
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import client from '../../api/client';
 import { downloadPdf } from '../../utils/documentPdf';
@@ -128,6 +139,20 @@ const error = ref('');
 const receipt = ref(null);
 const busy = ref('');
 const paymentId = ref(null);
+const copyEls = ref([]);
+
+// Browser print: both copies on one A4 (8mm margins, cut line between) — each copy may use up to
+// half the printable height (136mm ≈ 514px at 96dpi); a taller one is zoomed down to fit, not cut.
+const HALF_PAGE_PX = 490; // a little under 136mm: the print layout is narrower than the screen, so text wraps a bit more
+function fitCopiesForPrint() {
+    for (const el of copyEls.value || []) {
+        el.style.zoom = '';
+        el.style.zoom = String(Math.min(1, HALF_PAGE_PX / Math.max(1, el.offsetHeight)));
+    }
+}
+function resetCopiesAfterPrint() {
+    for (const el of copyEls.value || []) el.style.zoom = '';
+}
 
 function money(n) {
     return Number(n || 0).toLocaleString('en-IN');
@@ -187,6 +212,8 @@ async function downloadTemplatePdf() {
 }
 
 onMounted(async () => {
+    window.addEventListener('beforeprint', fitCopiesForPrint);
+    window.addEventListener('afterprint', resetCopiesAfterPrint);
     paymentId.value = route.query.payment_id;
     if (!paymentId.value) {
         error.value = 'Missing payment.';
@@ -213,4 +240,18 @@ onMounted(async () => {
         loading.value = false;
     }
 });
+
+onBeforeUnmount(() => {
+    window.removeEventListener('beforeprint', fitCopiesForPrint);
+    window.removeEventListener('afterprint', resetCopiesAfterPrint);
+});
 </script>
+
+<style>
+@media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    .receipt-copy { height: 136mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+    .receipt-copy-inner { padding: 4mm 6mm !important; }
+    .receipt-cut { height: 9mm; }
+}
+</style>

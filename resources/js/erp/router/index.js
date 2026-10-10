@@ -43,6 +43,7 @@ import FeeDue from '../pages/fee-management/FeeDue.vue';
 import FeePaid from '../pages/fee-management/FeePaid.vue';
 import FeeHistory from '../pages/fee-management/FeeHistory.vue';
 import MonthWiseFeeCollection from '../pages/fee-management/MonthWiseFeeCollection.vue';
+import DemandSlip from '../pages/fee-management/DemandSlip.vue';
 import FeeDueReceipt from '../pages/fee-management/FeeDueReceipt.vue';
 import DepositReceipt from '../pages/fee-management/DepositReceipt.vue';
 import FeeCollectionReport from '../pages/fee-management/FeeCollectionReport.vue';
@@ -182,6 +183,7 @@ const FLAGSHIP_ROUTES = {
     '/fee-management/fee-paid': FeePaid,
     '/fee-management/fee-history': FeeHistory,
     '/fee-management/month-wise-fee-collection': MonthWiseFeeCollection,
+    '/fee-management/demand-slip': DemandSlip,
     '/fee-management/fee-due/receipt': { component: FeeDueReceipt, meta: { printPage: true } },
     '/fee-management/fee-receipt/print': { component: DepositReceipt, meta: { printPage: true } },
     '/fee-management/fee-settings': FeeSettings,

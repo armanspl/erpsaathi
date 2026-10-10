@@ -133,6 +133,12 @@ class TemplateCatalog
         ],
         'id_card' => [
             ['school_name', 'School name', true],
+            ['school_address', 'School address', false],
+            ['school_phone', 'School phone', false],
+            ['admission_no', 'Admission no. / Employee ID', false],
+            ['father_name', "Father's name", false],
+            ['dob', 'Date of birth', false],
+            ['address', 'Address', false],
             ['card_title', 'Card title', true],
             ['holder_name', 'Holder name', true],
             ['photo', 'Photo', false],
@@ -448,6 +454,8 @@ class TemplateCatalog
             'photo' => '', 'id_number' => 'ADM/2026/0142', 'role_type' => 'Student', 'class_section' => 'Class 8 (A)',
             'blood_group' => 'O+', 'contact_no' => '98765 43210', 'valid_until' => '31 Mar 2027', 'school_logo' => '',
             'barcode' => 'ADM/2026/0142', 'signature' => 'Principal', 'principal_signature_image' => '',
+            'school_address' => '12 Park Road, Springfield', 'school_phone' => '98765 00000', 'admission_no' => 'ADM/2026/0142',
+            'father_name' => 'Rajesh Sharma', 'dob' => '14-05-2013', 'address' => '45 Green Park, Springfield',
         ],
         'transport_card' => [
             'school_name' => 'Springfield Public School', 'card_title' => 'Transport Card', 'student_name' => 'Aarav Sharma',

@@ -437,6 +437,11 @@ class PermissionCatalog
                         'path' => '/fee-management/month-wise-fee-collection',
                         'actions' => ['view' => 'View', 'export' => 'Export'],
                     ],
+                    'demand-slip' => [
+                        'label' => 'Demand Slip',
+                        'path' => '/fee-management/demand-slip',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
                     'pay-fee' => [
                         'label' => 'Pay Fee',
                         'path' => '/fee-management/pay-fee',

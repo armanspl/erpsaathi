@@ -683,7 +683,8 @@ class FeePaymentController extends Controller
 
     public function downloadPdf(FeePayment $payment, DocumentRenderService $renderer, DocumentDataBuilder $dataBuilder): StreamedResponse
     {
-        return $renderer->streamPdf('fee_receipt', $dataBuilder->feeReceipt($payment), ($payment->receipt_no ?: 'fee-receipt').'.pdf');
+        // Two identical copies (school + parent) on one A4 sheet with a cut line — same payment, same receipt no.
+        return $renderer->streamPdfDuplicateA4('fee_receipt', $dataBuilder->feeReceipt($payment), ($payment->receipt_no ?: 'fee-receipt').'.pdf');
     }
 
     public function refund(Request $request, FeePayment $payment)

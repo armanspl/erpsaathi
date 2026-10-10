@@ -93,15 +93,19 @@
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button type="button" class="btn-outline !py-1.5 !text-xs" @click="pushToast('Reminders coming soon.', 'info')">Send Reminder</button>
+                        <button type="button" class="btn-outline inline-flex items-center gap-1.5 !py-1.5 !text-xs" :disabled="loading || !autoRows.length" @click="printDues('automatic')">
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+                            Print
+                        </button>
                         <Dropdown align="right">
                             <template #trigger>
-                                <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="exporting">{{ exporting ? 'Exporting...' : 'Export –¾' }}</button>
+                                <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="exporting">{{ exporting ? 'Exporting...' : 'Export' }}<svg v-if="!exporting" class="ml-1 inline h-3.5 w-3.5 align-[-2px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
                             </template>
                             <template #panel="{ close }">
                                 <div class="w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                                    <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('automatic', 'pdf'); close()">ðŸ“• PDF</button>
-                                    <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('automatic', 'xlsx'); close()">ðŸ“Š Excel (.xlsx)</button>
-                                    <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('automatic', 'csv'); close()">ðŸ“„ CSV</button>
+                                    <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('automatic', 'pdf'); close()"><svg class="h-4 w-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6M9 17h4"/></svg> PDF</button>
+                                    <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('automatic', 'xlsx'); close()"><svg class="h-4 w-4 shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 9h16M4 15h16M10 3v18"/></svg> Excel (.xlsx)</button>
+                                    <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('automatic', 'csv'); close()"><svg class="h-4 w-4 shrink-0 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M8 12h8M8 16h8"/></svg> CSV</button>
                                 </div>
                             </template>
                         </Dropdown>
@@ -179,15 +183,19 @@
                     <span class="text-lg leading-none">+</span> Create Fee Due
                 </button>
                 <button type="button" class="btn-outline !text-xs" @click="pushToast('Reminders coming soon.', 'info')">Send Reminder</button>
+                <button type="button" class="btn-outline inline-flex items-center gap-1.5 !text-xs" :disabled="loading || !manualRows.length" @click="printDues('manual')">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+                    Print
+                </button>
                 <Dropdown align="left">
                     <template #trigger>
-                        <button type="button" class="btn-outline !text-xs" :disabled="exporting">{{ exporting ? 'Exporting...' : 'Export –¾' }}</button>
+                        <button type="button" class="btn-outline !text-xs" :disabled="exporting">{{ exporting ? 'Exporting...' : 'Export' }}<svg v-if="!exporting" class="ml-1 inline h-3.5 w-3.5 align-[-2px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg></button>
                     </template>
                     <template #panel="{ close }">
                         <div class="w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('manual', 'pdf'); close()">ðŸ“• PDF</button>
-                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('manual', 'xlsx'); close()">ðŸ“Š Excel (.xlsx)</button>
-                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('manual', 'csv'); close()">ðŸ“„ CSV</button>
+                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('manual', 'pdf'); close()"><svg class="h-4 w-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6M9 17h4"/></svg> PDF</button>
+                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('manual', 'xlsx'); close()"><svg class="h-4 w-4 shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 9h16M4 15h16M10 3v18"/></svg> Excel (.xlsx)</button>
+                            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700" @click="exportDues('manual', 'csv'); close()"><svg class="h-4 w-4 shrink-0 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M8 12h8M8 16h8"/></svg> CSV</button>
                         </div>
                     </template>
                 </Dropdown>
@@ -249,7 +257,7 @@
                                                         </div>
                                                         <div class="flex gap-1">
                                                             <button type="button" class="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit" @click="editLine(line)">✎</button>
-                                                            <button type="button" class="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Delete" @click="deleteLine(line)">ðŸ—‘</button>
+                                                            <button type="button" class="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Delete" @click="deleteLine(line)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"/></svg></button>
                                                         </div>
                                                     </li>
                                                 </ul>
@@ -384,7 +392,7 @@
                         <input v-model="form.apply_all_months" type="checkbox" class="mt-0.5 rounded text-primary-600" @change="onApplyAllToggle" />
                         <span>
                             <span class="font-medium">Apply selected fee types to all applicable months.</span>
-                            <span class="mt-1 block text-xs text-slate-400">When checked, enter one Due Amount applied to every selected month (e.g. ₹400 Ã— 2 months = ₹800). Uncheck to see each month's amount from the base fee.</span>
+                            <span class="mt-1 block text-xs text-slate-400">When checked, enter one Due Amount applied to every selected month (e.g. ₹400 &times; 2 months = ₹800). Uncheck to see each month's amount from the base fee.</span>
                         </span>
                     </label>
 
@@ -1200,6 +1208,64 @@ async function exportDues(kind, format) {
     } finally {
         exporting.value = false;
     }
+}
+
+// ---- Print (in the browser): every row matching the filters, in the table's sort order ----
+const SCOPE_LABELS = { till_current: 'Till current month', till_next_month: 'Till next month', current_month: 'Current month only' };
+
+function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function printDues(kind) {
+    const amt = (n) => `<td class="num">${money(n)}</td>`;
+    const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+    let title;
+    let head;
+    let body;
+    let foot;
+
+    if (kind === 'automatic') {
+        const rows = sortedAutoRows.value;
+        title = `Fee Due — Automatic (${SCOPE_LABELS[scope.value] || scope.value})`;
+        head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Mother</th><th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th class="num">Due</th></tr>';
+        body = rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
+            <td>${esc([r.school_class, r.section].filter(Boolean).join(' / '))}</td><td>${esc(r.roll_no || '—')}</td>
+            <td>${esc(r.father || '—')}</td><td>${esc(r.mother || '—')}</td>
+            ${amt(r.total_fee)}${amt(r.total_paid)}${amt(r.total_discount)}<td class="num due">${money(r.due)}</td></tr>`).join('');
+        foot = `<tr><td></td><td colspan="6">TOTAL (${rows.length} students)</td>${amt(sum(rows, 'total_fee'))}${amt(sum(rows, 'total_paid'))}${amt(sum(rows, 'total_discount'))}<td class="num due">${money(sum(rows, 'due'))}</td></tr>`;
+    } else {
+        const rows = sortedManualRows.value;
+        title = 'Fee Due — Manual';
+        head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Fee Types</th><th class="num">Total</th><th class="num">Balance</th><th>Latest Due Date</th><th>Status</th></tr>';
+        body = rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
+            <td>${esc([r.school_class, r.section].filter(Boolean).join(' / ') || '—')}</td><td>${esc(r.fee_types || '—')}</td>
+            ${amt(r.total)}<td class="num due">${money(r.balance)}</td><td>${esc(r.latest_due_date || '—')}</td><td>${esc(r.status)}</td></tr>`).join('');
+        foot = `<tr><td></td><td colspan="4">TOTAL (${rows.length} students)</td>${amt(sum(rows, 'total'))}<td class="num due">${money(sum(rows, 'balance'))}</td><td colspan="2"></td></tr>`;
+    }
+
+    const win = window.open('', '_blank');
+    if (!win) {
+        pushToast('Allow pop-ups for this site to print.', 'error');
+        return;
+    }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+        @page { size: A4 landscape; margin: 8mm; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+        .school { text-align: center; font-size: 16px; font-weight: bold; }
+        h1 { font-size: 13px; text-align: center; margin: 4px 0 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 10px; }
+        th, td { border: 1px solid #999; padding: 3px 5px; vertical-align: top; }
+        th { background: #eee; text-align: left; } thead { display: table-header-group; } tr { page-break-inside: avoid; }
+        .num { text-align: right; white-space: nowrap; } .due { color: #b91c1c; font-weight: bold; }
+        tfoot td { font-weight: bold; background: #f3f3f3; }
+    </style></head><body>
+        <div class="school">${esc(erpStore.school?.school_name || '')}</div>
+        <h1>${esc(title)}</h1>
+        <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>
+        <script>window.onload = function () { window.focus(); window.print(); };<\/script>
+    </body></html>`);
+    win.document.close();
 }
 
 async function boot() {
