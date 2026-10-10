@@ -21,6 +21,10 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
           Schools
         </button>
+        <button type="button" class="sa-nav-item" :class="{ active: page === 'databases' }" @click="openDatabases(null)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+          Databases
+        </button>
       </nav>
 
       <div class="sa-sidebar-foot">
@@ -103,6 +107,9 @@
           </div>
         </section>
 
+        <!-- Database Manager -->
+        <DatabaseManager v-else-if="page === 'databases'" :key="dbSchoolId || 'list'" :api="api" :open-school-id="dbSchoolId" />
+
         <!-- Schools -->
         <section v-else class="sa-stack">
           <div class="sa-panel">
@@ -157,6 +164,7 @@
                           @click="openDemoIe(s)"
                         >Demo Import/Export</button>
                         <button type="button" class="sa-text-btn" @click="resetAdmin(s)">Reset admin</button>
+                        <button v-if="s.status !== 'provisioning'" type="button" class="sa-text-btn" @click="openDatabases(s.id)">Manage database</button>
                         <button type="button" class="sa-text-btn danger" @click="openDelete(s)">Delete</button>
                       </div>
                     </td>
@@ -312,6 +320,8 @@
 </template>
 
 <script>
+import DatabaseManager from './super-admin/DatabaseManager.vue';
+
 const emptyForm = () => ({
   name: '',
   slug: '',
@@ -326,6 +336,7 @@ const emptyForm = () => ({
 
 export default {
   name: 'SuperAdminApp',
+  components: { DatabaseManager },
   data() {
     return {
       csrf: document.querySelector('meta[name="csrf-token"]')?.content || '',
@@ -360,17 +371,19 @@ export default {
       deleteTarget: null,
       deleteConfirmation: '',
       deleting: false,
+      dbSchoolId: null,
       year: new Date().getFullYear(),
     };
   },
   computed: {
     pageTitle() {
-      return this.page === 'dashboard' ? 'Dashboard' : 'Schools';
+      return { dashboard: 'Dashboard', databases: 'Database Manager' }[this.page] || 'Schools';
     },
     pageSubtitle() {
-      return this.page === 'dashboard'
-        ? 'Multi-school SaaS overview and billing totals'
-        : 'Provision, bill, activate, or permanently remove schools';
+      return {
+        dashboard: 'Multi-school SaaS overview and billing totals',
+        databases: "Browse and manage each school's own MySQL database",
+      }[this.page] || 'Provision, bill, activate, or permanently remove schools';
     },
     userInitial() {
       const n = this.user?.name || 'S';
@@ -408,6 +421,11 @@ export default {
       this.page = page;
       this.sidebarOpen = false;
       this.error = null;
+    },
+    openDatabases(schoolId) {
+      this.dbSchoolId = schoolId;
+      this.flash = null;
+      this.go('databases');
     },
     money(amount, currency = 'INR') {
       if (amount === null || amount === undefined || amount === '') return '—';
