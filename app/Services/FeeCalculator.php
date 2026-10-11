@@ -67,14 +67,15 @@ class FeeCalculator
 
         self::ensureHeadsLoaded();
 
-        $paymentRows = FeePayment::query()
+        // Per-session slices: a multi-session receipt counts each item in its own session.
+        $paymentRows = FeePayment::slicesFor(FeePayment::query()
             ->whereIn('student_id', $studentIds)
-            ->whereIn('academic_session_id', $sessionIds)
+            ->touchingSessions($sessionIds)
             ->where(function ($q) {
                 $q->whereNull('status')->orWhereNotIn('status', ['Refunded', 'Rolled Back']);
             })
             ->orderBy('id')
-            ->get(['id', 'student_id', 'academic_session_id', 'items', 'amount', 'refunded_amount', 'status']);
+            ->get(['id', 'student_id', 'academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'fine_amount', 'session_fines', 'refunded_amount', 'status']), $sessionIds);
 
         self::$paymentRowsCache = [];
         self::$paidCache = [];
@@ -271,13 +272,13 @@ class FeeCalculator
 
         $payments = self::cachedPayments($student, $session);
         if ($payments === null) {
-            $payments = FeePayment::query()
+            $payments = FeePayment::slicesFor(FeePayment::query()
                 ->where('student_id', $student->id)
-                ->where('academic_session_id', $session->id)
+                ->touchingSessions([$session->id])
                 ->where(function ($q) {
                     $q->whereNull('status')->orWhereNotIn('status', ['Refunded', 'Rolled Back']);
                 })
-                ->get(['items', 'amount', 'refunded_amount']);
+                ->get(['academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'fine_amount', 'session_fines', 'refunded_amount']), [$session->id]);
         }
 
         $paid = 0.0;

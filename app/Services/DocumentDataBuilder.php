@@ -162,7 +162,7 @@ class DocumentDataBuilder
             ->where('id', '<', $payment->id);
 
         if ($session) {
-            $priorQuery->where('academic_session_id', $session->id);
+            $priorQuery->touchingSessions([$session->id]);
         }
 
         $unitByHead = [];
@@ -192,7 +192,11 @@ class DocumentDataBuilder
 
         $priorByHead = [];
         $priorByHeadMonth = [];
-        foreach ($priorQuery->orderBy('id')->get(['items', 'amount', 'refunded_amount']) as $prev) {
+        $priorPayments = $priorQuery->orderBy('id')->get(['academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'fine_amount', 'session_fines', 'refunded_amount']);
+        if ($session) {
+            $priorPayments = FeePayment::slicesFor($priorPayments, [$session->id]);
+        }
+        foreach ($priorPayments as $prev) {
             $gross = (float) $prev->amount;
             $net = $gross - (float) $prev->refunded_amount;
             if ($net <= 0 || $gross <= 0) {
@@ -242,6 +246,11 @@ class DocumentDataBuilder
             }
         }
 
+        // A multi-session receipt (e.g. last session's February tuition + this session's Session
+        // Fee) — items of the other session are not priced against THIS session's fee plan.
+        $otherSession = fn (array $item): bool => (bool) $payment->multi_session
+            && $payment->itemSessionId($item) !== (int) $payment->academic_session_id;
+
         $totalFees = 0.0;
         foreach ($payment->items ?? [] as $item) {
             $feeHeadId = (int) ($item['fee_head_id'] ?? 0);
@@ -252,7 +261,7 @@ class DocumentDataBuilder
                 : (! empty($item['month']) ? [$item['month']] : []);
 
             $storedCharge = (float) ($item['charge'] ?? 0);
-            $plan = $feeHeadId ? $byHead->get($feeHeadId) : null;
+            $plan = ($feeHeadId && ! $otherSession($item)) ? $byHead->get($feeHeadId) : null;
             $frequency = $plan
                 ? strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'monthly')))
                 : 'monthly';
@@ -321,7 +330,11 @@ class DocumentDataBuilder
             $feeHeadId = (int) ($item['fee_head_id'] ?? 0);
             $paidAmt = (float) ($item['amount'] ?? 0);
             $storedCharge = (float) ($item['charge'] ?? 0);
-            $plan = $feeHeadId ? $byHead->get($feeHeadId) : null;
+            $plan = ($feeHeadId && ! $otherSession($item)) ? $byHead->get($feeHeadId) : null;
+            $particular = (string) ($item['fee_head_name'] ?? 'Fee');
+            if ($otherSession($item) && preg_match('/^\d{2}(\d{2})-\d{2}(\d{2})$/', (string) ($item['session'] ?? ''), $sm)) {
+                $particular = mb_substr($particular, 0, 10).' '.$sm[1].'-'.$sm[2];
+            }
             $frequency = $plan
                 ? strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'monthly')))
                 : 'monthly';
@@ -351,7 +364,7 @@ class DocumentDataBuilder
             $lines[] = sprintf(
                 '%-3s %-16s %-11s %10s %10s',
                 $sno++,
-                mb_substr((string) ($item['fee_head_name'] ?? 'Fee'), 0, 16),
+                mb_substr($particular, 0, 16),
                 $duration,
                 $amountCell,
                 number_format($paidAmt, 2)

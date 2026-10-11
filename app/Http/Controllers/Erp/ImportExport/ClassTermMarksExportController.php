@@ -12,6 +12,7 @@ use App\Models\ImportExportLog;
 use App\Models\Mark;
 use App\Models\SchoolClass;
 use App\Models\Student;
+use App\Models\StudentSessionHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -56,9 +57,10 @@ class ClassTermMarksExportController extends Controller
             'term' => 'nullable|integer|in:1,2',
         ]);
 
+        // Default to the Academic Session picked in the header ("All Sessions" → current session).
         $session = isset($data['academic_session_id'])
             ? AcademicSession::query()->findOrFail($data['academic_session_id'])
-            : AcademicSession::query()->where('is_current', true)->first()
+            : AcademicSession::fromRequest($request, true)
                 ?? AcademicSession::query()->orderByDesc('id')->first();
 
         if (! $session) {
@@ -182,10 +184,7 @@ class ClassTermMarksExportController extends Controller
             }
         }
 
-        $allStudents = Student::query()
-            ->whereIn('school_class_id', $classIds)
-            ->with('schoolClass:id,name,sort_order')
-            ->get(['id', 'admission_no', 'roll_no', 'name', 'school_class_id']);
+        $allStudents = $this->studentsInSession($session, $classes);
 
         if ($allStudents->isEmpty()) {
             return null;
@@ -322,6 +321,59 @@ class ClassTermMarksExportController extends Controller
         return $spreadsheet;
     }
 
+    /**
+     * Students enrolled in $session (student_session_history), placed in the class and roll
+     * they had in that session — not their current class — so a past-session export lists
+     * that year's students only. History rows whose class doesn't map to one of $classes
+     * (e.g. "0" for students who left) are skipped. A student with no history at all falls
+     * back to their current class, but only for the current session.
+     *
+     * @param  \Illuminate\Support\Collection<int, SchoolClass>  $classes
+     * @return \Illuminate\Support\Collection<int, Student>
+     */
+    private function studentsInSession(AcademicSession $session, $classes)
+    {
+        $classByToken = [];
+        foreach ($classes as $class) {
+            $classByToken[$this->classToken($class->name)] = $class;
+        }
+
+        $histories = StudentSessionHistory::query()
+            ->whereIn('session', AcademicSession::nameAliases((string) $session->name))
+            ->orderBy('id')
+            ->get(['student_id', 'class_name', 'roll_no'])
+            ->keyBy('student_id');
+
+        $students = Student::query()
+            ->whereIn('id', $histories->keys())
+            ->get(['id', 'admission_no', 'roll_no', 'name', 'school_class_id']);
+
+        if ($session->is_current) {
+            $students = $students->concat(Student::query()
+                ->whereIn('school_class_id', $classes->pluck('id'))
+                ->whereDoesntHave('sessionHistories')
+                ->with('schoolClass:id,name,sort_order')
+                ->get(['id', 'admission_no', 'roll_no', 'name', 'school_class_id']));
+        }
+
+        return $students->map(function (Student $student) use ($histories, $classByToken) {
+            $history = $histories->get($student->id);
+            if (! $history) {
+                return $student;
+            }
+            $class = $classByToken[$this->classToken((string) $history->class_name)] ?? null;
+            if (! $class) {
+                return null;
+            }
+            // In-memory only: the export reads class/roll from these attributes.
+            $student->school_class_id = $class->id;
+            $student->roll_no = $history->roll_no ?? $student->roll_no;
+            $student->setRelation('schoolClass', $class);
+
+            return $student;
+        })->filter()->values();
+    }
+
     /** "Nursery" -> "NUR" (matching the client's per-class sheet tabs); other classes keep their own name (LKG/UKG/1-8). */
     private function classSheetTitle(string $className): string
     {
@@ -444,7 +496,7 @@ class ClassTermMarksExportController extends Controller
     private function sessionShortLabel(AcademicSession $session): string
     {
         $name = (string) $session->name;
-        if (preg_match('/(20\d{2})\s*[-–\/]\s*(\d{2}|\d{4})/', $name, $m)) {
+        if (preg_match('/(20\d{2})\s*[-–\/]\s*(\d{4}|\d{2})/', $name, $m)) {
             $end = strlen($m[2]) === 2 ? $m[2] : substr($m[2], -2);
 
             return $m[1].'-'.$end;

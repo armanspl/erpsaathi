@@ -199,23 +199,40 @@ class FeeReportCalculator
             ];
         }
 
-        $base = FeePayment::query()->whereIn('academic_session_id', $sessionIds);
+        // Ordinary payments are summed in SQL; multi-session receipts (rare) are split per session
+        // so each item counts in its own academic session.
+        $base = FeePayment::query()->whereIn('academic_session_id', $sessionIds)->where('multi_session', false);
 
-        $totalPaid = round((float) (clone $base)->selectRaw('COALESCE(SUM(amount - refunded_amount), 0) as t')->value('t'), 2);
+        $totalPaid = (float) (clone $base)->selectRaw('COALESCE(SUM(amount - refunded_amount), 0) as t')->value('t');
 
         $modeRows = (clone $base)
             ->selectRaw('payment_mode, COALESCE(SUM(amount - refunded_amount), 0) as t')
             ->groupBy('payment_mode')
-            ->pluck('t', 'payment_mode');
-
-        $modeBreakdown = collect($modeRows)->map(fn ($amount) => round((float) $amount, 2));
+            ->pluck('t', 'payment_mode')
+            ->map(fn ($amount) => (float) $amount)
+            ->all();
 
         $ymStart = now()->startOfMonth()->toDateString();
         $ymEnd = now()->endOfMonth()->toDateString();
-        $collectedThisMonth = round((float) (clone $base)
+        $collectedThisMonth = (float) (clone $base)
             ->whereBetween('payment_date', [$ymStart, $ymEnd])
             ->selectRaw('COALESCE(SUM(amount - refunded_amount), 0) as t')
-            ->value('t'), 2);
+            ->value('t');
+
+        $multi = FeePayment::query()->where('multi_session', true)->touchingSessions($sessionIds)->get();
+        foreach (FeePayment::slicesFor($multi, $sessionIds) as $slice) {
+            $net = (float) $slice->amount - (float) $slice->refunded_amount;
+            $totalPaid += $net;
+            $modeRows[$slice->payment_mode] = ($modeRows[$slice->payment_mode] ?? 0.0) + $net;
+            $date = $slice->payment_date?->toDateString();
+            if ($date >= $ymStart && $date <= $ymEnd) {
+                $collectedThisMonth += $net;
+            }
+        }
+
+        $totalPaid = round($totalPaid, 2);
+        $collectedThisMonth = round($collectedThisMonth, 2);
+        $modeBreakdown = collect($modeRows)->map(fn ($amount) => round((float) $amount, 2));
 
         return [
             'total_paid' => $totalPaid,

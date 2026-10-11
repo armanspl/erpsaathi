@@ -104,13 +104,15 @@ class FeeHistoryController extends Controller
         $start = now()->startOfMonth()->toDateString();
         $end = now()->endOfMonth()->toDateString();
 
-        return round((float) FeePayment::query()
+        $rows = FeePayment::query()
             ->whereIn('student_id', $studentIds)
-            ->where('academic_session_id', $session->id)
+            ->touchingSessions([$session->id])
             ->whereNotIn('status', ['Rolled Back'])
             ->whereBetween('payment_date', [$start, $end])
-            ->selectRaw('COALESCE(SUM(amount - refunded_amount), 0) as t')
-            ->value('t'), 2);
+            ->get(['academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'fine_amount', 'session_fines', 'refunded_amount']);
+
+        return round((float) FeePayment::slicesFor($rows, [$session->id])
+            ->sum(fn (FeePayment $p) => (float) $p->amount - (float) $p->refunded_amount), 2);
     }
 
     public function export(Request $request)

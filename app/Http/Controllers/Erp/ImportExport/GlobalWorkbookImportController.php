@@ -11,6 +11,7 @@ use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\FeeHead;
 use App\Models\FeePayment;
+use App\Models\FeePaymentAudit;
 use App\Models\ImportExportLog;
 use App\Models\Income;
 use App\Models\RouteStop;
@@ -295,7 +296,11 @@ class GlobalWorkbookImportController extends Controller
             'skipped_duplicate' => 0,
             'skipped_old_student_new_only_fee' => 0,
             'skipped_manually_edited' => 0,
+            'skipped_cancelled' => 0,
+            'rolled_back_cancelled' => 0,
+            'superseded_removed' => 0,
             'updated_existing' => 0,
+            'fee_head_rows_combined' => 0,
             'failed_student_not_found' => 0,
             'failed_missing_field' => 0,
             'failed_broken_formula' => 0,
@@ -329,6 +334,9 @@ class GlobalWorkbookImportController extends Controller
         $cache = [
             'students' => Student::query()->pluck('id', 'admission_no')->all(),
             'admission_types' => StudentUdiseDetail::query()->pluck('admission_type', 'student_id')->all(),
+            // Session each student was admitted in — see admittedInSession().
+            'admission_dates' => Student::query()->whereNotNull('admission_date')->pluck('admission_date', 'id')->all(),
+            'first_sessions' => $this->firstEnrolledSessions(),
             'fee_heads' => FeeHead::query()->pluck('id', 'name')->all(),
             'sessions' => AcademicSession::query()->get()->keyBy('name'),
             'expense_categories' => ExpenseCategory::query()->pluck('id', 'name')->all(),
@@ -345,6 +353,9 @@ class GlobalWorkbookImportController extends Controller
             // (skipped) rather than attempted as an update against a row that only exists in
             // an unflushed buffer and has no real id yet.
             'receipts_seen' => [],
+            // receipt no. => [student_id, items, kept]: rows of an earlier per-session split of a
+            // receipt that buildFeePayment() has now saved whole (see removeSupersededReceipts()).
+            'superseded' => [],
             'income_vouchers_seen' => [],
             'expense_vouchers_seen' => [],
             'bank_accounts' => [],
@@ -376,48 +387,56 @@ class GlobalWorkbookImportController extends Controller
         ];
 
         $applyResult = function (array $result) use (&$total, &$success, &$failed, &$failedRows, &$breakdown, &$stats, &$buffers) {
-            $total++;
+            // A combined multi-head fee receipt covers several sheet rows — count every one.
+            $rows = max(1, (int) ($result['rows'] ?? 1));
+            $total += $rows;
             $reason = $result['reason'] ?? 'other';
 
             if (($result['skip'] ?? false) === true) {
                 if ($reason === 'header_artifact') {
-                    $breakdown['skipped_header_artifact']++;
+                    $breakdown['skipped_header_artifact'] += $rows;
                 } elseif ($reason === 'duplicate') {
-                    $breakdown['skipped_duplicate']++;
+                    $breakdown['skipped_duplicate'] += $rows;
                 } elseif ($reason === 'old_student_new_only_fee') {
-                    $breakdown['skipped_old_student_new_only_fee']++;
+                    $breakdown['skipped_old_student_new_only_fee'] += $rows;
                 } elseif ($reason === 'manually_edited') {
-                    $breakdown['skipped_manually_edited']++;
+                    $breakdown['skipped_manually_edited'] += $rows;
+                } elseif ($reason === 'cancelled') {
+                    $breakdown['skipped_cancelled'] += $rows;
                 }
 
                 return;
             }
 
             if ($result['ok'] ?? false) {
-                $success++;
+                $success += $rows;
+                $breakdown['fee_head_rows_combined'] += $rows - 1;
 
                 if (! empty($result['update'])) {
                     // Existing row, re-imported with changed values — queued for a targeted
                     // UPDATE (see flush() below) instead of the bulk INSERT buffers, since it
                     // already has a real id and must not become a duplicate row.
-                    $breakdown['updated_existing']++;
+                    $breakdown['updated_existing'] += $rows;
                     if (! empty($result['bucket'])) {
                         $stats[$result['bucket']] = ($stats[$result['bucket']] ?? 0) + 1;
                     }
                     $buffers['updates'][$result['update']][] = ['id' => $result['update_id'], 'data' => $result['data']];
+                    foreach ($result['extra_updates'] ?? [] as $table => $updates) {
+                        $buffers['updates'][$table] = array_merge($buffers['updates'][$table] ?? [], $updates);
+                    }
 
                     return;
                 }
 
-                $breakdown['imported']++;
+                $breakdown['imported'] += $rows;
                 if (! empty($result['bucket'])) {
                     $stats[$result['bucket']] = ($stats[$result['bucket']] ?? 0) + 1;
                 }
                 if (! empty($result['insert'])) {
                     $buffers[$result['insert']][] = $result['data'];
                 }
-                if (! empty($result['bank_transaction'])) {
-                    $buffers['bank_transactions'][] = $result['bank_transaction'];
+                foreach ($result['bank_transactions'] ?? [] as $bankTx) {
+                    $buffers['bank_transactions'][] = $bankTx;
                 }
 
                 return;
@@ -514,18 +533,50 @@ class GlobalWorkbookImportController extends Controller
             // admission types from the sheet just processed must be visible to it.
             $cache['students'] = Student::query()->pluck('id', 'admission_no')->all();
             $cache['admission_types'] = StudentUdiseDetail::query()->pluck('admission_type', 'student_id')->all();
+            $cache['admission_dates'] = Student::query()->whereNotNull('admission_date')->pluck('admission_date', 'id')->all();
+            $cache['first_sessions'] = $this->firstEnrolledSessions();
         }
 
         if ($incomeSheet) {
             [$mapped, $junk] = $this->mapRows($incomeSheet, self::INCOME_HEADER_MAP, 'INCOME');
             $ignoredColumns = array_merge($ignoredColumns, $junk);
             $this->warmReceiptCaches($mapped, $cache);
+            // Student fee rows are collected per receipt first (a receipt is usually several
+            // rows — one per fee head) and saved as one payment each in a second pass.
+            $feeReceipts = [];
+            $cancelledReceipts = [];
             foreach (array_chunk($mapped, 400) as $chunk) {
                 foreach ($chunk as $row) {
-                    $applyResult($this->importIncomeRow($row, $log, $cache));
+                    $result = $this->importIncomeRow($row, $log, $cache);
+                    if (isset($result['fee_line'])) {
+                        $feeReceipts[$result['fee_line']['group_key']][] = $result['fee_line'];
+
+                        continue;
+                    }
+                    if (isset($result['cancelled_line'])) {
+                        $cancelledReceipts[$result['cancelled_line']['group_key']] ??= $result['cancelled_line'];
+                    }
+                    $applyResult($result);
                 }
                 $flush();
             }
+            // All fee receipts are written in ONE transaction: a failure part-way leaves no
+            // half-saved receipts (re-running the import then starts from a clean state).
+            DB::transaction(function () use ($feeReceipts, $cancelledReceipts, &$cache, &$breakdown, $applyResult, $flush) {
+                foreach (array_chunk($feeReceipts, 400) as $chunk) {
+                    foreach ($chunk as $lines) {
+                        $applyResult($this->buildFeePayment($lines, $cache));
+                    }
+                    $flush();
+                }
+                // Receipts that are entirely cancelled in the sheet: an earlier import may have saved
+                // them as payments — roll those back (never delete), like the Rollback action does.
+                $breakdown['rolled_back_cancelled'] += $this->rollBackCancelledReceipts(
+                    array_diff_key($cancelledReceipts, $feeReceipts),
+                    $cache
+                );
+                $breakdown['superseded_removed'] += $this->removeSupersededReceipts($cache);
+            });
         }
 
         if ($expenseSheet) {
@@ -855,6 +906,9 @@ class GlobalWorkbookImportController extends Controller
         if (($breakdown['updated_existing'] ?? 0) > 0) {
             $parts[] = 'Updated (existing record changed): '.$breakdown['updated_existing'];
         }
+        if (($breakdown['fee_head_rows_combined'] ?? 0) > 0) {
+            $parts[] = 'Fee-head rows combined into their receipt: '.$breakdown['fee_head_rows_combined'];
+        }
         if ($breakdown['skipped_duplicate'] > 0) {
             $parts[] = 'Skipped (duplicate): '.$breakdown['skipped_duplicate'];
         }
@@ -863,6 +917,15 @@ class GlobalWorkbookImportController extends Controller
         }
         if (($breakdown['skipped_manually_edited'] ?? 0) > 0) {
             $parts[] = 'Skipped (already edited/refunded/reviewed in app): '.$breakdown['skipped_manually_edited'];
+        }
+        if (($breakdown['skipped_cancelled'] ?? 0) > 0) {
+            $parts[] = 'Skipped (PMNT MODE: CANCEL): '.$breakdown['skipped_cancelled'];
+        }
+        if (($breakdown['rolled_back_cancelled'] ?? 0) > 0) {
+            $parts[] = 'Earlier-imported cancelled receipts rolled back: '.$breakdown['rolled_back_cancelled'];
+        }
+        if (($breakdown['superseded_removed'] ?? 0) > 0) {
+            $parts[] = 'Split receipts merged into one (old duplicate parts removed): '.$breakdown['superseded_removed'];
         }
         $parts[] = 'Failed (student not found): '.$breakdown['failed_student_not_found'];
         $otherFailed = $breakdown['failed_missing_field']
@@ -1035,6 +1098,387 @@ class GlobalWorkbookImportController extends Controller
     }
 
     /**
+     * Turns every INCOME line of one receipt (same session + student + RECEIPT no.) into ONE
+     * fee payment: one item per fee-head row, fines summed into fine_amount, amount = items +
+     * fine — exactly what Pay Fee saves for a multi-head receipt. Each returned result carries
+     * 'rows' so the import summary still counts sheet rows.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @param  array<string, mixed>  $cache
+     */
+    private function buildFeePayment(array $lines, array &$cache): array
+    {
+        $first = $lines[0];
+        $rows = count($lines);
+        $now = $cache['now'];
+
+        $items = [];
+        $amount = 0.0;
+        $fine = 0.0;
+        $finesBySession = [];
+        $sessions = [];
+        $remarks = [];
+        foreach ($lines as $line) {
+            array_push($items, ...$line['items']);
+            $amount += $line['amount'];
+            $fine += $line['fine_amount'];
+            $sid = (int) $line['session']->id;
+            $sessions[$sid] = $line['session'];
+            if ($line['fine_amount'] > 0) {
+                $finesBySession[$sid] = round(($finesBySession[$sid] ?? 0) + $line['fine_amount'], 2);
+            }
+            foreach (explode(' | ', (string) $line['remarks']) as $piece) {
+                if (trim($piece) !== '') {
+                    $remarks[$piece] = true;
+                }
+            }
+        }
+        $remarksText = $remarks ? mb_substr(implode(' | ', array_keys($remarks)), 0, 255) : null;
+
+        // The receipt's own session: the one its payment date falls in when its rows include it
+        // (receipt 254 on 02-04-2025 → 2025-26), else the latest session among its rows.
+        $multiSession = count($sessions) > 1;
+        $primary = $first['session'];
+        if ($multiSession) {
+            $byDate = $this->sessionNameFor('', $first['date']);
+            $primary = collect($sessions)->first(fn ($s) => $s->name === $byDate)
+                ?? collect($sessions)->sortByDesc('name')->first();
+        }
+
+        [$receipt, $existing] = $this->claimReceiptNo(['session' => $primary] + $first, $cache);
+
+        // Earlier imports split this receipt per session ("254" + "254/25-26"): the parts not
+        // reused above are now duplicates of lines in this receipt — removed after all receipts
+        // are matched (see removeSupersededReceipts()).
+        if ($first['receipt_raw'] !== '') {
+            foreach ($sessions as $s) {
+                foreach ($this->receiptCandidates($first['receipt_raw'], $first['synthetic_receipt'], (string) $s->name, $first['admission_no']) as $candidate) {
+                    if ($candidate !== $receipt && isset($cache['receipts'][$candidate])) {
+                        $cache['superseded'][$candidate] = ['student_id' => (int) $first['student_id'], 'items' => $items, 'fine' => $fine, 'kept' => $receipt];
+                    }
+                }
+            }
+        }
+
+        $newData = [
+            'receipt_no' => $receipt,
+            'student_id' => $first['student_id'],
+            'academic_session_id' => $primary->id,
+            'multi_session' => $multiSession ? 1 : 0,
+            'items' => json_encode($items, JSON_THROW_ON_ERROR),
+            'amount' => round($amount, 2),
+            'discount_amount' => 0,
+            'fine_amount' => round($fine, 2),
+            'session_fines' => $multiSession && $finesBySession !== [] ? json_encode($finesBySession, JSON_THROW_ON_ERROR) : null,
+            'payment_mode' => $this->normalizeFeeMode($first['mode']),
+            'payment_date' => $first['date'],
+            'remarks' => $remarksText,
+        ];
+
+        // fee_payments has no bank_account_id column, so the link to the account is a
+        // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums
+        // these, the same mechanism a manually-entered deposit uses. Skipped entirely
+        // when this account has its own authoritative BANK ledger sheet in this same
+        // workbook — that sheet's own "TRANSFER DEPOSIT" row already covers this money.
+        $bankAmounts = [];
+        foreach ($lines as $line) {
+            $acc = $line['bank_account_id'];
+            if ($acc && empty($cache['bank_ledger_covered_accounts'][$acc])) {
+                $bankAmounts[$acc] = ($bankAmounts[$acc] ?? 0) + $line['amount'];
+            }
+        }
+
+        if ($existing) {
+            // A payment the school has since edited, refunded, or rolled back in the app
+            // (see FeePaymentController) has diverged from the sheet on purpose — a stale
+            // re-import must not silently overwrite that manual decision.
+            if ($existing['status'] !== 'Paid' || (float) $existing['refunded_amount'] > 0
+                || $existing['edited_at'] !== null || $existing['rolled_back_at'] !== null) {
+                return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited', 'rows' => $rows];
+            }
+
+            $changed = $this->diffForUpdate($existing, $newData, ['amount', 'fine_amount', 'discount_amount', 'multi_session'], ['items', 'session_fines']);
+            if ($changed === []) {
+                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
+            }
+
+            // Keep an import-created deposit for this receipt in step with the corrected total.
+            $depositUpdates = [];
+            foreach ($bankAmounts as $acc => $bankAmount) {
+                $depositId = DB::table('bank_transactions')
+                    ->where('bank_account_id', $acc)
+                    ->where('type', 'Deposit')
+                    ->where('reference_no', $receipt)
+                    ->where('remarks', 'like', 'Imported fee payment%')
+                    ->value('id');
+                if ($depositId) {
+                    $depositUpdates[] = ['id' => $depositId, 'data' => ['amount' => round($bankAmount, 2), 'updated_at' => $now]];
+                }
+            }
+
+            return [
+                'ok' => true,
+                'bucket' => 'income_fee_payments_updated',
+                'update' => 'fee_payments',
+                'update_id' => $existing['id'],
+                'data' => array_merge($changed, ['updated_at' => $now]),
+                'extra_updates' => $depositUpdates ? ['bank_transactions' => $depositUpdates] : [],
+                'rows' => $rows,
+            ];
+        }
+
+        $bankTxs = [];
+        foreach ($bankAmounts as $acc => $bankAmount) {
+            $bankTxs[] = [
+                'bank_account_id' => $acc,
+                'type' => 'Deposit',
+                'amount' => round($bankAmount, 2),
+                'date' => $first['date'],
+                'reference_no' => $receipt,
+                'remarks' => 'Imported fee payment — '.($first['name'] !== '' ? $first['name'] : $first['admission_no']),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'bucket' => 'income_fee_payments',
+            'insert' => 'fee_payments',
+            'data' => array_merge($newData, [
+                'status' => 'Paid',
+                'refunded_amount' => 0,
+                'collected_by_id' => $cache['user_id'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]),
+            'bank_transactions' => $bankTxs,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * Receipt numbers restart every year, so the same RECEIPT can belong to different sessions
+     * (or, by mistake, to two students). receipt_no is unique, so each payment claims the first
+     * candidate that is free or already holds THIS payment (same session + student):
+     *   "1898" → "1898/26-27" → "1898/26-27/<adm no>".
+     * Another payment's row is never matched, overwritten or merged into. Deterministic, so a
+     * re-import finds the same row again instead of inserting a duplicate.
+     *
+     * @param  array<string, mixed>  $line
+     * @param  array<string, mixed>  $cache
+     * @return array{0: string, 1: array<string, mixed>|null}
+     */
+    private function claimReceiptNo(array $line, array &$cache): array
+    {
+        $sessionId = (int) $line['session']->id;
+        $studentId = (int) $line['student_id'];
+        $candidates = $this->receiptCandidates(
+            $line['receipt_raw'],
+            $line['synthetic_receipt'],
+            (string) $line['session']->name,
+            $line['admission_no']
+        );
+
+        // 1st: a row this receipt already has (same session + student) — so a re-import keeps the
+        // same receipt no. instead of moving to a number that has since become free.
+        foreach ($candidates as $candidate) {
+            $existing = $cache['receipts'][$candidate] ?? null;
+            if ($existing && ! isset($cache['receipts_seen'][$candidate])
+                && (int) $existing['academic_session_id'] === $sessionId && (int) $existing['student_id'] === $studentId) {
+                $cache['receipts_seen'][$candidate] = true;
+
+                return [$candidate, $existing];
+            }
+        }
+        // 2nd: the first number not used by any other payment.
+        foreach ($candidates as $candidate) {
+            if (isset($cache['receipts_seen'][$candidate]) || isset($cache['receipts'][$candidate])) {
+                continue;
+            }
+            $cache['receipts_seen'][$candidate] = true;
+
+            return [$candidate, null];
+        }
+
+        // Every candidate taken (pathological sheet) — still keep the money, under a row-unique no.
+        $fallback = end($candidates).'-'.$line['row_number'];
+        $cache['receipts_seen'][$fallback] = true;
+
+        return [$fallback, $cache['receipts'][$fallback] ?? null];
+    }
+
+    /** @return list<string> */
+    private function receiptCandidates(string $raw, string $synthetic, string $sessionName, string $admissionNo): array
+    {
+        if ($raw === '') {
+            return [$synthetic];
+        }
+        $short = preg_match('/^\d{2}(\d{2})-\d{2}(\d{2})$/', $sessionName, $m) ? $m[1].'-'.$m[2] : $sessionName;
+
+        return [$raw, "{$raw}/{$short}", "{$raw}/{$short}/{$admissionNo}"];
+    }
+
+    /** @return array<int, string> student_id => earliest session in Student Master history ("2025-2026"). */
+    private function firstEnrolledSessions(): array
+    {
+        $first = [];
+        foreach (DB::table('student_session_history')->get(['student_id', 'session']) as $h) {
+            $name = $this->sessionNameFor((string) $h->session, '');
+            if (preg_match('/^\d{4}-\d{4}$/', $name) && (! isset($first[$h->student_id]) || $name < $first[$h->student_id])) {
+                $first[$h->student_id] = $name;
+            }
+        }
+
+        return $first;
+    }
+
+    /**
+     * Was the student admitted in $sessionName? The session containing their ADM DATE — or,
+     * for an advance admission taken Oct–Mar for the coming year (ADM DATE 12-03-2025, first
+     * Student Master session 2025-26), that coming session. Unknown → false (rule unchanged).
+     *
+     * @param  array<string, mixed>  $cache
+     */
+    private function admittedInSession(int $studentId, string $sessionName, array $cache): bool
+    {
+        $firstSession = $cache['first_sessions'][$studentId] ?? null;
+        $admissionDate = $cache['admission_dates'][$studentId] ?? null;
+        if (! $admissionDate) {
+            return $firstSession !== null && $firstSession === $sessionName;
+        }
+
+        $date = substr((string) $admissionDate, 0, 10);
+        $byDate = $this->sessionNameFor('', $date);
+        $month = (int) substr($date, 5, 2);
+        $start = (int) substr($byDate, 0, 4);
+        $nextSession = ($start + 1).'-'.($start + 2);
+        if ($firstSession === $nextSession && ($month >= 10 || $month <= 3)) {
+            return $sessionName === $nextSession;
+        }
+
+        return $sessionName === $byDate;
+    }
+
+    /**
+     * Removes the leftover parts of receipts an earlier import split per academic session (e.g.
+     * "254" holding only last session's February tuition, beside "254/25-26"), now that the whole
+     * receipt is saved as one payment. Deleted only when ALL of these hold — otherwise kept:
+     *  - same student, and not claimed as a receipt by any row of this import;
+     *  - untouched in the app (Paid, no refund, never edited or rolled back);
+     *  - every one of its items (fee head + amount + months), and its fine, is contained in the
+     *    receipt that now holds that money.
+     * Runs inside the import transaction; an import-created bank deposit for it goes with it.
+     *
+     * @param  array<string, mixed>  $cache
+     */
+    private function removeSupersededReceipts(array &$cache): int
+    {
+        $sig = fn (array $item) => ((int) ($item['fee_head_id'] ?? 0)).'|'.round((float) ($item['amount'] ?? 0), 2).'|'
+            .implode(',', (array) ($item['months'] ?? array_filter([$item['month'] ?? null])));
+
+        $removed = 0;
+        foreach ($cache['superseded'] as $receiptNo => $info) {
+            $existing = $cache['receipts'][$receiptNo] ?? null;
+            if (! $existing || isset($cache['receipts_seen'][$receiptNo])
+                || (int) $existing['student_id'] !== $info['student_id']
+                || $existing['status'] !== 'Paid' || (float) $existing['refunded_amount'] > 0
+                || $existing['edited_at'] !== null || $existing['rolled_back_at'] !== null) {
+                continue;
+            }
+
+            $available = array_count_values(array_map($sig, array_filter($info['items'], fn ($i) => ! empty($i['fee_head_id']))));
+            $contained = true;
+            foreach ((array) json_decode((string) $existing['items'], true) as $item) {
+                $key = $sig((array) $item);
+                if (($available[$key] ?? 0) < 1) {
+                    $contained = false;
+                    break;
+                }
+                $available[$key]--;
+            }
+            if (! $contained || round((float) $existing['fine_amount'], 2) > round((float) $info['fine'], 2)) {
+                continue;
+            }
+
+            DB::table('bank_transactions')
+                ->where('reference_no', $receiptNo)
+                ->where('type', 'Deposit')
+                ->where('remarks', 'like', 'Imported fee payment%')
+                ->delete();
+            DB::table('fee_payments')->where('id', $existing['id'])->delete();
+            $cache['receipts_seen'][$receiptNo] = true;
+            $removed++;
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Rolls back (never deletes) payments an earlier import saved for receipts the sheet marks
+     * cancelled — same fields and audit trail as FeePaymentController::rollback(). Payments the
+     * school has edited, refunded or rolled back are left alone.
+     *
+     * @param  array<string, array<string, mixed>>  $lines  one cancelled line per receipt
+     * @param  array<string, mixed>  $cache
+     */
+    private function rollBackCancelledReceipts(array $lines, array &$cache): int
+    {
+        $count = 0;
+        foreach ($lines as $line) {
+            $candidates = $this->receiptCandidates(
+                $line['receipt_raw'],
+                $line['synthetic_receipt'],
+                (string) $line['session']->name,
+                $line['admission_no']
+            );
+            foreach ($candidates as $candidate) {
+                $existing = $cache['receipts'][$candidate] ?? null;
+                if (! $existing || isset($cache['receipts_seen'][$candidate])
+                    || (int) $existing['academic_session_id'] !== (int) $line['session']->id
+                    || (int) $existing['student_id'] !== (int) $line['student_id']) {
+                    continue;
+                }
+                $cache['receipts_seen'][$candidate] = true;
+                if ($existing['status'] !== 'Paid' || (float) $existing['refunded_amount'] > 0
+                    || $existing['edited_at'] !== null || $existing['rolled_back_at'] !== null) {
+                    break;
+                }
+
+                $payment = FeePayment::query()->find($existing['id']);
+                if (! $payment) {
+                    break;
+                }
+                $reason = 'Cancelled in imported workbook (PMNT MODE: CANCEL)';
+                DB::transaction(function () use ($payment, $reason, $cache) {
+                    $before = $payment->only(['status', 'refunded_amount', 'refund_reason']);
+                    $payment->update([
+                        'refunded_amount' => $payment->amount,
+                        'refund_reason' => $reason,
+                        'refunded_at' => now(),
+                        'status' => 'Rolled Back',
+                        'rollback_reason' => $reason,
+                        'rolled_back_at' => now(),
+                        'rolled_back_by_id' => $cache['user_id'],
+                    ]);
+                    FeePaymentAudit::create([
+                        'fee_payment_id' => $payment->id,
+                        'action' => 'Rollback',
+                        'before' => $before,
+                        'after' => $payment->only(['status', 'refunded_amount', 'refund_reason']),
+                        'reason' => $reason,
+                        'performed_by_id' => $cache['user_id'],
+                    ]);
+                });
+                $count++;
+                break;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
      * @param  array<string, mixed>  $row
      * @param  array<string, mixed>  $cache
      */
@@ -1109,6 +1553,29 @@ class GlobalWorkbookImportController extends Controller
 
                 $session = $this->resolveSession($row['session'] ?? '', $date, $cache);
 
+                // One actual receipt = same RECEIPT no. + student + date (see buildFeePayment()). Its
+                // rows may belong to different academic sessions (last session's February tuition
+                // paid with this session's Session Fee) — each item keeps its own session.
+                $groupKey = $studentId.'|'.$date.'|'.($receiptNo !== '' ? 'R:'.$receiptNo : 'S:'.$row['row_number']);
+
+                // PMNT MODE "CANCEL" marks a voided receipt — not money received. Not imported;
+                // an earlier import of it is rolled back by rollBackCancelledReceipts().
+                if (str_contains(strtoupper((string) ($row['mode'] ?? '')), 'CANCEL')) {
+                    return [
+                        'ok' => true,
+                        'skip' => true,
+                        'reason' => 'cancelled',
+                        'cancelled_line' => [
+                            'group_key' => $groupKey,
+                            'receipt_raw' => $receiptNo,
+                            'synthetic_receipt' => sprintf('IMP-INC-%s-%s', $date, $row['row_number']),
+                            'student_id' => $studentId,
+                            'admission_no' => $admissionNo,
+                            'session' => $session,
+                        ],
+                    ];
+                }
+
                 $headRaw = trim((string) ($row['head'] ?? 'Fee')) ?: 'Fee';
                 $headCode = strtolower($headRaw);
                 $isFine = in_array($headCode, self::INCOME_FINE_HEAD_CODES, true);
@@ -1125,10 +1592,22 @@ class GlobalWorkbookImportController extends Controller
                     // not a separate literal "REG"/"TUI" head that due-calculation never sees.
                     $headName = self::INCOME_HEAD_CANONICAL_MAP[$headCode] ?? $headRaw;
 
+                    // REMARKS "RTE AMOUNT" = money received for an RTE-admitted student, typed under
+                    // a fee-head column (e.g. REG) — kept as its own "RTE Amount" head so it is
+                    // neither lost nor booked as that student's Registration/Admission fee.
+                    $isRteAmount = (bool) preg_match('/^\s*RTE\s*AMOUNT\s*$/i', (string) ($row['remarks'] ?? ''));
+                    if ($isRteAmount) {
+                        $headName = 'RTE Amount';
+                    }
+
                     // Old students are not charged Admission / Registration — skip those income
                     // lines so Fee Due / Pay Fee only expect Session Fee (and other applicable heads).
+                    // ADM TYPE is the student's status TODAY: a student admitted in 2025-26 is "Old"
+                    // now, yet their 2025-26 admission/registration receipt was a genuine payment —
+                    // only skip when the payment is NOT in the session the student was admitted in.
                     $admissionType = strtolower(trim((string) ($cache['admission_types'][$studentId] ?? 'New')));
-                    if ($admissionType === 'old' && in_array(strtolower($headName), self::NEW_ONLY_INCOME_HEADS, true)) {
+                    if ($admissionType === 'old' && in_array(strtolower($headName), self::NEW_ONLY_INCOME_HEADS, true)
+                        && ! $this->admittedInSession($studentId, (string) $session->name, $cache)) {
                         return [
                             'ok' => true,
                             'skip' => true,
@@ -1160,88 +1639,45 @@ class GlobalWorkbookImportController extends Controller
                     // payment date, never assumed to share the payment's own month or session).
                     $monthKeys = $this->resolveIncomeMonthKeys($row, $date);
 
-                    $items[] = [
+                    // Each fee entry keeps its own source details: academic session (a receipt
+                    // can pay two sessions), class, the sheet's receipt no. and head code, remarks.
+                    $items[] = array_filter([
                         'fee_head_id' => $headId,
                         'fee_head_name' => $headName,
                         'amount' => $amount,
                         'months' => $monthKeys,
                         'month' => $monthKeys[0],
-                    ];
+                        'academic_session_id' => (int) $session->id,
+                        'session' => (string) $session->name,
+                        'class' => trim((string) ($row['class'] ?? '')) ?: null,
+                        'source_receipt' => $receiptNo !== '' ? $receiptNo : null,
+                        'source_head' => $headRaw,
+                        'remarks' => $this->looksLikeFormula(trim((string) ($row['remarks'] ?? ''))) ? null : (trim((string) ($row['remarks'] ?? '')) ?: null),
+                    ], fn ($v) => $v !== null);
                 }
 
-                $receipt = $receiptNo !== '' ? $receiptNo : sprintf('IMP-INC-%s-%s', $date, $row['row_number']);
-                if (isset($cache['receipts_seen'][$receipt])) {
-                    return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
-                }
-                $cache['receipts_seen'][$receipt] = true;
-                $now = $cache['now'];
-
-                $newData = [
-                    'receipt_no' => $receipt,
-                    'student_id' => $studentId,
-                    'academic_session_id' => $session->id,
-                    'items' => json_encode($items, JSON_THROW_ON_ERROR),
-                    'amount' => $amount,
-                    'discount_amount' => 0,
-                    'fine_amount' => $fineAmount,
-                    'payment_mode' => $this->normalizeFeeMode($row['mode'] ?? 'Cash'),
-                    'payment_date' => $date,
-                    'remarks' => $this->composeIncomeRemarks($row),
-                ];
-
-                $existing = $cache['receipts'][$receipt] ?? null;
-                if ($existing) {
-                    // A payment the school has since edited, refunded, or rolled back in the app
-                    // (see FeePaymentController) has diverged from the sheet on purpose — a stale
-                    // re-import must not silently overwrite that manual decision.
-                    if ($existing['status'] !== 'Paid' || (float) $existing['refunded_amount'] > 0
-                        || $existing['edited_at'] !== null || $existing['rolled_back_at'] !== null) {
-                        return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited'];
-                    }
-
-                    $changed = $this->diffForUpdate($existing, $newData, ['amount', 'fine_amount', 'discount_amount'], ['items']);
-                    if ($changed === []) {
-                        return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
-                    }
-
-                    return [
-                        'ok' => true,
-                        'bucket' => 'income_fee_payments_updated',
-                        'update' => 'fee_payments',
-                        'update_id' => $existing['id'],
-                        'data' => array_merge($changed, ['updated_at' => $now]),
-                    ];
-                }
-
-                // fee_payments has no bank_account_id column, so the link to the account is a
-                // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums
-                // these, the same mechanism a manually-entered deposit uses. Skipped entirely
-                // when this account has its own authoritative BANK ledger sheet in this same
-                // workbook — that sheet's own "TRANSFER DEPOSIT" row already covers this money.
-                $bankCovered = $bankAccountId && ! empty($cache['bank_ledger_covered_accounts'][$bankAccountId]);
-                $bankTx = ($bankAccountId && ! $bankCovered) ? [
-                    'bank_account_id' => $bankAccountId,
-                    'type' => 'Deposit',
-                    'amount' => $amount,
-                    'date' => $date,
-                    'reference_no' => $receipt,
-                    'remarks' => 'Imported fee payment — '.($name !== '' ? $name : $admissionNo),
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ] : null;
-
+                // One sheet row = one fee head of a receipt. Rows sharing RECEIPT (same student and
+                // date) are combined into a single multi-head payment by buildFeePayment(), the same
+                // shape the Pay Fee screen saves — a repeated receipt no. is NOT a duplicate.
                 return [
                     'ok' => true,
-                    'bucket' => 'income_fee_payments',
-                    'insert' => 'fee_payments',
-                    'data' => array_merge($newData, [
-                        'status' => 'Paid',
-                        'refunded_amount' => 0,
-                        'collected_by_id' => $cache['user_id'],
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]),
-                    'bank_transaction' => $bankTx,
+                    'fee_line' => [
+                        'group_key' => $groupKey,
+                        'receipt_raw' => $receiptNo,
+                        'synthetic_receipt' => sprintf('IMP-INC-%s-%s', $date, $row['row_number']),
+                        'student_id' => $studentId,
+                        'admission_no' => $admissionNo,
+                        'name' => $name,
+                        'session' => $session,
+                        'items' => $items,
+                        'amount' => $amount,
+                        'fine_amount' => $fineAmount,
+                        'mode' => (string) ($row['mode'] ?? 'Cash'),
+                        'date' => $date,
+                        'remarks' => $this->composeIncomeRemarks($row),
+                        'bank_account_id' => $bankAccountId,
+                        'row_number' => $row['row_number'],
+                    ],
                 ];
             }
 
@@ -1627,7 +2063,8 @@ class GlobalWorkbookImportController extends Controller
     }
 
     /** @param  array<string, mixed>  $cache */
-    private function resolveSession(string $raw, string $date, array &$cache): AcademicSession
+    /** "2026-27" (or blank + payment date) → "2026-2027", the academic_sessions.name used. */
+    private function sessionNameFor(string $raw, string $date): string
     {
         $raw = trim($raw);
         if ($raw === '') {
@@ -1637,10 +2074,16 @@ class GlobalWorkbookImportController extends Controller
             $raw = $start.'-'.substr((string) ($start + 1), 2);
         }
 
-        $name = $raw;
         if (preg_match('/^(\d{4})-(\d{2})$/', $raw, $m)) {
-            $name = $m[1].'-'.substr($m[1], 0, 2).$m[2];
+            return $m[1].'-'.substr($m[1], 0, 2).$m[2];
         }
+
+        return $raw;
+    }
+
+    private function resolveSession(string $raw, string $date, array &$cache): AcademicSession
+    {
+        $name = $this->sessionNameFor($raw, $date);
 
         if (isset($cache['sessions'][$name])) {
             return $cache['sessions'][$name];
@@ -1810,8 +2253,20 @@ class GlobalWorkbookImportController extends Controller
             }
             $date = $this->resolveDate($row) ?: '1970-01-01';
             $admissionNo = trim((string) ($row['admission_no'] ?? ''));
+            if (is_numeric($admissionNo) && str_contains($admissionNo, '.')) {
+                $admissionNo = (string) (int) round((float) $admissionNo);
+            }
             if ($admissionNo !== '') {
-                $receipts[] = $receiptNo !== '' ? $receiptNo : sprintf('IMP-INC-%s-%s', $date, $row['row_number']);
+                // Every receipt no. claimReceiptNo() may pick for this row (plain, session- and
+                // student-qualified), so a re-import finds whichever one it used last time.
+                $candidates = $this->receiptCandidates(
+                    $receiptNo,
+                    sprintf('IMP-INC-%s-%s', $date, $row['row_number']),
+                    $this->sessionNameFor((string) ($row['session'] ?? ''), $date),
+                    $admissionNo
+                );
+                array_push($receipts, ...$candidates);
+                $receipts[] = end($candidates).'-'.$row['row_number'];
             } else {
                 $incomeVouchers[] = $receiptNo !== '' ? 'INC-'.$receiptNo : sprintf('INC-IMP-%s-%04d', substr($date, 0, 4), $row['row_number']);
             }
@@ -1823,8 +2278,8 @@ class GlobalWorkbookImportController extends Controller
         // value compares cleanly against the freshly computed sheet values in importIncomeRow().
         foreach (array_chunk($receipts, 500) as $chunk) {
             foreach (DB::table('fee_payments')->whereIn('receipt_no', $chunk)->get([
-                'id', 'receipt_no', 'student_id', 'academic_session_id', 'items', 'amount',
-                'discount_amount', 'fine_amount', 'payment_mode', 'payment_date', 'remarks',
+                'id', 'receipt_no', 'student_id', 'academic_session_id', 'multi_session', 'items', 'amount',
+                'discount_amount', 'fine_amount', 'session_fines', 'payment_mode', 'payment_date', 'remarks',
                 'status', 'refunded_amount', 'edited_at', 'rolled_back_at',
             ]) as $r) {
                 $cache['receipts'][$r->receipt_no] = (array) $r;

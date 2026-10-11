@@ -109,14 +109,14 @@ class StudRecSumReport
         $emptyPaid = ['TOT' => 0.0, 'REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0];
         $paidByStudent = array_fill_keys($studentIds, $emptyPaid);
 
-        $payments = FeePayment::query()
+        $payments = FeePayment::slicesFor(FeePayment::query()
             ->whereIn('student_id', $studentIds)
-            ->where('academic_session_id', $session->id)
+            ->touchingSessions([$session->id])
             ->where(function ($q) {
                 $q->whereNull('status')->orWhereNotIn('status', ['Refunded', 'Rolled Back']);
             })
             ->orderBy('id')
-            ->get(['id', 'student_id', 'items', 'amount', 'refunded_amount', 'fine_amount', 'status']);
+            ->get(['id', 'student_id', 'academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'refunded_amount', 'fine_amount', 'session_fines', 'status']), [$session->id]);
 
         foreach ($payments as $payment) {
             $sid = (int) $payment->student_id;

@@ -260,10 +260,13 @@ class FeeBalanceService
                 });
 
             if ($session) {
-                $query->where('academic_session_id', $session->id);
+                $query->touchingSessions([$session->id]);
             }
 
-            $payments = $query->orderBy('id')->get(['id', 'items', 'amount', 'refunded_amount', 'status']);
+            $payments = $query->orderBy('id')->get(['id', 'academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'fine_amount', 'session_fines', 'refunded_amount', 'status']);
+            if ($session) {
+                $payments = FeePayment::slicesFor($payments, [$session->id]);
+            }
         }
 
         foreach ($payments as $payment) {

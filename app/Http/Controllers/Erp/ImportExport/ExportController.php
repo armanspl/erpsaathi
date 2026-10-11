@@ -1322,11 +1322,26 @@ class ExportController extends Controller
                 'student.schoolClass:id,name',
                 'academicSession:id,name',
             ])
-            ->when(! $allSessions && $session, fn ($q) => $q->where('academic_session_id', $session->id))
+            ->when(! $allSessions && $session, fn ($q) => $q->touchingSessions([$session->id]))
             ->where('status', '!=', 'Rolled Back')
             ->orderBy('payment_date')
             ->orderBy('id')
             ->get();
+
+        // A multi-session receipt becomes one INCOME row per academic session it pays for.
+        $sessionsById = AcademicSession::query()->get(['id', 'name'])->keyBy('id');
+        $payments = $payments->flatMap(function (FeePayment $p) use ($allSessions, $session, $sessionsById) {
+            if (! $p->multi_session) {
+                return [$p];
+            }
+            $ids = (! $allSessions && $session)
+                ? [(int) $session->id]
+                : collect($p->items ?? [])->map(fn ($i) => $p->itemSessionId($i))->push((int) $p->academic_session_id)->unique()->values()->all();
+
+            return FeePayment::slicesFor([$p], $ids)
+                ->each(fn (FeePayment $s) => $s->setRelation('academicSession', $sessionsById->get($s->academic_session_id)))
+                ->all();
+        });
 
         $receiptNos = $payments->pluck('receipt_no')->filter()->unique()->values()->all();
         $modeByReceipt = [];
@@ -1355,11 +1370,11 @@ class ExportController extends Controller
             }
         }
 
-        // Group by student + calendar day — merges multiple same-day payments into one row.
+        // Group by student + calendar day (+ session) — merges multiple same-day payments into one row.
         $groups = [];
         foreach ($payments as $payment) {
             $paymentDate = $payment->payment_date?->toDateString() ?? '';
-            $key = $payment->student_id.'|'.$paymentDate;
+            $key = $payment->student_id.'|'.$paymentDate.'|'.$payment->academic_session_id;
 
             if (! isset($groups[$key])) {
                 $groups[$key] = [

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,12 +31,24 @@ class FeePayment extends Model
         'rollback_reason',
         'rolled_back_at',
         'rolled_back_by_id',
+        'multi_session',
+        'session_fines',
     ];
+
+    /** True on a read-only per-session view made by forSession() — never persisted. */
+    public bool $isSessionSlice = false;
+
+    protected static function booted(): void
+    {
+        static::saving(fn (FeePayment $payment) => ! $payment->isSessionSlice);
+    }
 
     protected function casts(): array
     {
         return [
             'items' => 'array',
+            'multi_session' => 'boolean',
+            'session_fines' => 'array',
             'amount' => 'decimal:2',
             'discount_amount' => 'decimal:2',
             'fine_amount' => 'decimal:2',
@@ -75,6 +88,100 @@ class FeePayment extends Model
     public function audits(): HasMany
     {
         return $this->hasMany(FeePaymentAudit::class)->latest('id');
+    }
+
+    /**
+     * Payments holding money for any of $sessionIds: their own session, or (multi-session
+     * receipts) an item tagged with one of them. Combine with forSession() to count only the
+     * part that belongs to a session.
+     *
+     * @param  list<int>  $sessionIds
+     */
+    public function scopeTouchingSessions(Builder $query, array $sessionIds): Builder
+    {
+        $ids = array_values(array_unique(array_map('intval', $sessionIds)));
+
+        return $query->where(function (Builder $q) use ($ids) {
+            $q->whereIn('academic_session_id', $ids)
+                ->orWhere(function (Builder $q) use ($ids) {
+                    $q->where('multi_session', true)->where(function (Builder $q) use ($ids) {
+                        foreach ($ids as $id) {
+                            $q->orWhereJsonContains('items', ['academic_session_id' => $id]);
+                        }
+                    });
+                });
+        });
+    }
+
+    /** Session an item's money belongs to: its own tag on a multi-session receipt, else the payment's. */
+    public function itemSessionId(array $item): int
+    {
+        return (int) (($this->multi_session ? ($item['academic_session_id'] ?? null) : null) ?? $this->academic_session_id);
+    }
+
+    /**
+     * This payment as seen from one academic session: only that session's items, with amount,
+     * fine, discount and refunds scaled to them. Ordinary (single-session) payments are returned
+     * unchanged for their own session and as null for any other. The result is read-only.
+     */
+    public function forSession(int $sessionId): ?static
+    {
+        $own = (int) $this->academic_session_id === $sessionId;
+        if (! $this->multi_session) {
+            return $own ? $this : null;
+        }
+
+        $items = array_values(array_filter($this->items ?? [], fn ($item) => $this->itemSessionId($item) === $sessionId));
+        $fines = $this->session_fines ?? [];
+        $fine = array_key_exists((string) $sessionId, $fines) || array_key_exists($sessionId, $fines)
+            ? (float) ($fines[$sessionId] ?? $fines[(string) $sessionId])
+            : ($own && $fines === [] ? (float) $this->fine_amount : 0.0);
+        $amount = round(array_sum(array_map(fn ($i) => (float) ($i['amount'] ?? 0), $items)) + $fine, 2);
+        if ($items === [] && $fine <= 0) {
+            return null;
+        }
+
+        $gross = (float) $this->amount;
+        $ratio = $gross > 0 ? $amount / $gross : 0.0;
+        $slice = clone $this;
+        $slice->isSessionSlice = true;
+        $slice->setAttribute('items', $items);
+        $slice->setAttribute('amount', $amount);
+        $slice->setAttribute('fine_amount', round($fine, 2));
+        $slice->setAttribute('discount_amount', round((float) $this->discount_amount * $ratio, 2));
+        $slice->setAttribute('refunded_amount', round((float) $this->refunded_amount * $ratio, 2));
+
+        return $slice;
+    }
+
+    /**
+     * Expands payments into per-session slices for $sessionIds (multi-session receipts appear
+     * once per session they touch; ordinary payments pass through unchanged).
+     *
+     * @param  iterable<FeePayment>  $payments
+     * @param  list<int>  $sessionIds
+     * @return \Illuminate\Support\Collection<int, FeePayment>
+     */
+    public static function slicesFor(iterable $payments, array $sessionIds): \Illuminate\Support\Collection
+    {
+        $out = collect();
+        foreach ($payments as $payment) {
+            if (! $payment->multi_session) {
+                if (in_array((int) $payment->academic_session_id, array_map('intval', $sessionIds), true)) {
+                    $out->push($payment);
+                }
+
+                continue;
+            }
+            foreach ($sessionIds as $sid) {
+                if ($slice = $payment->forSession((int) $sid)) {
+                    $slice->setAttribute('academic_session_id', (int) $sid);
+                    $out->push($slice);
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**

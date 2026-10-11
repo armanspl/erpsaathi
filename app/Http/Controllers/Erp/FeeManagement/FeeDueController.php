@@ -353,10 +353,11 @@ class FeeDueController extends Controller
             ?? $earliestDueDate($dues);
 
         $payments = FeePayment::where('student_id', $student->id)
-            ->where('academic_session_id', $session->id)
+            ->touchingSessions([$session->id])
             ->orderByDesc('payment_date')
             ->orderByDesc('id')
             ->get()
+            ->pipe(fn ($rows) => FeePayment::slicesFor($rows, [$session->id]))
             ->map(fn (FeePayment $p) => [
                 'date' => optional($p->payment_date)->format('d M Y') ?? substr((string) $p->payment_date, 0, 10),
                 'payment_mode' => strtoupper((string) $p->payment_mode),
@@ -567,10 +568,11 @@ class FeeDueController extends Controller
             : null;
 
         $payments = FeePayment::where('student_id', $student->id)
-            ->where('academic_session_id', $session->id)
+            ->touchingSessions([$session->id])
             ->orderByDesc('payment_date')
             ->orderByDesc('id')
             ->get()
+            ->pipe(fn ($rows) => FeePayment::slicesFor($rows, [$session->id]))
             ->map(fn (FeePayment $p) => [
                 'date' => optional($p->payment_date)->format('d M Y') ?? substr((string) $p->payment_date, 0, 10),
                 'payment_mode' => strtoupper((string) $p->payment_mode),
@@ -666,10 +668,11 @@ class FeeDueController extends Controller
         $categories = $balance->categoryRows($student, $session, $monthKeys, $calc, $paidInfo);
 
         $payments = FeePayment::where('student_id', $student->id)
-            ->where('academic_session_id', $session->id)
+            ->touchingSessions([$session->id])
             ->orderByDesc('payment_date')
             ->orderByDesc('id')
             ->get()
+            ->pipe(fn ($rows) => FeePayment::slicesFor($rows, [$session->id]))
             ->map(function (FeePayment $p) {
                 $items = is_array($p->items) ? $p->items : [];
                 $labels = collect($items)->pluck('fee_head_name')->filter()->unique()->implode(', ');

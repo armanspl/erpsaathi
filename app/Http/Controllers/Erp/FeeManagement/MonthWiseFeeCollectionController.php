@@ -178,13 +178,14 @@ class MonthWiseFeeCollectionController extends Controller
             ])
             ->whereNotIn('status', ['Rolled Back']);
 
+        $sessionFilterId = null;
         if (! empty($data['academic_session_id'])) {
-            $query->where('academic_session_id', $data['academic_session_id']);
+            $sessionFilterId = (int) $data['academic_session_id'];
         } elseif (! AcademicSession::requestWantsAll($request)) {
-            $session = AcademicSession::fromRequest($request, true);
-            if ($session) {
-                $query->where('academic_session_id', $session->id);
-            }
+            $sessionFilterId = AcademicSession::fromRequest($request, true)?->id;
+        }
+        if ($sessionFilterId) {
+            $query->touchingSessions([$sessionFilterId]);
         }
 
         if (! empty($data['payment_from'])) {
@@ -219,6 +220,10 @@ class MonthWiseFeeCollectionController extends Controller
         }
 
         $payments = $query->orderByDesc('payment_date')->orderByDesc('id')->get();
+        if ($sessionFilterId) {
+            // Multi-session receipts: only the items that belong to the selected session.
+            $payments = FeePayment::slicesFor($payments, [$sessionFilterId]);
+        }
 
         $feeMonthFilter = $data['fee_month'] ?? null;
         $rows = collect();

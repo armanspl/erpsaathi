@@ -81,7 +81,8 @@ class FeeController extends Controller
         abort_unless($feePayment->student_id === $student->id, 404);
 
         $data = $this->dataBuilder->feeReceipt($feePayment);
-        $filename = ($feePayment->receipt_no ?: 'fee-receipt').'.pdf';
+        // Imported receipts can be session-qualified ("1898/26-27"); "/" is not allowed in a download filename.
+        $filename = str_replace(['/', '\\'], '-', $feePayment->receipt_no ?: 'fee-receipt').'.pdf';
 
         return $this->renderer->streamPdf('fee_receipt', $data, $filename);
     }
@@ -154,7 +155,8 @@ class FeeController extends Controller
         if (! $allSessions) {
             $sessionId = $this->currentSession()?->id;
             if ($sessionId) {
-                $query->where('academic_session_id', $sessionId);
+                // A receipt that also pays another session's fees is listed in both sessions.
+                $query->touchingSessions([$sessionId]);
             }
         }
 

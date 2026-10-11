@@ -64,18 +64,41 @@ class FeePaymentController extends Controller
             $query->where('student_id', $data['student_id']);
         }
 
+        $sessionFilterId = null;
         if (! AcademicSession::requestWantsAll($request)) {
             $session = AcademicSession::fromRequest($request);
             if ($session) {
-                $query->where('academic_session_id', $session->id);
+                // A receipt that also pays another session's fees is listed under both sessions.
+                $query->touchingSessions([$session->id]);
+                $sessionFilterId = (int) $session->id;
             }
         }
 
-        if ($from) {
-            $query->whereDate('payment_date', '>=', $from);
-        }
-        if ($to) {
-            $query->whereDate('payment_date', '<=', $to);
+        $inPeriod = function ($q) use ($from, $to) {
+            if ($from) {
+                $q->whereDate('payment_date', '>=', $from);
+            }
+            if ($to) {
+                $q->whereDate('payment_date', '<=', $to);
+            }
+        };
+        $search = trim((string) ($data['search'] ?? ''));
+
+        if ($search === '') {
+            $inPeriod($query);
+        } else {
+            // Receipt no. matches are found anywhere in the session (a receipt is looked up
+            // directly); student name / admission no. matches still follow the report period.
+            $term = '%' . addcslashes($search, '\\%_') . '%';
+            $query->where(function ($q) use ($term, $inPeriod) {
+                $q->where('receipt_no', 'like', $term)
+                    ->orWhere(function ($q) use ($term, $inPeriod) {
+                        $inPeriod($q);
+                        $q->whereHas('student', function ($s) use ($term) {
+                            $s->where('name', 'like', $term)->orWhere('admission_no', 'like', $term);
+                        });
+                    });
+            });
         }
 
         if (! empty($data['min_amount'])) {
@@ -85,7 +108,7 @@ class FeePaymentController extends Controller
             $query->where('amount', '<=', $data['max_amount']);
         }
 
-        if (! empty($data['branch_id']) || ! empty($data['school_class_id']) || ! empty($data['section_id']) || ! empty($data['search'])) {
+        if (! empty($data['branch_id']) || ! empty($data['school_class_id']) || ! empty($data['section_id'])) {
             $query->whereHas('student', function ($q) use ($data) {
                 if (! empty($data['branch_id'])) {
                     $q->forBranch((int) $data['branch_id']);
@@ -95,12 +118,6 @@ class FeePaymentController extends Controller
                 }
                 if (! empty($data['section_id'])) {
                     $q->where('section_id', $data['section_id']);
-                }
-                if (! empty($data['search'])) {
-                    $term = '%' . trim($data['search']) . '%';
-                    $q->where(function ($q) use ($term) {
-                        $q->where('name', 'like', $term)->orWhere('admission_no', 'like', $term);
-                    });
                 }
             });
         }
@@ -128,7 +145,20 @@ class FeePaymentController extends Controller
         }
 
         return response()->json(
-            $payments->map(fn (FeePayment $p) => $this->presentPayment($p, $dues[$p->student_id] ?? null))
+            $payments->map(function (FeePayment $p) use ($dues, $sessionFilterId) {
+                $row = $this->presentPayment($p, $dues[$p->student_id] ?? null);
+                // Multi-session receipt: the part that belongs to the selected session, for totals.
+                if ($sessionFilterId && $p->multi_session && ($slice = $p->forSession($sessionFilterId))) {
+                    $row['session_share'] = [
+                        'amount' => (float) $slice->amount,
+                        'refunded_amount' => (float) $slice->refunded_amount,
+                        'discount_amount' => (float) $slice->discount_amount,
+                        'fine_amount' => (float) $slice->fine_amount,
+                    ];
+                }
+
+                return $row;
+            })
         );
     }
 
@@ -151,7 +181,9 @@ class FeePaymentController extends Controller
         ]);
 
         $request->merge(['with_due' => false]);
-        $payments = collect($this->index($request)->getData(true));
+        // Totals count only the selected session's share of a multi-session receipt.
+        $payments = collect($this->index($request)->getData(true))
+            ->map(fn (array $p) => isset($p['session_share']) ? array_merge($p, $p['session_share']) : $p);
 
         $groupKey = ! empty($data['section_id'])
             ? 'section'
@@ -684,7 +716,8 @@ class FeePaymentController extends Controller
     public function downloadPdf(FeePayment $payment, DocumentRenderService $renderer, DocumentDataBuilder $dataBuilder): StreamedResponse
     {
         // Two identical copies (school + parent) on one A4 sheet with a cut line — same payment, same receipt no.
-        return $renderer->streamPdfDuplicateA4('fee_receipt', $dataBuilder->feeReceipt($payment), ($payment->receipt_no ?: 'fee-receipt').'.pdf');
+        // Imported receipts can be session-qualified ("1898/26-27"); "/" is not allowed in a download filename.
+        return $renderer->streamPdfDuplicateA4('fee_receipt', $dataBuilder->feeReceipt($payment), str_replace(['/', '\\'], '-', $payment->receipt_no ?: 'fee-receipt').'.pdf');
     }
 
     public function refund(Request $request, FeePayment $payment)
@@ -751,6 +784,23 @@ class FeePaymentController extends Controller
             ], fn ($v) => $v !== null);
         })->values();
 
+        // Multi-session (imported) receipt: keep each line's own academic session and source
+        // details across the edit, matched by fee head + months, so the money stays in its session.
+        $multiSession = false;
+        if ($payment->multi_session) {
+            $originals = collect($payment->items ?? []);
+            $items = $items->map(function (array $item) use ($originals) {
+                $sig = fn (array $i) => ($i['fee_head_id'] ?? 0).'|'.implode(',', (array) ($i['months'] ?? array_filter([$i['month'] ?? null])));
+                $match = $originals->first(fn ($o) => $sig($o) === $sig($item))
+                    ?? $originals->where('fee_head_id', $item['fee_head_id'])->first();
+
+                return $match
+                    ? $item + array_intersect_key($match, array_flip(['academic_session_id', 'session', 'class', 'source_receipt', 'source_head', 'remarks']))
+                    : $item;
+            })->values();
+            $multiSession = $items->map(fn ($i) => $payment->itemSessionId($i))->unique()->count() > 1;
+        }
+
         // Only NEWLY added (fee head, month) pairs need to be checked against other receipts —
         // months this payment already covered before the edit are status quo, not a new
         // collision, even if legacy/imported data happens to overlap them elsewhere.
@@ -764,7 +814,7 @@ class FeePaymentController extends Controller
         if ($newHeadMonths->isNotEmpty()) {
             $overlap = FeePayment::query()
                 ->where('student_id', $payment->student_id)
-                ->where('academic_session_id', $payment->academic_session_id)
+                ->touchingSessions($items->map(fn ($i) => $payment->itemSessionId($i))->push((int) $payment->academic_session_id)->unique()->values()->all())
                 ->where('id', '!=', $payment->id)
                 ->where('status', '!=', 'Rolled Back')
                 ->get(['items'])
@@ -794,9 +844,17 @@ class FeePaymentController extends Controller
 
         $before = $payment->only(['items', 'amount', 'discount_amount', 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']);
 
-        DB::transaction(function () use ($payment, $items, $amount, $discountAmount, $data, $before) {
+        // A changed fine on a multi-session receipt can no longer be split reliably — it then
+        // counts in the receipt's own session (session_fines cleared).
+        $sessionFines = $multiSession && round((float) ($data['fine_amount'] ?? 0), 2) === round((float) $payment->fine_amount, 2)
+            ? $payment->session_fines
+            : null;
+
+        DB::transaction(function () use ($payment, $items, $amount, $discountAmount, $data, $before, $multiSession, $sessionFines) {
             $payment->update([
                 'items' => $items->values()->all(),
+                'multi_session' => $multiSession,
+                'session_fines' => $sessionFines,
                 'amount' => $amount,
                 'discount_amount' => $discountAmount,
                 'fine_amount' => $data['fine_amount'] ?? 0,
