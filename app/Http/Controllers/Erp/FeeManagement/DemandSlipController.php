@@ -27,6 +27,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DemandSlipController extends Controller
 {
+    /** Students per tab after the other filters — set by filteredRows(). */
+    private array $tabCounts = ['active' => 0, 'left' => 0];
+
     public function __construct(private DocumentDataBuilder $dataBuilder) {}
 
     public function index(Request $request)
@@ -36,6 +39,8 @@ class DemandSlipController extends Controller
 
         return response()->json([
             'session' => $session?->only(['id', 'name']),
+            'period' => $this->period($session),
+            'tab_counts' => $this->tabCounts,
             'school' => ['name' => $school['school_name'], 'address' => $school['school_address'], 'phone' => $school['school_phone']],
             'vehicles' => $vehicles,
             'columns' => collect(StudRecSumReport::COLUMNS)->map(fn ($label, $key) => [
@@ -55,7 +60,9 @@ class DemandSlipController extends Controller
         $keys = $this->selectedColumns($request);
         $headers = array_map(fn ($k) => StudRecSumReport::COLUMNS[$k], $keys);
         $body = array_map(fn (array $row) => array_map(fn ($k) => $row[$k], $keys), $rows);
-        $title = 'Demand Slip — Stud_Rec_Sum'.($session ? ' ('.$session->name.')' : '');
+        $period = $this->period($session);
+        $title = 'Demand Slip — Stud_Rec_Sum'.($session ? ' ('.$session->name.')' : '')
+            .($request->input('tab') === 'left' ? ' · Left Students' : '').' · '.$period['label'];
 
         if ($format === 'pdf') {
             return $this->pdf($keys, $headers, $rows, $title, $request);
@@ -86,6 +93,7 @@ class DemandSlipController extends Controller
             'vehicle' => 'nullable|string|max:100',
             'dues' => 'nullable|in:all,due,clear',
             'search' => 'nullable|string|max:100',
+            'tab' => 'nullable|in:active,left',
         ]);
 
         $session = ! empty($f['academic_session_id'])
@@ -100,7 +108,9 @@ class DemandSlipController extends Controller
         $vehicles = array_values(array_unique(array_filter(array_column($all, 'vehicle'), fn ($v) => $v !== 'None')));
         sort($vehicles, SORT_NATURAL | SORT_FLAG_CASE);
 
-        $rows = array_values(array_filter($all, function (array $r) use ($f, $search, $vehicle) {
+        $leftTab = ($f['tab'] ?? 'active') === 'left';
+        $this->tabCounts = ['active' => 0, 'left' => 0];
+        $rows = array_values(array_filter($all, function (array $r) use ($f, $search, $vehicle, $leftTab) {
             if (! empty($f['school_class_id']) && (int) $r['school_class_id'] !== (int) $f['school_class_id']) {
                 return false;
             }
@@ -127,10 +137,31 @@ class DemandSlipController extends Controller
                 }
             }
 
-            return true;
+            // Every other filter applies to both tabs; the tab picks enrolled vs left students.
+            $this->tabCounts[$r['left'] ? 'left' : 'active']++;
+
+            return (bool) $r['left'] === $leftTab;
         }));
 
         return [$session, $rows, $vehicles];
+    }
+
+    /**
+     * The months the demand covers: the selected session's start through the current month
+     * (all of a past session; none of a session that hasn't started).
+     *
+     * @return array{from: ?string, to: ?string, months: int, label: string}
+     */
+    private function period(?AcademicSession $session): array
+    {
+        $keys = $session ? StudRecSumReport::demandMonths($session) : [];
+        if ($keys === []) {
+            return ['from' => null, 'to' => null, 'months' => 0, 'label' => 'No months due yet'];
+        }
+        $fmt = fn (string $k) => \Carbon\Carbon::createFromFormat('Y-m', $k)->format('M Y');
+        [$from, $to] = [$fmt($keys[0]), $fmt(end($keys))];
+
+        return ['from' => $from, 'to' => $to, 'months' => count($keys), 'label' => "Demand {$from} – {$to} (".count($keys).' month'.(count($keys) === 1 ? '' : 's').')'];
     }
 
     /** @return list<string> Column keys to export (all, in Stud_Rec_Sum order, when none picked). */

@@ -33,14 +33,7 @@
 
         <!-- Filters -->
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                <div>
-                    <label class="form-label">Academic Year</label>
-                    <select v-model="filters.academic_session_id" class="form-input">
-                        <option :value="null">Header session</option>
-                        <option v-for="s in sessions" :key="s.id" :value="s.id">{{ s.name }}</option>
-                    </select>
-                </div>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <div>
                     <label class="form-label">Class</label>
                     <select v-model="filters.school_class_id" class="form-input" @change="filters.section_id = null">
@@ -107,6 +100,26 @@
             </div>
         </div>
 
+        <!-- Enrolled vs left students -->
+        <div class="flex flex-wrap items-center gap-3">
+            <div class="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+                <button
+                    v-for="t in [{ key: 'active', label: 'Enrolled Students' }, { key: 'left', label: 'Left Students' }]"
+                    :key="t.key"
+                    type="button"
+                    class="rounded-md px-3.5 py-1.5 text-sm font-medium transition"
+                    :class="tab === t.key ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+                    @click="tab = t.key"
+                >
+                    {{ t.label }}
+                    <span class="ml-1 rounded-full bg-slate-200/80 px-1.5 text-[11px] text-slate-600 dark:bg-slate-600 dark:text-slate-200">{{ tabCounts[t.key] }}</span>
+                </button>
+            </div>
+            <p v-if="tab === 'left'" class="text-xs text-slate-500">
+                Payments are kept and shown. No fee is charged after a student left — only months up to their TC month (or none, if they left before this session).
+            </p>
+        </div>
+
         <!-- Summary -->
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -130,7 +143,7 @@
         <!-- Table -->
         <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div class="border-b border-slate-100 px-4 py-3 text-xs text-slate-400 dark:border-slate-800">
-                {{ sessionName ? `Session ${sessionName}` : '' }} · DUES = paid − expected, so a <span class="font-semibold text-rose-600">negative</span> amount is still owed.
+                {{ sessionName ? `Session ${sessionName}` : '' }}<template v-if="periodLabel"> · <span class="font-semibold text-slate-600 dark:text-slate-300">{{ periodLabel }}</span></template> · DUES = paid − expected, so a <span class="font-semibold text-rose-600">negative</span> amount is still owed.
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
@@ -165,6 +178,7 @@
                                     :class="c.amount ? ['whitespace-nowrap text-right tabular-nums', Number(r[c.key]) < 0 ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'] : 'text-slate-700 dark:text-slate-200'"
                                 >
                                     {{ c.amount ? money(r[c.key]) : (r[c.key] || '—') }}
+                                    <span v-if="c.key === 'name' && r.left_note" class="mt-0.5 block text-[11px] font-medium text-amber-600">{{ r.left_note }}</span>
                                 </td>
                             </tr>
                         </template>
@@ -229,6 +243,8 @@ const rows = ref([]);
 const totals = ref({});
 const school = ref({ name: '', address: '', phone: '' });
 const sessionName = ref('');
+// Months the demand covers — the session start through the current month (from the server).
+const periodLabel = ref('');
 const selectedKeys = ref(loadSavedColumns());
 const page = ref(1);
 const perPageSelection = ref(50);
@@ -238,7 +254,7 @@ const sortDir = ref('asc');
 const filters = reactive(blankFilters());
 
 function blankFilters() {
-    return { academic_session_id: null, school_class_id: null, section_id: null, vehicle: '', dues: 'all', search: '' };
+    return { school_class_id: null, section_id: null, vehicle: '', dues: 'all', search: '' };
 }
 
 function loadSavedColumns() {
@@ -253,7 +269,9 @@ watch(selectedKeys, (keys) => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(keys)); } catch { /* storage unavailable */ }
 }, { deep: true });
 
-const sessions = computed(() => (erpStore.sessionRecords || []).filter((s) => s?.id && s?.name));
+// Enrolled students (default) vs students who have left — every other filter applies to both.
+const tab = ref('active');
+const tabCounts = ref({ active: 0, left: 0 });
 const filterSections = computed(() => sections.value.filter((s) => s.school_class_id === filters.school_class_id));
 // Selected columns, always in Stud_Rec_Sum order.
 const visibleColumns = computed(() => columns.value.filter((c) => (selectedKeys.value || []).includes(c.key)));
@@ -303,7 +321,7 @@ function money(n) {
 
 function currentParams() {
     const p = {};
-    if (filters.academic_session_id) p.academic_session_id = filters.academic_session_id;
+    if (tab.value === 'left') p.tab = 'left';
     if (filters.school_class_id) p.school_class_id = filters.school_class_id;
     if (filters.section_id) p.section_id = filters.section_id;
     if (filters.vehicle) p.vehicle = filters.vehicle;
@@ -333,6 +351,8 @@ async function reload() {
         vehicles.value = data.vehicles || [];
         school.value = data.school || school.value;
         sessionName.value = data.session?.name || '';
+        periodLabel.value = data.period?.label || '';
+        tabCounts.value = data.tab_counts || { active: 0, left: 0 };
         const known = columns.value.map((c) => c.key);
         const kept = (selectedKeys.value || []).filter((k) => known.includes(k));
         selectedKeys.value = kept.length ? kept : known;
@@ -410,7 +430,7 @@ function printList() {
         th { background: #eee; } thead { display: table-header-group; } tr { page-break-inside: avoid; }
         tfoot td { font-weight: bold; background: #f3f3f3; }
     `, `${schoolHeader()}
-        <h1>Demand Slip — Stud_Rec_Sum${sessionName.value ? ` (${esc(sessionName.value)})` : ''}</h1>        <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`);
+        <h1>Demand Slip — Stud_Rec_Sum${sessionName.value ? ` (${esc(sessionName.value)})` : ''}${tab.value === 'left' ? ' · Left Students' : ''}${periodLabel.value ? ` · ${esc(periodLabel.value)}` : ''}</h1>        <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`);
 }
 
 /** One demand slip per student: what was expected, paid and is still due for each fee head. */
@@ -425,7 +445,7 @@ function printSlips() {
         const totalDueAmount = due(r.dues);
         return `<div class="slip">
             ${schoolHeader()}
-            <div class="title">FEE DEMAND SLIP${sessionName.value ? ` — Session ${esc(sessionName.value)}` : ''}</div>
+            <div class="title">FEE DEMAND SLIP${sessionName.value ? ` — Session ${esc(sessionName.value)}` : ''}${r.left_note ? ` <span style="font-size:9pt;color:#b45309">(${esc(r.left_note)})</span>` : ''}${periodLabel.value ? `<div style="font-size:9pt;font-weight:normal">${esc(periodLabel.value)}</div>` : ''}</div>
             <table class="info">
                 <tr><td>Adm No: <b>${esc(r.admission_no)}</b></td><td>Name: <b>${esc(r.name)}</b></td><td>Class: <b>${esc(r.class)}${r.section ? ` - ${esc(r.section)}` : ''}</b></td></tr>
                 <tr><td>Father: <b>${esc(r.father_name)}</b></td><td>Mobile: <b>${esc(r.mobile)}</b></td><td>Vehicle: <b>${esc(r.vehicle)}</b></td></tr>
@@ -472,9 +492,9 @@ function scheduleReload(delay = 0) {
     reloadTimer = setTimeout(reload, delay);
 }
 
-watch(() => [filters.academic_session_id, filters.school_class_id, filters.section_id, filters.vehicle, filters.dues], () => scheduleReload(0));
+watch(() => [tab.value, filters.school_class_id, filters.section_id, filters.vehicle, filters.dues], () => scheduleReload(0));
 watch(() => filters.search, () => scheduleReload(350));
-watch(() => erpStore.currentSession, () => { if (!filters.academic_session_id) scheduleReload(0); });
+watch(() => erpStore.currentSession, () => scheduleReload(0));
 watch(perPageSelection, () => { page.value = 1; });
 
 onMounted(async () => {

@@ -754,9 +754,13 @@ class StudentMasterImportService
     {
         $stoppage = trim((string) ($row['stoppage'] ?? ''));
         $vehicleNo = trim((string) ($row['vehicle'] ?? ''));
+        // The Transport column ("Yes"/"No") wins over a stoppage that was left filled in:
+        // a "No" student is not charged transport. Blank Transport keeps the stoppage rule.
+        $usesTransport = $row['uses_transport'] ?? null;
+        $usesTransport = is_bool($usesTransport) ? $usesTransport : self::parseYesNo((string) $usesTransport);
 
         // "None" is already blanked in import(); blank stoppage means not using transport.
-        if ($stoppage === '') {
+        if ($stoppage === '' || $usesTransport === false) {
             $deleted = StudentTransport::where('student_id', $student->id)->delete();
             StudentUdiseDetail::where('student_id', $student->id)->update(['uses_transport' => false]);
 

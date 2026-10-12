@@ -12,6 +12,7 @@ use App\Models\ExpenseCategory;
 use App\Models\FeeHead;
 use App\Models\FeePayment;
 use App\Models\FeePaymentAudit;
+use App\Services\AnnualFeeHead;
 use App\Models\ImportExportLog;
 use App\Models\Income;
 use App\Models\RouteStop;
@@ -154,12 +155,37 @@ class GlobalWorkbookImportController extends Controller
      */
     private const INCOME_FINE_HEAD_CODES = ['fine', 'fin'];
 
+    /**
+     * mode=preview runs the whole import inside a transaction and rolls it back, so the school
+     * sees exactly what would be inserted / skipped / flagged before anything is saved.
+     * A normal import only adds new records and skips unchanged ones; existing records whose
+     * sheet values changed are listed for review and left as they are unless
+     * apply_corrections=1 (the controlled correction step).
+     */
     public function store(Request $request)
     {
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls|max:40960',
+            'mode' => 'nullable|in:preview,import',
+            'apply_corrections' => 'nullable|boolean',
         ]);
 
+        $preview = $request->input('mode') === 'preview';
+        $applyCorrections = $request->boolean('apply_corrections');
+        if (! $preview) {
+            return $this->runImport($request, false, $applyCorrections);
+        }
+
+        DB::beginTransaction();
+        try {
+            return $this->runImport($request, true, $applyCorrections);
+        } finally {
+            DB::rollBack();
+        }
+    }
+
+    private function runImport(Request $request, bool $preview, bool $applyCorrections)
+    {
         @set_time_limit(600);
         @ini_set('memory_limit', '1024M');
 
@@ -231,7 +257,10 @@ class GlobalWorkbookImportController extends Controller
             $title = trim((string) $sheet->getTitle());
             $lower = strtolower($title);
             if ($incomeTitle && strtolower($incomeTitle) === $lower) {
-                $parsed = SpreadsheetImportReader::fromWorksheet($sheet);
+                // ERP exports put a TOTAL row above the header; the school's own file starts at row 1.
+                $headerRow = $this->incomeHeaderRow($sheet);
+                $parsed = SpreadsheetImportReader::fromWorksheet($sheet, $headerRow);
+                $parsed['header_row'] = $headerRow;
                 $parsed['title'] = $title;
                 $incomeSheet = $parsed;
             }
@@ -244,6 +273,23 @@ class GlobalWorkbookImportController extends Controller
                 // Columns beyond STOPPAGE/FARE (D = FARE×multiplier formula, E = unused, F/G =
                 // class-wise fee) are deliberately never read — positional read of A/B/C only.
                 $parsed = SpreadsheetImportReader::fromWorksheet($sheet);
+                // FARE is often typed as a formula ("=850+50"). Rows are read without formula
+                // evaluation, so use the result Excel saved with the file (or work it out when
+                // the file has none) — otherwise the stop is skipped as having no fare.
+                foreach ($parsed['rows'] as $i => $row) {
+                    if (is_string($row[2] ?? null) && str_starts_with($row[2], '=')) {
+                        $cell = $sheet->getCell('C'.($i + 2));
+                        $value = $cell->getOldCalculatedValue();
+                        if (! is_numeric($value)) {
+                            try {
+                                $value = $cell->getCalculatedValue();
+                            } catch (\Throwable) {
+                                $value = null;
+                            }
+                        }
+                        $parsed['rows'][$i][2] = $value;
+                    }
+                }
                 $parsed['title'] = $title;
                 $transportSheet = $parsed;
             }
@@ -297,6 +343,7 @@ class GlobalWorkbookImportController extends Controller
             'skipped_old_student_new_only_fee' => 0,
             'skipped_manually_edited' => 0,
             'skipped_cancelled' => 0,
+            'flagged_changed' => 0,
             'rolled_back_cancelled' => 0,
             'superseded_removed' => 0,
             'updated_existing' => 0,
@@ -326,6 +373,8 @@ class GlobalWorkbookImportController extends Controller
             'ignored_columns' => [],
             'performed_by_id' => Auth::guard('erp')->id(),
         ]);
+
+        AnnualFeeHead::flush();
 
         // Warm caches once — avoids thousands of per-row SELECTs.
         // Only load existing receipt/voucher keys that appear in this file (not the whole table).
@@ -362,7 +411,12 @@ class GlobalWorkbookImportController extends Controller
             'bank_ledger_covered_accounts' => [],
             'user_id' => Auth::guard('erp')->id(),
             'now' => now()->toDateTimeString(),
+            // Controlled correction: existing records whose sheet values changed are only
+            // listed in 'flagged' unless the school chose to apply corrections.
+            'apply_corrections' => $applyCorrections,
+            'flagged' => [],
         ];
+        $studentsBefore = Student::query()->count();
 
         // Resolve (find-or-create) every ledger sheet's account BEFORE Income rows are
         // processed, so an income row naming the same account (e.g. PMNT MODE "GAS 11662")
@@ -403,6 +457,8 @@ class GlobalWorkbookImportController extends Controller
                     $breakdown['skipped_manually_edited'] += $rows;
                 } elseif ($reason === 'cancelled') {
                     $breakdown['skipped_cancelled'] += $rows;
+                } elseif ($reason === 'changed_flagged') {
+                    $breakdown['flagged_changed'] += $rows;
                 }
 
                 return;
@@ -577,6 +633,39 @@ class GlobalWorkbookImportController extends Controller
                 );
                 $breakdown['superseded_removed'] += $this->removeSupersededReceipts($cache);
             });
+
+            // Imported payments (same students and sessions as this sheet) that no row of the
+            // sheet matched — e.g. a receipt no. later corrected in Excel. Reported, never deleted.
+            $studentIds = [];
+            $sessionIds = [];
+            foreach ($feeReceipts as $lines) {
+                foreach ($lines as $line) {
+                    $studentIds[(int) $line['student_id']] = true;
+                    $sessionIds[(int) $line['session']->id] = true;
+                }
+            }
+            if ($studentIds !== []) {
+                $admissionNos = array_flip($cache['students']);
+                foreach (array_chunk(array_keys($studentIds), 500) as $chunk) {
+                    foreach (DB::table('fee_payments')
+                        ->whereIn('student_id', $chunk)
+                        ->whereIn('academic_session_id', array_keys($sessionIds))
+                        ->where('status', '!=', 'Rolled Back')
+                        ->where('items', 'like', '%"source_head"%')
+                        ->get(['receipt_no', 'student_id', 'amount', 'payment_date']) as $p) {
+                        if (! isset($cache['receipts_seen'][$p->receipt_no])) {
+                            $cache['flagged'][] = [
+                                'type' => 'fee_payment_not_in_excel',
+                                'receipt_no' => $p->receipt_no,
+                                'admission_no' => $admissionNos[$p->student_id] ?? null,
+                                'date' => substr((string) $p->payment_date, 0, 10),
+                                'amount' => round((float) $p->amount, 2),
+                                'note' => 'Saved from an earlier import but no row of this sheet matches it — left as it is.',
+                            ];
+                        }
+                    }
+                }
+            }
         }
 
         if ($expenseSheet) {
@@ -661,14 +750,61 @@ class GlobalWorkbookImportController extends Controller
                 .'.';
         }
 
-        DashboardCache::forget();
+        if (! $preview) {
+            DashboardCache::forget();
+        }
+
+        $flagged = collect($cache['flagged']);
+        $studentsCreated = Student::query()->count() - $studentsBefore;
+        $report = [
+            'fee_payments' => [
+                'inserted' => (int) ($stats['income_fee_payments'] ?? 0),
+                'updated' => (int) ($stats['income_fee_payments_updated'] ?? 0),
+                'changed_flagged' => $flagged->where('type', 'fee_payment_changed')->count(),
+                'kept_manual_edits' => $breakdown['skipped_manually_edited'],
+                'cancelled_skipped' => $breakdown['skipped_cancelled'],
+                'rolled_back' => $breakdown['rolled_back_cancelled'],
+                'superseded_removed' => $breakdown['superseded_removed'],
+            ],
+            'expenses' => [
+                'inserted' => (int) ($stats['expenses'] ?? 0),
+                'updated' => (int) ($stats['expenses_updated'] ?? 0),
+                'changed_flagged' => $flagged->where('type', 'expense_changed')->count(),
+                'not_in_excel' => $flagged->where('type', 'expense_not_in_excel')->count(),
+            ],
+            'students' => $studentMasterResult ? [
+                'rows' => $studentMasterResult['total_rows'],
+                'created' => $studentsCreated,
+                'existing_updated' => max(0, $studentMasterResult['success_count'] - $studentsCreated),
+                'rejected' => $studentMasterResult['failed_count'],
+            ] : null,
+            'transport' => $transportSheet ? [
+                'stops_updated' => $transportStats['transport_stops_updated'],
+                'stops_unchanged' => (int) ($transportStats['transport_stops_unchanged'] ?? 0),
+                'stops_created' => $transportStats['transport_stops_created'],
+                'rows_skipped' => $transportStats['transport_rows_skipped'],
+            ] : null,
+            'bank' => $bankSheets !== [] ? [
+                'inserted' => $bankStats['bank_transactions_imported'],
+                'rows_skipped' => $bankStats['bank_rows_skipped'],
+            ] : null,
+            // INCOME + EXPENSES sheet rows already saved exactly as in the sheet (skipped).
+            'rows_unchanged' => $breakdown['skipped_duplicate'],
+            'rejected_rows' => $failed,
+            'flagged_total' => $flagged->count(),
+            'flagged_by_type' => $flagged->countBy('type')->all(),
+            'flagged' => $flagged->take(300)->values()->all(),
+        ];
 
         return response()->json([
-            'log' => $log->fresh(),
+            'preview' => $preview,
+            'corrections_applied' => $applyCorrections,
+            'report' => $report,
+            'log' => $preview ? null : $log->fresh(),
             'failed_rows' => array_slice($failedRows, 0, 200),
             'stats' => $stats,
             'breakdown' => $breakdown,
-            'message' => $message,
+            'message' => ($preview ? 'PREVIEW — nothing was saved. ' : '').$message,
         ]);
     }
 
@@ -715,8 +851,10 @@ class GlobalWorkbookImportController extends Controller
             if ($existingStop) {
                 if ((float) $existingStop->fare !== $fare) {
                     $existingStop->update(['fare' => $fare]);
+                    $stats['transport_stops_updated']++;
+                } else {
+                    $stats['transport_stops_unchanged'] = ($stats['transport_stops_unchanged'] ?? 0) + 1;
                 }
-                $stats['transport_stops_updated']++;
 
                 continue;
             }
@@ -788,10 +926,14 @@ class GlobalWorkbookImportController extends Controller
 
             // Dedup against whatever this account already has, so re-importing the same
             // workbook (or a later year's sheet repeating earlier months) never doubles a row.
-            $seen = [];
+            // Counted, not just flagged: two genuine identical transactions in the sheet (same
+            // day, amount and item) stay two — only rows beyond what's already saved are added.
+            $saved = [];
             foreach (BankTransaction::where('bank_account_id', $bankAccountId)->get(['date', 'type', 'amount', 'reference_no', 'remarks']) as $existing) {
-                $seen[$this->bankTxKey($existing->date->toDateString(), $existing->type, (float) $existing->amount, $existing->reference_no, $existing->remarks)] = true;
+                $key = $this->bankTxKey($existing->date->toDateString(), $existing->type, (float) $existing->amount, $existing->reference_no, $existing->remarks);
+                $saved[$key] = ($saved[$key] ?? 0) + 1;
             }
+            $inSheet = [];
 
             $now = $cache['now'];
             $buffer = [];
@@ -850,10 +992,10 @@ class GlobalWorkbookImportController extends Controller
                 $roundedAmount = round(abs($amount), 2);
 
                 $key = $this->bankTxKey($date, $type, $roundedAmount, $referenceNo, $remarks);
-                if (isset($seen[$key])) {
+                $inSheet[$key] = ($inSheet[$key] ?? 0) + 1;
+                if ($inSheet[$key] <= ($saved[$key] ?? 0)) {
                     continue;
                 }
-                $seen[$key] = true;
 
                 $buffer[] = [
                     'bank_account_id' => $bankAccountId,
@@ -986,7 +1128,7 @@ class GlobalWorkbookImportController extends Controller
         }
 
         $mapped = [];
-        $rowNumber = 1; // header consumed; first data row is Excel row 2
+        $rowNumber = (int) ($sheet['header_row'] ?? 1); // header consumed; first data row is the next Excel row
         foreach ($sheet['rows'] as $line) {
             $rowNumber++;
             $row = ['row_number' => $rowNumber, '_sheet' => $sheetLabel, '_junk_fields' => []];
@@ -1011,6 +1153,22 @@ class GlobalWorkbookImportController extends Controller
         }
 
         return [$mapped, $junk];
+    }
+
+    /** First of rows 1–5 holding both ADM NO and NAME headers (row 1 when none does). */
+    private function incomeHeaderRow(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): int
+    {
+        $lastCol = $sheet->getHighestDataColumn();
+        for ($row = 1; $row <= min(5, $sheet->getHighestDataRow()); $row++) {
+            $cells = $sheet->rangeToArray("A{$row}:{$lastCol}{$row}", null, false, false, false)[0] ?? [];
+            $labels = array_map(fn ($v) => preg_replace('/\s+/', ' ', strtolower(trim((string) $v))), $cells);
+            $hasAdm = (bool) array_intersect($labels, ['adm no', 'adm no.', 'adm. no.', 'admno']);
+            if ($hasAdm && in_array('name', $labels, true)) {
+                return $row;
+            }
+        }
+
+        return 1;
     }
 
     private function isJunkHeader(string $header): bool
@@ -1201,6 +1359,42 @@ class GlobalWorkbookImportController extends Controller
             if ($changed === []) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
             }
+
+            // The sheet now says something different about a payment already saved. Never
+            // overwrite it silently: list it for review unless corrections were approved.
+            if (! $cache['apply_corrections']) {
+                $describe = fn (array $data) => [
+                    'amount' => round((float) ($data['amount'] ?? 0), 2),
+                    'fine' => round((float) ($data['fine_amount'] ?? 0), 2),
+                    'date' => substr((string) ($data['payment_date'] ?? ''), 0, 10),
+                    'mode' => $data['payment_mode'] ?? null,
+                    'lines' => collect(is_string($data['items'] ?? null) ? json_decode($data['items'], true) : ($data['items'] ?? []))
+                        ->map(fn ($i) => trim(($i['source_head'] ?? $i['fee_head_name'] ?? '').' '.round((float) ($i['amount'] ?? 0), 2)
+                            .' '.implode(',', (array) ($i['months'] ?? [])).' '.($i['session'] ?? '')))
+                        ->values()->all(),
+                ];
+                $cache['flagged'][] = [
+                    'type' => 'fee_payment_changed',
+                    'receipt_no' => $receipt,
+                    'admission_no' => $first['admission_no'],
+                    'name' => $first['name'],
+                    'fields' => array_keys(array_diff_key($changed, ['remarks' => true])) ?: ['remarks'],
+                    'saved' => $describe($existing),
+                    'excel' => $describe($newData),
+                ];
+
+                return ['ok' => true, 'skip' => true, 'reason' => 'changed_flagged', 'rows' => $rows];
+            }
+
+            // Approved correction: keep the before/after on the payment's audit trail.
+            FeePaymentAudit::create([
+                'fee_payment_id' => $existing['id'],
+                'action' => 'Edit',
+                'before' => array_intersect_key($existing, $changed),
+                'after' => $changed,
+                'reason' => 'Corrected from re-imported workbook (approved correction)',
+                'performed_by_id' => $cache['user_id'],
+            ]);
 
             // Keep an import-created deposit for this receipt in step with the corrected total.
             $depositUpdates = [];
@@ -1401,6 +1595,19 @@ class GlobalWorkbookImportController extends Controller
                 continue;
             }
 
+            // Removing a saved payment is a correction — only with the school's approval.
+            if (! $cache['apply_corrections']) {
+                $cache['flagged'][] = [
+                    'type' => 'fee_payment_superseded',
+                    'receipt_no' => $receiptNo,
+                    'kept_receipt_no' => $info['kept'],
+                    'amount' => round((float) $existing['amount'], 2),
+                    'note' => "Its lines are now saved under receipt {$info['kept']}; this older copy would be removed.",
+                ];
+
+                continue;
+            }
+
             DB::table('bank_transactions')
                 ->where('reference_no', $receiptNo)
                 ->where('type', 'Deposit')
@@ -1447,6 +1654,16 @@ class GlobalWorkbookImportController extends Controller
 
                 $payment = FeePayment::query()->find($existing['id']);
                 if (! $payment) {
+                    break;
+                }
+                if (! $cache['apply_corrections']) {
+                    $cache['flagged'][] = [
+                        'type' => 'fee_payment_cancelled',
+                        'receipt_no' => $candidate,
+                        'admission_no' => $line['admission_no'],
+                        'amount' => round((float) $payment->amount, 2),
+                        'note' => 'Marked CANCEL in the sheet; this saved payment would be rolled back.',
+                    ];
                     break;
                 }
                 $reason = 'Cancelled in imported workbook (PMNT MODE: CANCEL)';
@@ -1591,6 +1808,11 @@ class GlobalWorkbookImportController extends Controller
                     // the exact fee_head_id FeeCalculator resolves when computing what's due —
                     // not a separate literal "REG"/"TUI" head that due-calculation never sees.
                     $headName = self::INCOME_HEAD_CANONICAL_MAP[$headCode] ?? $headRaw;
+                    // ANN lands on whatever head this session's fee structure charges once a
+                    // year ("Annual Fee" in 2026-27) — "Session Fee" when none is configured.
+                    if ($headCode === 'ann') {
+                        $headName = AnnualFeeHead::nameFor((int) $session->id);
+                    }
 
                     // REMARKS "RTE AMOUNT" = money received for an RTE-admitted student, typed under
                     // a fee-head column (e.g. REG) — kept as its own "RTE Amount" head so it is
@@ -1705,6 +1927,17 @@ class GlobalWorkbookImportController extends Controller
                 if ($changed === []) {
                     return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
                 }
+                if (! $cache['apply_corrections']) {
+                    $cache['flagged'][] = [
+                        'type' => 'income_changed',
+                        'voucher_no' => $voucher,
+                        'fields' => array_keys($changed),
+                        'saved' => array_intersect_key($existingIncome, $changed),
+                        'excel' => $changed,
+                    ];
+
+                    return ['ok' => true, 'skip' => true, 'reason' => 'changed_flagged'];
+                }
 
                 return [
                     'ok' => true,
@@ -1778,18 +2011,15 @@ class GlobalWorkbookImportController extends Controller
             }
             $categoryId = $cache['expense_categories'][$part1];
 
-            $receiptNo = trim((string) ($row['receipt_no'] ?? ''));
-            if ($this->looksLikeFormula($receiptNo)) {
-                $receiptNo = '';
+            // Matched by content in warmExpenseVoucherCaches() — never by row position.
+            $match = $cache['expense_match'][$row['row_number']] ?? null;
+            if (! $match) {
+                return $this->fail($log, $row, 'Could not match this expense row.', 'other');
             }
-            $voucher = $receiptNo !== ''
-                ? (str_starts_with(strtoupper($receiptNo), 'EXP-') ? $receiptNo : 'EXP-'.$receiptNo)
-                : sprintf('EXP-IMP-%s-%04d', substr($date, 0, 4), $row['row_number']);
-
-            if (isset($cache['expense_vouchers_seen'][$voucher])) {
+            if ($match['kind'] === 'same') {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
             }
-            $cache['expense_vouchers_seen'][$voucher] = true;
+            $voucher = $match['voucher'];
             $part2 = trim((string) ($row['part2'] ?? ''));
             $part3 = trim((string) ($row['part3'] ?? ''));
             $remarks = trim((string) ($row['remarks'] ?? ''));
@@ -1806,7 +2036,7 @@ class GlobalWorkbookImportController extends Controller
                 'remarks' => $remarks !== '' ? $remarks : null,
             ];
 
-            $existing = $cache['expense_vouchers'][$voucher] ?? null;
+            $existing = $match['kind'] === 'changed' ? $match['existing'] : null;
             if ($existing) {
                 // Once a school has reviewed an imported expense (Approved/Rejected via the
                 // Expenses screen), a stale re-import must not silently change its figures
@@ -1818,6 +2048,18 @@ class GlobalWorkbookImportController extends Controller
                 $changed = $this->diffForUpdate($existing, $newData, ['amount']);
                 if ($changed === []) {
                     return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
+                }
+                if (! $cache['apply_corrections']) {
+                    $cache['flagged'][] = [
+                        'type' => 'expense_changed',
+                        'voucher_no' => $voucher,
+                        'date' => $date,
+                        'fields' => array_keys($changed),
+                        'saved' => array_intersect_key($existing, $changed),
+                        'excel' => $changed,
+                    ];
+
+                    return ['ok' => true, 'skip' => true, 'reason' => 'changed_flagged'];
                 }
 
                 return [
@@ -2294,28 +2536,97 @@ class GlobalWorkbookImportController extends Controller
         }
     }
 
-    /** @param  list<array<string, mixed>>  $mapped */
+    /**
+     * Matches every EXPENSES row to the expense it was saved as, by content — date, description,
+     * amount, PART 1-3 and remarks — never by its row position, so inserting or deleting a row
+     * in the sheet doesn't shift every later row onto a different record. Identical rows are
+     * matched by count (two genuine identical expenses stay two). A row with no content match
+     * whose old position-based voucher ("EXP-IMP-<year>-<row>") still holds the same date and
+     * description or amount is that same expense, edited in the sheet ("changed"); anything else
+     * is new and gets a voucher derived from its content.
+     *
+     * @param  list<array<string, mixed>>  $mapped
+     */
     private function warmExpenseVoucherCaches(array $mapped, array &$cache): void
     {
-        $vouchers = [];
+        $categoryNames = array_flip($cache['expense_categories']);
+        $pool = [];
+        $byVoucher = [];
+        foreach (DB::table('expenses')->orderBy('id')->get([
+            'id', 'voucher_no', 'expense_category_id', 'part2', 'part3', 'title', 'amount', 'date', 'remarks', 'status',
+        ]) as $r) {
+            $existing = (array) $r;
+            $key = $this->expenseKey(substr((string) $r->date, 0, 10), (string) $r->title, (float) $r->amount,
+                (string) ($categoryNames[$r->expense_category_id] ?? ''), (string) $r->part2, (string) $r->part3, (string) $r->remarks);
+            $pool[$key][] = $existing;
+            $byVoucher[$r->voucher_no] = $existing;
+        }
+
+        $claimed = [];
+        $pending = [];
+        $occurrence = [];
         foreach ($mapped as $row) {
-            $receiptNo = trim((string) ($row['receipt_no'] ?? ''));
-            if ($this->looksLikeFormula($receiptNo)) {
-                $receiptNo = '';
+            $date = $this->resolveDate($row);
+            $amount = $this->parseAmount(trim((string) ($row['amount'] ?? '')));
+            $title = trim((string) ($row['description'] ?? ''));
+            if (! $date || $amount === null || $title === '') {
+                continue; // rejected later with its own reason
             }
-            $date = $this->resolveDate($row) ?: '1970-01-01';
-            $vouchers[] = $receiptNo !== ''
-                ? (str_starts_with(strtoupper($receiptNo), 'EXP-') ? $receiptNo : 'EXP-'.$receiptNo)
-                : sprintf('EXP-IMP-%s-%04d', substr($date, 0, 4), $row['row_number']);
-        }
-        $vouchers = array_values(array_unique(array_filter($vouchers)));
-        foreach (array_chunk($vouchers, 500) as $chunk) {
-            foreach (DB::table('expenses')->whereIn('voucher_no', $chunk)->get([
-                'id', 'voucher_no', 'expense_category_id', 'part2', 'part3', 'title', 'amount', 'date', 'remarks', 'status',
-            ]) as $r) {
-                $cache['expense_vouchers'][$r->voucher_no] = (array) $r;
+            $key = $this->expenseKey($date, $title, $amount, trim((string) ($row['part1'] ?? '')) ?: 'General',
+                (string) ($row['part2'] ?? ''), (string) ($row['part3'] ?? ''), (string) ($row['remarks'] ?? ''));
+            $n = $occurrence[$key] = ($occurrence[$key] ?? 0) + 1;
+            $match = ['kind' => 'new', 'existing' => null, 'voucher' => 'EXP-IMP-'.$date.'-'.substr(md5($key), 0, 10).'-'.$n];
+
+            while (($pool[$key] ?? []) !== []) {
+                $existing = array_shift($pool[$key]);
+                if (! isset($claimed[$existing['id']])) {
+                    $claimed[$existing['id']] = true;
+                    $match = ['kind' => 'same', 'existing' => $existing, 'voucher' => $existing['voucher_no']];
+                    break;
+                }
+            }
+            $cache['expense_match'][$row['row_number']] = $match;
+            if ($match['kind'] === 'new') {
+                $pending[] = [$row, $date, $title, $amount];
             }
         }
+
+        // Second pass: rows with no content match — the same expense edited in the sheet?
+        foreach ($pending as [$row, $date, $title, $amount]) {
+            $legacy = $byVoucher[sprintf('EXP-IMP-%s-%04d', substr($date, 0, 4), $row['row_number'])] ?? null;
+            if ($legacy && ! isset($claimed[$legacy['id']]) && substr((string) $legacy['date'], 0, 10) === $date
+                && (mb_strtoupper(trim((string) $legacy['title'])) === mb_strtoupper($title) || round((float) $legacy['amount'], 2) === round($amount, 2))) {
+                $claimed[$legacy['id']] = true;
+                $cache['expense_match'][$row['row_number']] = ['kind' => 'changed', 'existing' => $legacy, 'voucher' => $legacy['voucher_no']];
+            }
+        }
+
+        // Imported expenses this sheet no longer has (deleted or edited beyond recognition) —
+        // reported, never deleted.
+        $dates = array_filter(array_map(fn ($r) => $this->resolveDate($r), $mapped));
+        if ($dates !== []) {
+            [$from, $to] = [min($dates), max($dates)];
+            foreach ($byVoucher as $voucher => $existing) {
+                $d = substr((string) $existing['date'], 0, 10);
+                if (! isset($claimed[$existing['id']]) && str_starts_with($voucher, 'EXP-IMP-') && $d >= $from && $d <= $to) {
+                    $cache['flagged'][] = [
+                        'type' => 'expense_not_in_excel',
+                        'voucher_no' => $voucher,
+                        'date' => $d,
+                        'title' => $existing['title'],
+                        'amount' => round((float) $existing['amount'], 2),
+                        'note' => 'Saved from an earlier import but not found in this sheet — left as it is.',
+                    ];
+                }
+            }
+        }
+    }
+
+    private function expenseKey(string $date, string $title, float $amount, string $part1, string $part2, string $part3, string $remarks): string
+    {
+        $norm = fn (string $v) => mb_strtoupper(preg_replace('/\s+/', ' ', trim($v)));
+
+        return implode('|', [$date, $norm($title), number_format($amount, 2, '.', ''), $norm($part1), $norm($part2), $norm($part3), $norm($remarks)]);
     }
 
     /**

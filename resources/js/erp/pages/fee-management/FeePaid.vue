@@ -30,8 +30,9 @@
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
+            <!-- Academic session comes from the header picker; no separate year filter here. -->
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div v-if="branches.length > 1">
                     <label class="form-label">Branch</label>
                     <select v-model="filters.branch_id" class="form-input">
                         <option :value="null">All branches</option>
@@ -53,36 +54,52 @@
                     </select>
                 </div>
                 <div>
+                    <label class="form-label">Vehicle</label>
+                    <select v-model="filters.vehicle" class="form-input">
+                        <option value="">All vehicles</option>
+                        <option value="__any">Transport students (any vehicle)</option>
+                        <option value="None">No transport</option>
+                        <option v-for="v in vehicles" :key="v" :value="v">{{ v }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Dues</label>
+                    <select v-model="filters.dues" class="form-input">
+                        <option value="all">All students</option>
+                        <option value="due">Only with dues</option>
+                        <option value="clear">Only fully paid</option>
+                    </select>
+                </div>
+                <div>
                     <label class="form-label">Search</label>
                     <input v-model="filters.search" type="search" class="form-input" placeholder="Name / admission (auto)" />
                 </div>
             </div>
         </div>
 
-        <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">View</p>
-            <p class="mt-0.5 text-xs text-slate-400">Choose which paid students to list.</p>
-            <div class="mt-3 flex flex-wrap gap-2">
-                <button
-                    type="button"
-                    class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-                    :class="view === 'till_current' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'"
-                    @click="view = 'till_current'"
-                >
-                    Till current month
-                </button>
-                <button
-                    type="button"
-                    class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-                    :class="view === 'advance' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'"
-                    @click="view = 'advance'"
-                >
-                    Advance months
-                </button>
+        <div v-if="view === 'paid_any'" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Students with payments</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{{ summary.students }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total collected</p>
+                <p class="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">₹{{ money(summary.collected) }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Outstanding (till now)</p>
+                <p class="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">₹{{ money(summary.due) }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Fully paid / Partly paid</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">
+                    <span class="text-emerald-600 dark:text-emerald-400">{{ summary.cleared }}</span>
+                    <span class="text-slate-300"> / </span>
+                    <span class="text-amber-600">{{ summary.partial }}</span>
+                </p>
             </div>
         </div>
-
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Students</p>
                 <p class="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{{ summary.students }}</p>
@@ -105,69 +122,242 @@
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
                 <div>
                     <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100">
-                        {{ view === 'advance' ? 'Advance Fee Paid Students' : 'Fee Paid Till Current Month' }}
+                        {{ viewMeta.title }}
                     </h2>
-                    <p class="text-xs text-slate-400">
-                        {{ view === 'advance'
-                            ? 'Students with payments applied to months after the current month.'
-                            : 'Students with zero due for all months up to the current month (same math as Fee Due).' }}
-                    </p>
+                    <p class="text-xs text-slate-400">{{ viewMeta.hint }}</p>
                 </div>
-                <span class="text-xs text-slate-400">{{ rows.length }} student(s)</span>
+                <div class="flex items-center gap-3">
+                    <div class="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+                        <button
+                            v-for="opt in VIEWS"
+                            :key="opt.key"
+                            type="button"
+                            class="rounded-md px-3 py-1 text-xs font-medium transition"
+                            :class="view === opt.key ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+                            @click="view = opt.key"
+                        >{{ opt.label }}</button>
+                    </div>
+                    <span class="text-xs text-slate-400">{{ rows.length }} student(s)</span>
+                </div>
             </div>
             <div v-if="loading" class="px-4 py-16 text-center text-sm text-slate-400">Loading…</div>
+            <div v-else-if="!rows.length" class="px-4 py-12 text-center text-sm text-slate-400">
+                {{ view === 'paid_any' ? 'No students with payments match these filters.' : 'No fee-paid students match these filters.' }}
+            </div>
             <div v-else class="overflow-x-auto">
-                <table class="w-full min-w-[960px] text-left text-sm">
-                    <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
-                        <tr>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Admission ID</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Student</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Roll No</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Father</th>
-                            <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Mother</th>
-                            <template v-if="view === 'advance'">
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Advance months</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Advance paid</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Paid through</th>
-                            </template>
-                            <template v-else>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Charge</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Paid</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Concession</th>
-                                <th class="px-3 py-3 text-xs font-semibold uppercase text-slate-500">Paid through</th>
-                            </template>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-if="!rows.length">
-                            <td :colspan="view === 'advance' ? 8 : 9" class="px-4 py-12 text-center text-slate-400">
-                                No fee-paid students match these filters.
-                            </td>
-                        </tr>
-                        <tr v-for="r in pagedRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                            <td class="px-3 py-3 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
-                            <td class="px-3 py-3">
-                                <p class="font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</p>
-                                <p class="text-xs text-slate-400">{{ [r.branch, r.school_class, r.section].filter(Boolean).join(' · ') }}</p>
-                                <p v-if="r.scope_label" class="text-[11px] text-slate-400">{{ r.scope_label }}</p>
-                            </td>
-                            <td class="px-3 py-3 text-slate-500">{{ r.roll_no || '—' }}</td>
-                            <td class="px-3 py-3 text-slate-500">{{ r.father || '—' }}</td>
-                            <td class="px-3 py-3 text-slate-500">{{ r.mother || '—' }}</td>
-                            <template v-if="view === 'advance'">
-                                <td class="px-3 py-3 text-slate-600 dark:text-slate-300">{{ r.advance_months_label || '—' }}</td>
-                                <td class="px-3 py-3 font-semibold text-emerald-600">₹{{ money(r.advance_paid) }}</td>
-                                <td class="px-3 py-3 text-slate-600">{{ r.paid_through_label || '—' }}</td>
-                            </template>
-                            <template v-else>
-                                <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_fee) }}</td>
-                                <td class="px-3 py-3 font-semibold text-emerald-600">₹{{ money(r.total_paid) }}</td>
-                                <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_discount) }}</td>
-                                <td class="px-3 py-3 text-slate-600">{{ r.paid_through_label || '—' }}</td>
-                            </template>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="min-w-[900px]">
+                    <div class="grid grid-cols-[44px_minmax(0,2.2fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] items-center gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
+                        <span></span>
+                        <span>Name</span>
+                        <span>Adm. No.</span>
+                        <span>Class / Sec</span>
+                        <span>Receipt</span>
+                        <span>Paid Date</span>
+                        <span class="text-right">Paid Amount</span>
+                        <span>Status</span>
+                    </div>
+
+                    <div v-for="r in pagedRows" :key="r.student_id" class="border-b border-slate-100 last:border-b-0 dark:border-slate-800">
+                        <div
+                            class="grid cursor-pointer grid-cols-[44px_minmax(0,2.2fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] items-center gap-3 px-3 py-3 text-sm transition-colors"
+                            :class="isOpen(r) ? 'bg-primary-50/60 dark:bg-primary-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'"
+                            @click="toggle(r)"
+                        >
+                            <button
+                                type="button"
+                                class="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+                                :class="isOpen(r) ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'"
+                                :aria-expanded="isOpen(r)"
+                                :aria-label="isOpen(r) ? 'Collapse' : 'Expand'"
+                                @click.stop="toggle(r)"
+                            >
+                                <svg class="h-4 w-4 transition-transform duration-300" :class="isOpen(r) ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>
+                            </button>
+                            <div class="min-w-0">
+                                <p class="truncate font-semibold text-slate-800 dark:text-slate-100">{{ r.name }}</p>
+                            </div>
+                            <span class="truncate font-medium text-primary-600 dark:text-primary-400">{{ r.admission_no || '—' }}</span>
+                            <span class="truncate text-slate-600 dark:text-slate-300">{{ [r.school_class, r.section].filter(Boolean).join(' / ') || '—' }}</span>
+                            <div class="min-w-0">
+                                <button
+                                    v-if="r.last_payment_id"
+                                    type="button"
+                                    class="inline-flex max-w-full items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                    :title="`Open receipt ${r.last_receipt_no}`"
+                                    @click.stop="openReceipt(r.last_payment_id, r.last_receipt_no)"
+                                >
+                                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+                                    <span class="truncate">{{ r.last_receipt_no }}</span>
+                                </button>
+                                <span v-else class="text-slate-400">—</span>
+                                <p v-if="r.receipts_count > 1" class="mt-0.5 text-[11px] text-slate-400">+{{ r.receipts_count - 1 }} more</p>
+                            </div>
+                            <span class="text-slate-600 dark:text-slate-300">{{ fmtDate(r.last_paid_date) }}</span>
+                            <div class="text-right">
+                                <p class="font-semibold text-emerald-600 dark:text-emerald-400">₹ {{ money2(r.last_paid_amount) }}</p>
+                                <p v-if="r.receipts_count > 1" class="text-[11px] text-slate-400">Total ₹ {{ money2(r.session_paid) }}</p>
+                            </div>
+                            <div class="flex min-w-0 flex-wrap items-center gap-1">
+                                <template v-if="view === 'paid_any'">
+                                    <span
+                                        v-if="r.payment_status === 'partial'"
+                                        class="inline-block max-w-full truncate rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                        title="Paid some fees; this much is still due up to the current month"
+                                    >Due ₹ {{ money(r.due) }}</span>
+                                    <span
+                                        v-else-if="r.payment_status === 'cleared'"
+                                        class="inline-block max-w-full truncate rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                    >Fully paid</span>
+                                    <span v-if="r.student_status && r.student_status !== 'Active'" class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800">Left school</span>
+                                </template>
+                                <span
+                                    v-else-if="view === 'advance'"
+                                    class="inline-block max-w-full truncate rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+                                    :title="r.advance_months_label"
+                                >Advance · {{ r.advance_months_label }}</span>
+                                <span
+                                    v-else
+                                    class="inline-block max-w-full truncate rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                >Paid till {{ r.paid_through_label }}</span>
+                            </div>
+                        </div>
+
+                        <Transition
+                            enter-active-class="transition duration-200 ease-out"
+                            enter-from-class="-translate-y-1 opacity-0"
+                            leave-active-class="transition duration-150 ease-in"
+                            leave-to-class="-translate-y-1 opacity-0"
+                        >
+                            <div v-if="isOpen(r)" class="overflow-hidden">
+                                <div class="border-t border-slate-100 bg-slate-50/60 px-4 py-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/60">
+                                    <div v-if="details[r.student_id]?.loading" class="space-y-2 py-2">
+                                        <div v-for="n in 3" :key="n" class="h-8 animate-pulse rounded-lg bg-slate-200/70 dark:bg-slate-800"></div>
+                                    </div>
+                                    <p v-else-if="details[r.student_id]?.error" class="py-4 text-center text-sm text-rose-500">
+                                        Could not load payment details.
+                                        <button type="button" class="ml-1 font-semibold underline" @click="loadDetails(r, true)">Retry</button>
+                                    </p>
+                                    <template v-else-if="details[r.student_id]">
+                                        <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                                            <div v-for="chip in summaryChips(r)" :key="chip.label" class="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                                                <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{{ chip.label }}</p>
+                                                <p class="mt-0.5 truncate text-sm font-bold" :class="chip.cls || 'text-slate-700 dark:text-slate-100'" :title="chip.value">{{ chip.value }}</p>
+                                            </div>
+                                        </div>
+
+                                        <div v-if="receivedGap(r)" class="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-100">
+                                            <p class="font-semibold">
+                                                ₹ {{ money2(receivedGap(r).gap) }} of the ₹ {{ money2(r.session_paid) }} received is not counted toward this session's dues
+                                                (counted: ₹ {{ money2(r.counted_paid) }}<template v-if="r.advance_paid > 0"> = ₹ {{ money2(r.counted_paid - r.advance_paid) }} up to now, as on Fee Due, + ₹ {{ money2(r.advance_paid) }} for advance months</template>):
+                                            </p>
+                                            <ul class="mt-1 list-disc space-y-0.5 pl-5">
+                                                <li v-for="(p, i) in receivedGap(r).parts" :key="i">{{ p }}</li>
+                                            </ul>
+                                        </div>
+
+                                        <p v-if="!details[r.student_id].receipts.length" class="py-4 text-center text-sm text-slate-400">No receipts in this session.</p>
+
+                                        <div class="space-y-4">
+                                            <div
+                                                v-for="rc in details[r.student_id].receipts"
+                                                :key="rc.id"
+                                                class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                                            >
+                                                <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                                                    <div>
+                                                        <p class="text-[11px] font-semibold uppercase text-slate-400">Receipt</p>
+                                                        <button
+                                                            type="button"
+                                                            class="mt-0.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                                            :title="`Open receipt ${rc.receipt_no}`"
+                                                            @click="openReceipt(rc.id, rc.receipt_no)"
+                                                        >
+                                                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+                                                            {{ rc.receipt_no }}
+                                                        </button>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[11px] font-semibold uppercase text-slate-400">Paid Date</p>
+                                                        <p class="mt-0.5 text-sm text-slate-700 dark:text-slate-200">{{ fmtDate(rc.payment_date) }}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[11px] font-semibold uppercase text-slate-400">Mode</p>
+                                                        <p class="mt-0.5 text-sm text-slate-700 dark:text-slate-200">{{ rc.payment_mode || '—' }}<span v-if="rc.reference_no" class="text-xs text-slate-400"> · {{ rc.reference_no }}</span></p>
+                                                    </div>
+                                                    <span v-if="rc.multi_session" class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title="This receipt also pays fees of another session">Multi-session</span>
+                                                    <span v-if="rc.status && rc.status !== 'Paid'" class="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:bg-rose-900/30">{{ rc.status }}</span>
+                                                    <div class="ml-auto text-right">
+                                                        <p class="text-[11px] font-semibold uppercase text-slate-400">Paid Amount</p>
+                                                        <p class="mt-0.5 text-base font-bold text-emerald-600 dark:text-emerald-400">₹ {{ money2(rc.totals.paid) }}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div class="overflow-x-auto">
+                                                    <table class="w-full text-left text-sm">
+                                                        <thead class="text-xs text-slate-500">
+                                                            <tr class="border-b border-slate-100 dark:border-slate-800">
+                                                                <th class="px-4 py-2 font-semibold">#</th>
+                                                                <th class="px-3 py-2 font-semibold">Fee Name</th>
+                                                                <th class="px-3 py-2 font-semibold">Fee Type</th>
+                                                                <th class="px-3 py-2 font-semibold">Session</th>
+                                                                <th class="px-3 py-2 font-semibold">Pay Month</th>
+                                                                <th class="px-3 py-2 font-semibold">Pay Year</th>
+                                                                <th class="px-3 py-2 text-right font-semibold">Amount</th>
+                                                                <th class="px-3 py-2 text-right font-semibold">Discount</th>
+                                                                <th class="px-4 py-2 text-right font-semibold">Final Amount</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr v-for="(l, i) in rc.lines" :key="i" class="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/70 dark:border-slate-800/60 dark:hover:bg-slate-800/40">
+                                                                <td class="px-4 py-2 text-slate-400">{{ i + 1 }}</td>
+                                                                <td class="px-3 py-2 font-medium text-slate-700 dark:text-slate-200">{{ l.fee_name }}</td>
+                                                                <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ l.fee_type || '—' }}</td>
+                                                                <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ sessionLabel(l.session) }}</td>
+                                                                <td class="px-3 py-2 text-slate-600 dark:text-slate-300">
+                                                                    {{ l.month || '—' }}
+                                                                    <span v-if="l.outside_session" class="ml-1 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300" title="This month is outside the line's session — not counted in this session's dues">Outside session</span>
+                                                                </td>
+                                                                <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ l.year || '—' }}</td>
+                                                                <td class="px-3 py-2 text-right text-slate-700 dark:text-slate-200">₹ {{ money2(l.amount) }}</td>
+                                                                <td class="px-3 py-2 text-right" :class="l.discount > 0 ? 'text-amber-600' : 'text-slate-500'">₹ {{ money2(l.discount) }}</td>
+                                                                <td class="px-4 py-2 text-right font-semibold text-slate-800 dark:text-slate-100">₹ {{ money2(l.final) }}</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+
+                                                <div class="grid gap-2 border-t border-slate-100 bg-slate-50/50 p-3 sm:grid-cols-2 lg:grid-cols-3 dark:border-slate-800 dark:bg-slate-800/30">
+                                                    <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                                                        <span class="text-slate-500">Total Fee</span><span class="font-semibold text-slate-700 dark:text-slate-200">₹ {{ money2(rc.totals.total_fee) }}</span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                                                        <span class="text-slate-500">Total Discount</span><span class="font-semibold text-amber-600">₹ {{ money2(rc.totals.total_discount) }}</span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                                                        <span class="text-slate-500">Grand Total</span><span class="font-semibold text-slate-700 dark:text-slate-200">₹ {{ money2(rc.totals.grand_total) }}</span>
+                                                    </div>
+                                                    <div v-if="rc.totals.fine > 0" class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                                                        <span class="text-slate-500">Fine</span><span class="font-semibold text-rose-600">₹ {{ money2(rc.totals.fine) }}</span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-900/50 dark:bg-emerald-900/20">
+                                                        <span class="font-semibold text-emerald-700 dark:text-emerald-300">Paid Amount</span><span class="font-bold text-emerald-700 dark:text-emerald-300">₹ {{ money2(rc.totals.paid) }}</span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm" :class="rc.totals.balance > 0 ? 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-900/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'">
+                                                        <span class="text-slate-500">Total Balance</span><span class="font-semibold" :class="rc.totals.balance > 0 ? 'text-rose-600' : 'text-slate-700 dark:text-slate-200'">₹ {{ money2(rc.totals.balance) }}</span>
+                                                    </div>
+                                                    <div v-if="rc.totals.refunded > 0" class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                                                        <span class="text-slate-500">Refunded</span><span class="font-semibold text-rose-600">₹ {{ money2(rc.totals.refunded) }}</span>
+                                                    </div>
+                                                </div>
+                                                <p v-if="rc.remarks" class="border-t border-slate-100 px-4 py-2 text-xs text-slate-400 dark:border-slate-800">Remarks: {{ rc.remarks }}</p>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </Transition>
+                    </div>
+                </div>
             </div>
             <div v-if="rows.length" class="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-800">
                 <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -190,24 +380,49 @@ import Dropdown from '../../components/common/Dropdown.vue';
 import Pagination from '../../components/common/Pagination.vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
+import { openPdfBlob } from '../../utils/documentPdf';
 import { erpStore } from '../../store';
 import { pushToast } from '../../utils/toast';
 
 const loading = ref(false);
 const exporting = ref(false);
 const rows = ref([]);
-const view = ref('till_current');
-const summary = reactive({ students: 0, charged: 0, paid: 0, concession: 0, advance_paid: 0 });
+// "All with payments" is the default: a student who has paid anything is always listed,
+// whether or not they still owe fees. The other two views are the stricter filters.
+const VIEWS = [
+    { key: 'paid_any', label: 'All with payments' },
+    { key: 'till_current', label: 'Fully paid till now' },
+    { key: 'advance', label: 'Advance months' },
+];
+const view = ref('paid_any');
+const viewMeta = computed(() => ({
+    paid_any: {
+        title: 'All Students With Payments',
+        hint: 'Every student who paid anything this session — with what is still due shown separately.',
+    },
+    till_current: {
+        title: 'Fully Paid Till Current Month',
+        hint: 'Only students with zero due for every month up to the current month (same math as Fee Due).',
+    },
+    advance: {
+        title: 'Advance Fee Paid Students',
+        hint: 'Students with payments applied to months after the current month.',
+    },
+}[view.value]));
+const summary = reactive({ students: 0, charged: 0, paid: 0, concession: 0, advance_paid: 0, collected: 0, due: 0, cleared: 0, partial: 0 });
 
 const branches = ref([]);
 const classes = ref([]);
 const sections = ref([]);
+const vehicles = ref([]);
 
 const filters = reactive({
     branch_id: null,
     school_class_id: null,
     section_id: null,
     search: '',
+    vehicle: '',
+    dues: 'all',
 });
 
 const perPageOptions = [10, 25, 50, 100, 'all'];
@@ -227,11 +442,101 @@ function money(n) {
     return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+function money2(n) {
+    return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDate(d) {
+    if (!d) return '—';
+    const dt = new Date(`${d}T00:00:00`);
+    return Number.isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/** "2026-2027" → "2026 - 2027" */
+function sessionLabel(s) {
+    return s ? String(s).replace(/\s*-\s*/, ' - ') : '—';
+}
+
+// ---- Expandable rows: fee lines grouped by receipt, loaded on first open ----
+const openIds = ref(new Set());
+const details = reactive({});
+
+function isOpen(r) {
+    return openIds.value.has(r.student_id);
+}
+
+function toggle(r) {
+    const next = new Set(openIds.value);
+    if (next.has(r.student_id)) {
+        next.delete(r.student_id);
+    } else {
+        next.add(r.student_id);
+        loadDetails(r);
+    }
+    openIds.value = next;
+}
+
+async function loadDetails(r, force = false) {
+    if (!force && details[r.student_id] && !details[r.student_id].error) return;
+    details[r.student_id] = { loading: true };
+    try {
+        const { data } = await client.get(`/fee-management/fee-paid/${r.student_id}/details`);
+        details[r.student_id] = { ...data, loading: false };
+    } catch {
+        details[r.student_id] = { loading: false, error: true };
+    }
+}
+
+function summaryChips(r) {
+    const d = details[r.student_id] || {};
+    const s = d.summary || {};
+    const chips = [
+        { label: 'Receipts', value: String(s.receipts ?? 0) },
+        { label: 'Total received', value: `₹ ${money2(s.paid)}`, cls: 'text-emerald-600 dark:text-emerald-400' },
+        { label: 'Counted toward dues', value: `₹ ${money2(r.counted_paid)}`, cls: 'text-emerald-700 dark:text-emerald-300' },
+        { label: view.value === 'advance' ? 'Advance Charge' : 'Charged (till now)', value: `₹ ${money2(r.total_fee)}` },
+        { label: 'Concession', value: `₹ ${money2(r.total_discount)}`, cls: 'text-amber-600' },
+        { label: 'Outstanding (till now)', value: `₹ ${money2(r.due)}`, cls: r.due > 0 ? 'text-rose-600' : 'text-slate-700 dark:text-slate-100' },
+        { label: 'Paid Through', value: r.paid_through_label || '—' },
+        { label: 'Advance Months', value: r.advance_months_label || '—', cls: 'text-sky-600 dark:text-sky-400' },
+    ];
+    return chips;
+}
+
+/** Why "Total received" is more than "Counted toward dues" — every rupee accounted for. */
+function receivedGap(r) {
+    const parts = [];
+    if (r.outside_session_paid > 0) parts.push(`₹ ${money2(r.outside_session_paid)} for ${r.outside_session_months || 'months'} — outside this session, so no charge of this session exists for it`);
+    if (r.fine_paid > 0) parts.push(`₹ ${money2(r.fine_paid)} fine / late fee — collected on top of fees, not a fee payment`);
+    if (r.unmatched_paid > 0) parts.push(`₹ ${money2(r.unmatched_paid)} paid toward a fee head with no charge set up, or more than the month's charge`);
+    const gap = Number(r.session_paid || 0) - Number(r.counted_paid || 0);
+    return gap > 0.01 && parts.length ? { gap, parts } : null;
+}
+
+/** Opens the full receipt PDF in a new tab (tab opened synchronously so pop-up blockers allow it). */
+async function openReceipt(paymentId, receiptNo) {
+    const tab = window.open('about:blank', '_blank');
+    try {
+        if (tab) tab.document.title = `Receipt ${receiptNo || ''}`.trim();
+    } catch {
+        // ignore cross-origin about:blank
+    }
+    try {
+        const { data } = await client.get(`/fee-management/payments/${paymentId}/pdf`, { responseType: 'blob' });
+        openPdfBlob(data, tab);
+    } catch {
+        if (tab && !tab.closed) tab.close();
+        pushToast('Could not open the receipt.', 'error');
+    }
+}
+
 function currentParams() {
     const p = { view: view.value };
     if (filters.branch_id) p.branch_id = filters.branch_id;
     if (filters.school_class_id) p.school_class_id = filters.school_class_id;
     if (filters.section_id) p.section_id = filters.section_id;
+    if (filters.vehicle) p.vehicle = filters.vehicle;
+    if (filters.dues !== 'all') p.dues = filters.dues;
     if (filters.search.trim()) p.search = filters.search.trim();
     return p;
 }
@@ -239,9 +544,12 @@ function currentParams() {
 async function reload() {
     loading.value = true;
     page.value = 1;
+    openIds.value = new Set();
+    Object.keys(details).forEach((k) => delete details[k]);
     try {
         const { data } = await client.get('/fee-management/fee-paid', { params: currentParams() });
         rows.value = data.rows || [];
+        vehicles.value = data.vehicles || vehicles.value;
         Object.assign(summary, data.summary || {});
     } catch {
         rows.value = [];
@@ -283,21 +591,16 @@ function printPaid() {
     const amt = (n, cls = '') => `<td class="num ${cls}">${money(n)}</td>`;
     const sum = (key) => list.reduce((s, r) => s + (Number(r[key]) || 0), 0);
     const advance = view.value === 'advance';
-    const title = advance ? 'Advance Fee Paid Students' : 'Fee Paid Till Current Month';
-    const common = (r, i) => `<td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
-        <td>${esc([r.school_class, r.section].filter(Boolean).join(' / ') || '—')}</td><td>${esc(r.roll_no || '—')}</td>
-        <td>${esc(r.father || '—')}</td><td>${esc(r.mother || '—')}</td>`;
-
-    const head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Mother</th>'
-        + (advance
-            ? '<th>Advance months</th><th class="num">Advance paid</th><th>Paid through</th></tr>'
-            : '<th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th>Paid through</th></tr>');
-    const body = list.map((r, i) => `<tr>${common(r, i)}${advance
-        ? `<td>${esc(r.advance_months_label || '—')}</td>${amt(r.advance_paid, 'paid')}<td>${esc(r.paid_through_label || '—')}</td>`
-        : `${amt(r.total_fee)}${amt(r.total_paid, 'paid')}${amt(r.total_discount)}<td>${esc(r.paid_through_label || '—')}</td>`}</tr>`).join('');
-    const foot = `<tr><td></td><td colspan="6">TOTAL (${list.length} students)</td>${advance
-        ? `<td></td>${amt(sum('advance_paid'), 'paid')}<td></td>`
-        : `${amt(sum('total_fee'))}${amt(sum('total_paid'), 'paid')}${amt(sum('total_discount'))}<td></td>`}</tr>`;
+    const all = view.value === 'paid_any';
+    const title = viewMeta.value.title;
+    const head = '<tr><th>#</th><th>Name</th><th>Adm. No.</th><th>Class / Sec</th><th>Last Receipt</th><th>Paid Date</th>'
+        + `<th class="num">Total Paid</th>${all ? '<th class="num">Outstanding</th>' : ''}<th>${advance ? 'Advance months' : 'Paid through'}</th></tr>`;
+    const body = list.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.name)}</b>${r.student_status && r.student_status !== 'Active' ? ' (left)' : ''}</td><td>${esc(r.admission_no)}</td>
+        <td>${esc([r.school_class, r.section].filter(Boolean).join(' / ') || '—')}</td>
+        <td>${esc(r.last_receipt_no || '—')}</td><td>${esc(fmtDate(r.last_paid_date))}</td>
+        ${amt(r.session_paid, 'paid')}${all ? amt(r.due) : ''}
+        <td>${esc((advance ? r.advance_months_label : r.paid_through_label) || '—')}</td></tr>`).join('');
+    const foot = `<tr><td></td><td colspan="5">TOTAL (${list.length} students)</td>${amt(sum('session_paid'), 'paid')}${all ? amt(sum('due')) : ''}<td></td></tr>`;
 
     const win = window.open('', '_blank');
     if (!win) {
@@ -333,6 +636,8 @@ watch([filters, view], () => {
     clearTimeout(loadTimer);
     loadTimer = setTimeout(reload, 250);
 }, { deep: true });
+// The header Academic Session drives this page.
+watch(() => erpStore.currentSession, () => reload());
 
 onMounted(async () => {
     const data = await fetchAcademicsLookups();

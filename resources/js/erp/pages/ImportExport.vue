@@ -20,7 +20,10 @@
                         <button type="button" class="btn-outline !py-1.5 !text-xs" :disabled="downloadingTemplate" @click="downloadTemplate">
                             {{ downloadingTemplate ? 'Downloading...' : 'Download Template' }}
                         </button>
-                        <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing" @click="submitImport">
+                        <button v-if="activeEntity === 'global'" type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing" @click="submitImport('preview')">
+                            {{ importing && importMode === 'preview' ? 'Checking...' : 'Preview' }}
+                        </button>
+                        <button v-else type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing" @click="submitImport()">
                             {{ importing ? 'Importing...' : 'Import' }}
                         </button>
                     </div>
@@ -65,7 +68,7 @@
                         <li>SALARY … Bank (NAME / DESIG / BASIC / APR–MAR) → auto-creates Teachers &amp; Staff from designation, writes monthly salary slips with inferred present/absent, so you can manage them under People</li>
                         <li>Skipped sheets: SUMMARY, STUD_REC*, pivots, BANK* statements, CHQ*, FUEL*, WORKING DAYS</li>
                         <li>Skipped columns: numeric headers (pasted totals), TOT_INCOME, and #REF! / INCOME / BALANCE junk columns</li>
-                        <li>Re-import is safe to repeat: matched by receipt/voucher no. (or admission no. for Student Master) — an edited row updates the existing record, an unchanged row is skipped, a new row is added. A payment/expense already edited, refunded, or reviewed in the app is left untouched rather than overwritten</li>
+                        <li>Safe to upload again: click <strong class="text-slate-600 dark:text-slate-300">Preview</strong> first — nothing is saved until you confirm. Records already saved are skipped, only new rows are added. A row that differs from what was saved earlier is listed for review and left unchanged unless you choose to apply corrections. A payment/expense already edited, refunded, or reviewed in the app is never overwritten</li>
                     </ul>
                 </div>
                 <label
@@ -102,7 +105,55 @@
                     </div>
                 </div>
 
-                <div v-if="importResult" class="mt-4 space-y-3">
+                <div v-if="importResult?.report" class="mt-4 space-y-3">
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
+                        :class="importResult.preview ? 'border-sky-200 bg-sky-50 dark:border-sky-900/50 dark:bg-sky-900/20' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'"
+                    >
+                        <p class="text-sm font-semibold" :class="importResult.preview ? 'text-sky-800 dark:text-sky-200' : 'text-emerald-800 dark:text-emerald-200'">
+                            {{ importResult.preview ? 'Preview — nothing has been saved yet' : (importResult.corrections_applied ? 'Imported, with corrections applied' : 'Imported') }}
+                        </p>
+                        <div v-if="importResult.preview" class="flex flex-wrap items-center gap-3">
+                            <label v-if="correctableCount > 0" class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                                <input v-model="applyCorrections" type="checkbox" class="rounded border-slate-300" />
+                                Also apply {{ correctableCount }} correction(s) listed below
+                            </label>
+                            <button type="button" class="btn-primary !py-1.5 !text-xs" :disabled="importing" @click="submitImport('import')">
+                                {{ importing ? 'Importing...' : 'Confirm import' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                        <div v-for="card in reportCards" :key="card.label" class="rounded-lg border border-slate-100 px-3 py-2 dark:border-slate-800">
+                            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{{ card.label }}</p>
+                            <p class="mt-0.5 text-sm text-slate-700 dark:text-slate-200">{{ card.value }}</p>
+                        </div>
+                    </div>
+
+                    <div v-if="importResult.report.flagged_total" class="overflow-hidden rounded-lg border border-amber-200 dark:border-amber-900/50">
+                        <p class="bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                            Needs review: {{ importResult.report.flagged_total }} record(s) differ between this Excel and what is already saved — they are left as they are{{ correctableCount ? ' unless you apply corrections' : '' }}.
+                        </p>
+                        <div class="max-h-80 overflow-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="sticky top-0 bg-white text-slate-500 dark:bg-slate-900">
+                                    <tr><th class="px-3 py-1.5">Type</th><th class="px-3 py-1.5">Record</th><th class="px-3 py-1.5">Saved</th><th class="px-3 py-1.5">In Excel / note</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(f, i) in importResult.report.flagged" :key="i" class="border-t border-slate-100 align-top dark:border-slate-800">
+                                        <td class="px-3 py-1.5 font-medium text-slate-700 dark:text-slate-200">{{ FLAG_LABELS[f.type] || f.type }}</td>
+                                        <td class="px-3 py-1.5 text-slate-600 dark:text-slate-300">{{ [f.receipt_no || f.voucher_no, f.admission_no, f.name || f.title, f.date].filter(Boolean).join(' · ') }}</td>
+                                        <td class="px-3 py-1.5 text-slate-500">{{ describeFlag(f.saved) ?? (f.amount != null ? `₹${f.amount}` : '—') }}</td>
+                                        <td class="px-3 py-1.5 text-slate-500">{{ describeFlag(f.excel) ?? f.note }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="importResult?.log" class="mt-4 space-y-3">
                     <div class="grid grid-cols-3 gap-3">
                         <div class="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800"><p class="text-lg font-bold text-slate-800 dark:text-slate-100">{{ importResult.log.total_rows }}</p><p class="text-[11px] text-slate-500">Rows</p></div>
                         <div class="rounded-lg bg-emerald-50 p-3 text-center dark:bg-emerald-500/10"><p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{{ importResult.log.success_count }}</p><p class="text-[11px] text-slate-500">Imported</p></div>
@@ -471,6 +522,48 @@ const importing = ref(false);
 const importResult = ref(null);
 const importPhase = ref('idle'); // idle | uploading | processing
 const uploadProgress = ref(0);
+const importMode = ref('import'); // Global Workbook: preview first, then import
+const applyCorrections = ref(false);
+
+const FLAG_LABELS = {
+    fee_payment_changed: 'Payment differs',
+    fee_payment_superseded: 'Old split receipt',
+    fee_payment_cancelled: 'Cancelled in sheet',
+    fee_payment_not_in_excel: 'Payment not in this Excel',
+    income_changed: 'Income differs',
+    expense_changed: 'Expense differs',
+    expense_not_in_excel: 'Expense not in this Excel',
+};
+// Flags that "apply corrections" acts on (the "not in this Excel" ones are only reported).
+const CORRECTABLE = ['fee_payment_changed', 'fee_payment_superseded', 'fee_payment_cancelled', 'income_changed', 'expense_changed'];
+const correctableCount = computed(() => {
+    const byType = importResult.value?.report?.flagged_by_type || {};
+    return CORRECTABLE.reduce((n, t) => n + (byType[t] || 0), 0);
+});
+
+function describeFlag(v) {
+    if (!v) return null;
+    if (v.lines) return `₹${v.amount}${v.fine ? ` + fine ₹${v.fine}` : ''} · ${v.date} · ${v.lines.join('; ')}`;
+    return Object.entries(v).map(([k, val]) => `${k}: ${val}`).join(', ');
+}
+
+const reportCards = computed(() => {
+    const r = importResult.value?.report;
+    if (!r) return [];
+    const fp = r.fee_payments || {};
+    const ex = r.expenses || {};
+    const cards = [
+        { label: 'Fee receipts', value: `${fp.inserted} new · ${fp.updated} corrected · ${fp.changed_flagged} to review` },
+        { label: 'Expenses', value: `${ex.inserted} new · ${ex.updated} corrected · ${ex.changed_flagged} to review` },
+        { label: 'Rows already saved', value: `${r.rows_unchanged} skipped (unchanged)` },
+        { label: 'Rejected rows', value: `${r.rejected_rows}` },
+    ];
+    if (r.students) cards.push({ label: 'Students', value: `${r.students.created} new · ${r.students.existing_updated} existing updated` });
+    if (r.transport) cards.push({ label: 'Transport stops', value: `${r.transport.stops_created} new · ${r.transport.stops_updated} fare changed · ${r.transport.stops_unchanged} same` });
+    if (r.bank) cards.push({ label: 'Bank rows', value: `${r.bank.inserted} new · ${r.bank.rows_skipped} skipped` });
+    if (fp.rolled_back || fp.superseded_removed) cards.push({ label: 'Corrections done', value: `${fp.rolled_back} rolled back · ${fp.superseded_removed} old copies removed` });
+    return cards;
+});
 
 const resultBreakdown = computed(() => {
     const b = importResult.value?.breakdown || importResult.value?.stats?.breakdown;
@@ -505,6 +598,7 @@ function onFileSelect(e) {
 function resetUpload() {
     selectedFile.value = null;
     importResult.value = null;
+    applyCorrections.value = false;
     importPhase.value = 'idle';
     uploadProgress.value = 0;
 }
@@ -522,15 +616,20 @@ watch(
     { immediate: true },
 );
 
-async function submitImport() {
+async function submitImport(mode = null) {
     const endpoint = IMPORT_ENDPOINTS[activeEntity.value];
     if (!endpoint || !selectedFile.value) return;
     importing.value = true;
+    importMode.value = mode || 'import';
     importPhase.value = 'uploading';
     uploadProgress.value = 0;
     try {
         const formData = new FormData();
         formData.append('file', selectedFile.value);
+        if (mode) {
+            formData.append('mode', mode);
+            formData.append('apply_corrections', mode === 'import' && applyCorrections.value ? '1' : '0');
+        }
         const { data } = await client.post(endpoint, formData, {
             // Large Master / PEN / workbook files need a long client timeout.
             timeout: 600000,
@@ -545,6 +644,11 @@ async function submitImport() {
             },
         });
         importResult.value = data;
+        if (data.preview) {
+            applyCorrections.value = false;
+            pushToast('Preview ready — review the counts, then confirm the import.', 'success');
+            return;
+        }
         const failed = data.log?.failed_count || 0;
         pushToast(data.message || `Imported ${data.log.success_count} of ${data.log.total_rows} row(s).`, failed ? 'error' : 'success');
     } finally {

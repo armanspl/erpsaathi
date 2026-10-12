@@ -72,7 +72,7 @@ const rawMenu = [
         icon: '📚',
         children: [
             'Exams', 'Terms', 'Exam Schedule', 'Seat Planning', 'Marks Management',
-            'Exam Results', 'Annual Report Card', 'Admit Cards',
+            'Exam Results', 'Annual Report Card', 'Co-Scholastic Areas', 'Admit Cards',
         ],
     },
     {

@@ -592,6 +592,11 @@ class PermissionCatalog
                         'path' => '/exam-management/annual-report-card',
                         'actions' => ['view' => 'View', 'download' => 'Download', 'edit' => 'Edit Remarks'],
                     ],
+                    'co-scholastic-areas' => [
+                        'label' => 'Co-Scholastic Areas',
+                        'path' => '/exam-management/co-scholastic-areas',
+                        'actions' => ['view' => 'View', 'create' => 'Create', 'edit' => 'Edit', 'delete' => 'Delete'],
+                    ],
                     'admit-cards' => [
                         'label' => 'Admit Cards',
                         'path' => '/exam-management/admit-cards',

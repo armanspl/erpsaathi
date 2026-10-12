@@ -42,6 +42,7 @@ use App\Http\Controllers\Erp\ErpRoleController;
 use App\Http\Controllers\Erp\Exams\AcademicTermController;
 use App\Http\Controllers\Erp\Exams\AdmitCardController;
 use App\Http\Controllers\Erp\Exams\AnnualReportController;
+use App\Http\Controllers\Erp\Exams\CoScholasticController;
 use App\Http\Controllers\Erp\Exams\ExamController;
 use App\Http\Controllers\Erp\Exams\ExamReportController;
 use App\Http\Controllers\Erp\Exams\ExamResultController;
@@ -373,6 +374,7 @@ Route::prefix('fee-management')->name('fee-management.')->group(function () {
     Route::get('due', [FeeDueController::class, 'index'])->name('due.index');
     Route::get('due/meta', [FeeDueController::class, 'meta'])->name('due.meta');
     Route::get('fee-paid', [FeePaidController::class, 'index'])->name('fee-paid.index');
+    Route::get('fee-paid/{student}/details', [FeePaidController::class, 'details'])->name('fee-paid.details');
     Route::middleware('erp.permission:fee-management.fee-paid.export')->get('fee-paid/export', [FeePaidController::class, 'export'])->name('fee-paid.export');
     Route::get('fee-history/meta', [FeeHistoryController::class, 'meta'])->name('fee-history.meta');
     Route::get('fee-history', [FeeHistoryController::class, 'index'])->name('fee-history.index');
@@ -513,6 +515,8 @@ Route::prefix('exams')->name('exams.')->group(function () {
     Route::get('annual-report/zip', [AnnualReportController::class, 'downloadZip'])->name('annual-report.zip');
     Route::get('annual-report/anchor-exam', [AnnualReportController::class, 'anchorExamInfo'])->name('annual-report.anchor-exam');
     Route::get('annual-report/{student}/pdf', [AnnualReportController::class, 'downloadStudentPdf'])->name('annual-report.student-pdf');
+    Route::get('co-scholastic/areas', [CoScholasticController::class, 'areas'])->name('co-scholastic.areas.index');
+    Route::get('co-scholastic/grades', [CoScholasticController::class, 'grades'])->name('co-scholastic.grades.index');
 
     Route::get('{exam}/results', [ExamResultController::class, 'index'])->name('results.index');
     Route::get('{exam}/results/pdf', [ExamResultController::class, 'downloadSheetPdf'])->name('results.pdf');
@@ -535,6 +539,10 @@ Route::prefix('exams')->name('exams.')->group(function () {
         Route::post('terms/setup-session', [AcademicTermController::class, 'setupSession'])->name('terms.setup-session');
         Route::post('annual-report/co-scholastic', [AnnualReportController::class, 'saveCoScholastic'])->name('annual-report.co-scholastic');
         Route::post('annual-report/remarks', [AnnualReportController::class, 'saveRemarks'])->name('annual-report.remarks');
+        Route::post('co-scholastic/areas', [CoScholasticController::class, 'storeArea'])->name('co-scholastic.areas.store');
+        Route::put('co-scholastic/areas/{area}', [CoScholasticController::class, 'updateArea'])->name('co-scholastic.areas.update');
+        Route::delete('co-scholastic/areas/{area}', [CoScholasticController::class, 'destroyArea'])->name('co-scholastic.areas.destroy');
+        Route::post('co-scholastic/grades', [CoScholasticController::class, 'saveGrades'])->name('co-scholastic.grades.save');
 
         Route::post('types', [ExamTypeController::class, 'store'])->name('types.store');
         Route::put('types/{examType}', [ExamTypeController::class, 'update'])->name('types.update');

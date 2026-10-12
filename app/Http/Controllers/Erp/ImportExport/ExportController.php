@@ -283,12 +283,15 @@ class ExportController extends Controller
             $sheet = $sheetIndex === 0 ? $spreadsheet->getActiveSheet() : $spreadsheet->createSheet();
             $title = $customTitle ?: self::sheetTitle($name);
             $sheet->setTitle(mb_substr($title, 0, 31));
-            $sheet->fromArray($header, null, 'A1');
+            // Global INCOME sheet: row 1 carries a total above every amount column, header moves to row 2.
+            $withTotalsRow = $entity === 'global' && $name === 'fee';
+            $headerRow = $withTotalsRow ? 2 : 1;
+            $sheet->fromArray($header, null, 'A'.$headerRow);
             if ($rows) {
                 // strictNullComparison=true — otherwise PhpSpreadsheet's default loose (==) null
                 // check treats a numeric 0 as "null" (0 == null is true in PHP) and skips the
                 // cell entirely, leaving it blank instead of writing 0.
-                $sheet->fromArray($rows, null, 'A2', true);
+                $sheet->fromArray($rows, null, 'A'.($headerRow + 1), true);
             }
             $isRichLayout = $name === 'student';
             $moneyHeaders = $entity === 'global' ? $this->moneyHeadersFor($name, $header) : [];
@@ -296,7 +299,10 @@ class ExportController extends Controller
             // richLayout (Student) sheet uses its own curated STUDENT_COLUMN_WIDTHS map instead.
             $columnWidths = ($entity === 'global' && ! $isRichLayout) ? $this->computeColumnWidths($header, $rows, $dateFormats) : null;
             $rowsForStyling = $entity === 'global' ? $rows : null;
-            $this->styleDataSheet($sheet, $header, count($rows), self::SHEET_ACCENTS[$name] ?? '4F46E5', $isRichLayout, 1, $moneyHeaders, $columnWidths, $rowsForStyling, $dateFormats);
+            $this->styleDataSheet($sheet, $header, count($rows), self::SHEET_ACCENTS[$name] ?? '4F46E5', $isRichLayout, $headerRow, $moneyHeaders, $columnWidths, $rowsForStyling, $dateFormats);
+            if ($withTotalsRow) {
+                $this->writeColumnTotalsRow($sheet, $header, $rows, $moneyHeaders, self::SHEET_ACCENTS[$name] ?? '4F46E5');
+            }
             $sheetIndex++;
         }
         $spreadsheet->setActiveSheetIndex(0);
@@ -508,6 +514,53 @@ class ExportController extends Controller
                 $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$lastRow}")->getNumberFormat()->setFormatCode($dateFormats[$label]);
             }
         }
+    }
+
+    /**
+     * Row 1 above a header that sits in row 2: a bold total over every money column, with a
+     * "TOTAL" label just left of the first one. SUBTOTAL(9, …) follows the sheet's AutoFilter,
+     * so filtering the rows (e.g. one month or one class) shows the total of what's visible.
+     *
+     * @param  array<int, string>  $headers
+     * @param  array<int, array<int, mixed>>  $rows
+     * @param  array<int, string>  $moneyHeaders
+     */
+    private function writeColumnTotalsRow(Worksheet $sheet, array $headers, array $rows, array $moneyHeaders, string $accentHex): void
+    {
+        $firstDataRow = 3;
+        $lastDataRow = 2 + count($rows);
+        $firstMoneyIdx = null;
+
+        foreach ($headers as $i => $label) {
+            if (! in_array($label, $moneyHeaders, true)) {
+                continue;
+            }
+            $firstMoneyIdx ??= $i;
+            $col = Coordinate::stringFromColumnIndex($i + 1);
+            $sum = $this->moneyValue((float) array_sum(array_map(fn ($r) => is_numeric($r[$i] ?? null) ? (float) $r[$i] : 0, $rows)));
+            if ($rows) {
+                $sheet->setCellValue("{$col}1", "=SUBTOTAL(9,{$col}{$firstDataRow}:{$col}{$lastDataRow})");
+            } else {
+                $sheet->setCellValue("{$col}1", 0);
+            }
+            $sheet->getStyle("{$col}1")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => '111827']],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FEF3C7']],
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT, 'vertical' => Alignment::VERTICAL_CENTER, 'shrinkToFit' => true],
+                'numberFormat' => ['formatCode' => $this->moneyFormatCode($sum)],
+            ]);
+        }
+
+        if ($firstMoneyIdx !== null && $firstMoneyIdx > 0) {
+            $labelCol = Coordinate::stringFromColumnIndex($firstMoneyIdx);
+            $sheet->setCellValue("{$labelCol}1", 'TOTAL');
+            $sheet->getStyle("{$labelCol}1")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $accentHex]],
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            ]);
+        }
+        $sheet->getRowDimension(1)->setRowHeight(22);
     }
 
     /**

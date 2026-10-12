@@ -70,6 +70,7 @@ import AdmitCards from '../pages/exams/AdmitCards.vue';
 import ExamResults from '../pages/exams/ExamResults.vue';
 import Terms from '../pages/exams/Terms.vue';
 import AnnualReportCard from '../pages/exams/AnnualReportCard.vue';
+import CoScholasticAreas from '../pages/exams/CoScholasticAreas.vue';
 import ExamReports from '../pages/exams/ExamReports.vue';
 import ExpenseCategories from '../pages/finance-payroll/ExpenseCategories.vue';
 import Expenses from '../pages/finance-payroll/Expenses.vue';
@@ -215,6 +216,7 @@ const FLAGSHIP_ROUTES = {
     '/exam-management/exam-results': ExamResults,
     '/exam-management/report-cards': ExamResults,
     '/exam-management/annual-report-card': AnnualReportCard,
+    '/exam-management/co-scholastic-areas': CoScholasticAreas,
     '/exam-management/exam-reports': ExamReports,
     '/finance-and-payroll/expense-categories': ExpenseCategories,
     '/finance-and-payroll/office-expenses': Expenses,

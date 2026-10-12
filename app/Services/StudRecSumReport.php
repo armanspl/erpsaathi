@@ -58,7 +58,30 @@ class StudRecSumReport
      *
      * @return list<array<string, mixed>>
      */
-    public static function rows(?AcademicSession $session): array
+    /**
+     * Months a demand covers: the session's months up to and including $throughMonth (default:
+     * the current month), like the workbook's Stud_Rec month count. A past session gives all of
+     * its months, a session that hasn't started yet gives none.
+     *
+     * @return list<string> Y-m keys
+     */
+    public static function demandMonths(AcademicSession $session, ?string $throughMonth = null): array
+    {
+        $throughMonth ??= now()->format('Y-m');
+        $monthKeys = collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all();
+        if ($monthKeys === [] && $session->start_date && $session->end_date) {
+            $cursor = $session->start_date->copy()->startOfMonth();
+            $end = $session->end_date->copy()->startOfMonth();
+            while ($cursor->lte($end)) {
+                $monthKeys[] = $cursor->format('Y-m');
+                $cursor->addMonth();
+            }
+        }
+
+        return array_values(array_filter($monthKeys, fn ($k) => (string) $k <= $throughMonth));
+    }
+
+    public static function rows(?AcademicSession $session, ?string $throughMonth = null): array
     {
         if (! $session) {
             return [];
@@ -160,23 +183,48 @@ class StudRecSumReport
         FeeCalculator::flushRuntimeCache();
         FeeCalculator::warmForStudents($students, $session);
 
-        $monthKeys = collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all();
-        if ($monthKeys === [] && $session->start_date && $session->end_date) {
-            $cursor = $session->start_date->copy()->startOfMonth();
-            $end = $session->end_date->copy()->startOfMonth();
-            while ($cursor->lte($end)) {
-                $monthKeys[] = $cursor->format('Y-m');
-                $cursor->addMonth();
-            }
-        }
-        $monthCount = count($monthKeys);
+        $sessionMonths = self::demandMonths($session, $throughMonth);
+        $balance = app(FeeBalanceService::class);
+        // Who had left the school by/in this session, and so gets no demand after leaving:
+        //  - record for this session has class "0" (left before it began — the workbook's
+        //    Student Master marks them so) or a TC dated before the session → no demand;
+        //  - TC dated inside the session → demand up to and including the TC month;
+        //  - current session, marked Inactive, no TC date → no new demand (leaving month unknown).
+        // A student who left only after the session ended was enrolled all session: not "left" here.
+        $sessionClass = \App\Models\StudentSessionHistory::query()
+            ->whereIn('student_id', $studentIds)
+            ->whereIn('session', $aliases)
+            ->pluck('class_name', 'student_id');
+        $tcDates = \App\Models\StudentAdditionalDetail::query()
+            ->whereIn('student_id', $studentIds)
+            ->whereNotNull('tc_date')
+            ->pluck('tc_date', 'student_id')
+            ->map(fn ($d) => substr((string) $d, 0, 10));
+        $sessionStart = $session->start_date?->toDateString();
+        $sessionEnd = $session->end_date?->toDateString();
 
         $rows = [];
         foreach ($students as $student) {
             $paid = $paidByStudent[$student->id] ?? $emptyPaid;
 
+            // Months this student owes: up to the current month, and from their fee start
+            // (a student admitted in August isn't charged April–July) — same rule as Fee Due.
+            $monthKeys = $balance->filterMonthsFromFeeStart($student, $sessionMonths);
+            $tc = $tcDates[$student->id] ?? null;
+            $left = false;
+            $leftNote = '';
+            if ((string) ($sessionClass[$student->id] ?? '') === '0' || ($tc && $sessionStart && $tc < $sessionStart)) {
+                [$left, $leftNote, $monthKeys] = [true, 'Left before this session'.($tc ? ' (TC '.date('d M Y', strtotime($tc)).')' : ''), []];
+            } elseif ($tc && $sessionEnd && $tc <= $sessionEnd) {
+                $left = true;
+                $leftNote = 'Left '.date('d M Y', strtotime($tc)).' (TC)';
+                $monthKeys = array_values(array_filter($monthKeys, fn ($k) => (string) $k <= substr($tc, 0, 7)));
+            } elseif ($session->is_current && $student->status !== 'Active') {
+                [$left, $leftNote, $monthKeys] = [true, 'Marked left (no TC date)', []];
+            }
+
             // Structure charges only — no per-student payment re-query (was the 120s bottleneck).
-            $charge = self::charges($student, $session, $monthKeys, $monthCount, $vehicleByStudent->get($student->id));
+            $charge = self::charges($student, $session, $monthKeys, count($monthKeys), $vehicleByStudent->get($student->id));
 
             $annPmnt = round($paid['ANN'], 2);
             $tuiPmnt = round($paid['TUI'], 2);
@@ -200,6 +248,8 @@ class StudRecSumReport
                 'school_class_id' => $student->school_class_id,
                 'section_id' => $student->section_id,
                 'section' => $student->section->name ?? '',
+                'left' => $left,
+                'left_note' => $leftNote,
                 'session' => $sessionLabel,
                 'admission_no' => $student->admission_no ?? '',
                 'name' => $student->name ?? '',
@@ -235,6 +285,11 @@ class StudRecSumReport
     private static function charges(Student $student, AcademicSession $session, array $monthKeys, int $monthCount, ?StudentTransport $transport): array
     {
         $charge = ['REG' => 0.0, 'ADM' => 0.0, 'ANN' => 0.0, 'TUI' => 0.0, 'TRA' => 0.0];
+
+        // No month of the session has arrived for this student yet — nothing is due.
+        if ($monthKeys === []) {
+            return $charge;
+        }
 
         foreach (FeeCalculator::breakdownOnly($student, $session) as $plan) {
             $code = self::headCode((string) ($plan['fee_head_name'] ?? ''));
@@ -284,6 +339,7 @@ class StudRecSumReport
             'registration fee' => 'REG',
             'admission fee' => 'ADM',
             'session fee' => 'ANN',
+            'annual fee' => 'ANN',
             'tution fee' => 'TUI',
             'tuition fee' => 'TUI',
             'transport' => 'TRA',

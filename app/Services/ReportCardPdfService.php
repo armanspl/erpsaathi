@@ -5,13 +5,16 @@ namespace App\Services;
 use App\Models\AcademicSession;
 use App\Models\Attendance;
 use App\Models\AttendanceMonthlySummary;
+use App\Models\CoScholasticArea;
 use App\Models\CoScholasticGrade;
+use App\Models\CoScholasticStudentGrade;
 use App\Models\Exam;
 use App\Models\GradeSystem;
 use App\Models\Student;
 use App\Models\Teacher;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Builds Template Builder data tokens for report-card PDFs (scholastic rows, grading key, chart).
@@ -139,7 +142,7 @@ class ReportCardPdfService
                 $escape
             ),
             'remarks' => $row['remarks'] ?? 'GOOD / VERY GOOD / EXCELLENT',
-            'co_scholastic_html' => $this->coScholasticHtml($row, $grades, $accentPalette['accent_color'], $isMono, $escape),
+            'co_scholastic_html' => $this->coScholasticHtml($row, $grades, $session, $accentPalette['accent_color'], $isMono, $escape),
             'grading_html' => $this->gradingSystemHtml($grades, $escape),
             'chart_html' => $this->subjectMarksChart($subjects),
             'class_teacher_signature' => "Class Teacher's Sign",
@@ -369,26 +372,41 @@ class ReportCardPdfService
     }
 
     /**
-     * Co-Scholastic Areas "Remarks" column — not manually entered per student, derived from
-     * grades already computed elsewhere on this same card:
+     * Co-Scholastic Areas grid. Rows are the active areas from Exam Management → Co-Scholastic
+     * Areas; each grade is the one set there for the student in the selected session. When no
+     * grade is set, the built-in areas fall back to a value derived from this same card:
      * - Work Education mirrors the card's own Overall Grade.
      * - Drawing & Art mirrors the student's "Drawing" subject grade, or "A" when this result
      *   doesn't include a Drawing subject at all.
-     * - Sports is always "A" — nothing in the system grades sports, so there's no value to
-     *   derive it from.
-     * Applies identically to every result type (Individual Exam, Term/Half Yearly, Annual) —
-     * all of them set $row['grade'] and $row['subjects'], which is all this needs.
+     * - Sports is "A".
+     * Areas added by the school print "—" until a grade is set.
+     * Applies identically to every result type (Individual Exam, Term/Half Yearly, Annual).
      *
      * @param  array<string, mixed>  $row
      */
-    private function coScholasticHtml(array $row, Collection $grades, string $accentColor, bool $isMono, callable $escape): string
+    private function coScholasticHtml(array $row, Collection $grades, ?AcademicSession $session, string $accentColor, bool $isMono, callable $escape): string
     {
         $overallGrade = trim((string) ($row['grade'] ?? ''));
-        $values = [
+        $derived = [
             'work_education' => $overallGrade !== '' ? $overallGrade : 'A',
             'drawing_art' => $this->subjectGrade($row, 'drawing', $grades) ?? 'A',
             'sports' => 'A',
         ];
+
+        // Before the migration runs the built-in three still print as before.
+        $migrated = Schema::hasTable('co_scholastic_areas');
+        $areas = $migrated
+            ? CoScholasticArea::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get()
+            : collect(CoScholasticGrade::AREAS)->map(fn ($label, $key) => new CoScholasticArea(['name' => $label, 'code' => $key]))->values();
+        if ($areas->isEmpty()) {
+            return '';
+        }
+        $saved = $migrated && $session && ($row['student_id'] ?? null)
+            ? CoScholasticStudentGrade::query()
+                ->where('student_id', $row['student_id'])
+                ->where('academic_session_id', $session->id)
+                ->pluck('grade', 'co_scholastic_area_id')
+            : collect();
 
         // Header fill mirrors the marks table's own coloured header — white text on the
         // accent colour, or black text with no fill in "None"/mono mode. Set inline rather
@@ -401,16 +419,18 @@ class ReportCardPdfService
             .'<th class="remarks-head" style="'.$headStyle.'">GRADE</th></tr>';
 
         $bodyRows = '';
-        foreach (CoScholasticGrade::AREAS as $key => $label) {
+        foreach ($areas as $area) {
+            $value = $area->id ? ($saved[$area->id] ?? null) : null;
+            $value ??= $derived[$area->code ?? ''] ?? '—';
             // The fixed-width box is centered within the column (so the group of grades reads
             // as centered overall), but the text inside each box is left-aligned — "A" and "A+"
             // are different widths, so centering the text itself would start each one at a
             // different x position; this keeps every value starting at the same spot within its
             // own (equally sized, equally centered) box. Same technique as the marks table's own
             // Grade column. Area names print in capitals ("WORK EDUCATION").
-            $bodyRows .= '<tr><td class="area" style="text-transform:uppercase">'.$escape(mb_strtoupper($label)).'</td>'
+            $bodyRows .= '<tr><td class="area" style="text-transform:uppercase">'.$escape(mb_strtoupper((string) $area->name)).'</td>'
                 .'<td class="grade" style="text-align:center"><span style="display:inline-block;width:16pt;text-align:left">'
-                .$escape($values[$key] ?? 'A').'</span></td></tr>';
+                .$escape($value).'</span></td></tr>';
         }
 
         return '<table class="co-grid">'.$thead.$bodyRows.'</table>';
