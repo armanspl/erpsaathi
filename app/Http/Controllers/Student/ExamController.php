@@ -109,8 +109,9 @@ class ExamController extends Controller
         }
 
         foreach ($bySubject as &$subject) {
-            $scored = collect($subject['entries'])->filter(fn ($e) => ! $e['is_absent'] && $e['marks_obtained'] !== null);
-            $obtained = $scored->sum('marks_obtained');
+            // Absent counts 0 out of the full max (same rule as the result screens); blanks are skipped.
+            $scored = collect($subject['entries'])->filter(fn ($e) => $e['is_absent'] || $e['marks_obtained'] !== null);
+            $obtained = $scored->sum(fn ($e) => $e['is_absent'] ? 0 : (float) $e['marks_obtained']);
             $max = $scored->sum('max_marks');
             $subject['average_percentage'] = $max > 0 ? round(($obtained / $max) * 100, 2) : null;
         }

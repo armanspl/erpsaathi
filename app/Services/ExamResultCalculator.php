@@ -64,10 +64,11 @@ class ExamResultCalculator
                     $absent = (bool) ($mark?->is_absent);
                     $obt = $absent ? null : ($mark?->marks_obtained !== null ? (float) $mark->marks_obtained : null);
                     $isDrawing = str_contains(mb_strtolower((string) ($s->subject->name ?? '')), 'drawing');
-                    // Absent: preserve status, do not count as zero toward obtained or max.
+                    // Absent ("Ab") scores 0 but keeps the subject's full max — an absence never
+                    // shrinks the maximum. The row still reports is_absent so screens print "Ab".
                     // Drawing stays on the subject list for Co-Scholastic mirroring, but is
                     // excluded from OVERALL MARKS / % / rank (same as Term/Half Yearly PDFs).
-                    if (! $absent && ! $isDrawing) {
+                    if (! $isDrawing) {
                         $maxTotal += (float) $s->max_marks;
                         if ($obt !== null) {
                             $obtained += $obt;

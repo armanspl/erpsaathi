@@ -56,10 +56,13 @@ class ReportCardPdfService
         $obtained = 0.0;
         $maxTotal = 0.0;
         foreach ($subjects as $s) {
-            if (($s['marks_obtained'] ?? null) === null) {
+            // Absent ("Ab") prints as Ab but counts 0 out of the subject's full max, the same
+            // as every result screen (see ExamResultCalculator).
+            $absent = ! empty($s['is_absent']);
+            if (($s['marks_obtained'] ?? null) === null && ! $absent) {
                 continue;
             }
-            $obtained += (float) $s['marks_obtained'];
+            $obtained += (float) ($s['marks_obtained'] ?? 0);
             $maxTotal += (float) ($s['max_marks'] ?? 0);
         }
         $percentage = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 2) : 0.0;

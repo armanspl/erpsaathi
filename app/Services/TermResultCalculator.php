@@ -179,8 +179,10 @@ class TermResultCalculator
 
                     $cells['exam_'.$exam->id] = $absent ? 'Ab' : $obt;
 
+                    // Absent ("Ab") scores 0 against the component's full max — an absence never
+                    // shrinks the maximum. A blank (no mark, not absent) keeps its old handling.
                     if ($absent) {
-                        continue;
+                        $obt = 0.0;
                     }
 
                     // Term total = PT+NB+SEA+board only (TEST is display of internals, not added again).

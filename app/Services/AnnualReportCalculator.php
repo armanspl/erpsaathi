@@ -364,8 +364,10 @@ class AnnualReportCalculator
             $obt = (! $absent && $mark?->marks_obtained !== null) ? (float) $mark->marks_obtained : null;
 
             $cells['exam_'.$exam->id] = $absent ? 'Ab' : $obt;
+            // Absent ("Ab") scores 0 against the component's full max — an absence never
+            // shrinks the maximum. A blank (no mark, not absent) keeps its old handling.
             if ($absent) {
-                continue;
+                $obt = 0.0;
             }
 
             $totalMax += $max;
