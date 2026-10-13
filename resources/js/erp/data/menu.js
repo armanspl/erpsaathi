@@ -90,7 +90,7 @@ const rawMenu = [
     {
         label: 'Settings',
         icon: '⚙️',
-        children: ['School Settings', 'Academic Sessions', 'Roles & Permissions', 'Database Backup', 'Student Portal'],
+        children: ['School Settings', 'Academic Sessions', 'Roles & Permissions', 'Database Backup', 'Student Portal', 'WhatsApp'],
     },
     {
         label: 'Account',

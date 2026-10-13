@@ -4,6 +4,7 @@ use App\Http\Controllers\SuperAdmin\AuthController;
 use App\Http\Controllers\SuperAdmin\DashboardController;
 use App\Http\Controllers\SuperAdmin\SchoolController;
 use App\Http\Controllers\SuperAdmin\SchoolDatabaseController;
+use App\Http\Controllers\SuperAdmin\WhatsAppConfigController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'central'])->prefix('super-admin')->name('super-admin.')->group(function () {
@@ -15,6 +16,11 @@ Route::middleware(['web', 'central'])->prefix('super-admin')->name('super-admin.
 
         Route::prefix('api')->name('api.')->group(function () {
             Route::get('/summary', [DashboardController::class, 'summary'])->name('summary');
+
+            // Platform-wide Meta / WhatsApp settings (master DB). Super Admin guard + central host only.
+            Route::get('/whatsapp-config', [WhatsAppConfigController::class, 'show'])->name('whatsapp-config.show');
+            Route::put('/whatsapp-config', [WhatsAppConfigController::class, 'update'])->name('whatsapp-config.update');
+            Route::post('/whatsapp-config/check', [WhatsAppConfigController::class, 'check'])->middleware('throttle:10,1')->name('whatsapp-config.check');
             Route::get('/schools', [SchoolController::class, 'index'])->name('schools.index');
             Route::post('/schools', [SchoolController::class, 'store'])->name('schools.store');
             Route::get('/schools/{school}', [SchoolController::class, 'show'])->name('schools.show');

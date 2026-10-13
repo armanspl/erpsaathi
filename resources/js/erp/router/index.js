@@ -15,6 +15,7 @@ import StudentPortalSettings from '../pages/settings/StudentPortal.vue';
 import AcademicSessions from '../pages/settings/AcademicSessions.vue';
 import Roles from '../pages/settings/Roles.vue';
 import DatabaseBackup from '../pages/settings/DatabaseBackup.vue';
+import WhatsAppSettings from '../pages/settings/WhatsApp.vue';
 import Branches from '../pages/academics/Branches.vue';
 import ClassesSections from '../pages/academics/ClassesSections.vue';
 import Subjects from '../pages/academics/Subjects.vue';
@@ -151,6 +152,7 @@ const FLAGSHIP_ROUTES = {
     '/academics/academic-sessions': AcademicSessions,
     '/settings/roles-and-permissions': Roles,
     '/settings/database-backup': DatabaseBackup,
+    '/settings/whatsapp': WhatsAppSettings,
     '/academics/branches': Branches,
     '/academics/classes-and-sections': ClassesSections,
     '/academics/subjects': Subjects,

@@ -25,6 +25,10 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
           Databases
         </button>
+        <button type="button" class="sa-nav-item" :class="{ active: page === 'whatsapp' }" @click="go('whatsapp')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.6-5.4A8.4 8.4 0 1 1 21 11.5z"/></svg>
+          WhatsApp
+        </button>
       </nav>
 
       <div class="sa-sidebar-foot">
@@ -109,6 +113,9 @@
 
         <!-- Database Manager -->
         <DatabaseManager v-else-if="page === 'databases'" :key="dbSchoolId || 'list'" :api="api" :open-school-id="dbSchoolId" />
+
+        <!-- WhatsApp Configuration -->
+        <WhatsAppConfig v-else-if="page === 'whatsapp'" :api="api" />
 
         <!-- Schools -->
         <section v-else class="sa-stack">
@@ -321,6 +328,7 @@
 
 <script>
 import DatabaseManager from './super-admin/DatabaseManager.vue';
+import WhatsAppConfig from './super-admin/WhatsAppConfig.vue';
 
 const emptyForm = () => ({
   name: '',
@@ -336,7 +344,7 @@ const emptyForm = () => ({
 
 export default {
   name: 'SuperAdminApp',
-  components: { DatabaseManager },
+  components: { DatabaseManager, WhatsAppConfig },
   data() {
     return {
       csrf: document.querySelector('meta[name="csrf-token"]')?.content || '',
@@ -377,12 +385,13 @@ export default {
   },
   computed: {
     pageTitle() {
-      return { dashboard: 'Dashboard', databases: 'Database Manager' }[this.page] || 'Schools';
+      return { dashboard: 'Dashboard', databases: 'Database Manager', whatsapp: 'WhatsApp Configuration' }[this.page] || 'Schools';
     },
     pageSubtitle() {
       return {
         dashboard: 'Multi-school SaaS overview and billing totals',
         databases: "Browse and manage each school's own MySQL database",
+        whatsapp: 'Platform-wide Meta app settings used by every school\'s WhatsApp connection',
       }[this.page] || 'Provision, bill, activate, or permanently remove schools';
     },
     userInitial() {

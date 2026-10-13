@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\WhatsApp\WhatsAppPlatformConfig;
 use App\Services\WhatsApp\WhatsAppWebhookProcessor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -21,9 +22,11 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class WhatsAppWebhookController extends Controller
 {
+    public function __construct(private WhatsAppPlatformConfig $config) {}
+
     public function verify(Request $request): Response
     {
-        $expected = (string) config('whatsapp.webhook.verify_token');
+        $expected = $this->config->verifyToken();
         // PHP turns "hub.mode" into "hub_mode" when parsing the query string.
         $mode = (string) $request->query('hub_mode', '');
         $token = (string) $request->query('hub_verify_token', '');
@@ -40,15 +43,15 @@ class WhatsAppWebhookController extends Controller
 
     public function receive(Request $request, WhatsAppWebhookProcessor $processor): Response
     {
-        $secret = (string) config('whatsapp.webhook.app_secret');
+        $secret = $this->config->appSecret();
         if ($secret === '') {
-            Log::error('WhatsApp webhook: WHATSAPP_APP_SECRET is not configured; event refused');
+            Log::error('WhatsApp webhook: Meta App Secret is not configured; event refused');
 
             return response('Webhook not configured', 503);
         }
 
         $raw = $request->getContent();
-        if (strlen($raw) > (int) config('whatsapp.webhook.max_payload_bytes', 1048576)) {
+        if (strlen($raw) > $this->config->maxPayloadBytes()) {
             return response('Payload too large', 413);
         }
 

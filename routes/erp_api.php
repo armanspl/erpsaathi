@@ -135,6 +135,7 @@ use App\Http\Controllers\Erp\Reports\RegisterReportController;
 use App\Http\Controllers\Erp\Reports\UdiseReportController;
 use App\Http\Controllers\Erp\Reports\StudentReportController;
 use App\Http\Controllers\Erp\SchoolSettingController;
+use App\Http\Controllers\Erp\WhatsAppConnectionController;
 use App\Http\Controllers\Erp\System\AuditLogController;
 use App\Http\Controllers\Erp\System\CacheManagerController;
 use App\Http\Controllers\Erp\System\LoginHistoryController;
@@ -178,6 +179,14 @@ Route::prefix('settings')->name('settings.')->group(function () {
     Route::middleware('erp.permission:settings.school-settings.edit')->put('/school', [SchoolSettingController::class, 'update'])->name('school.update');
     Route::middleware('erp.permission:settings.school-settings.upload')->post('/school/upload', [SchoolSettingController::class, 'upload'])->name('school.upload');
     Route::middleware('erp.permission:settings.student-portal.edit')->put('student-portal', [SchoolSettingController::class, 'updateStudentPortalSettings'])->name('student-portal.update');
+
+    Route::middleware('erp.permission:settings.whatsapp.view')->get('whatsapp', [WhatsAppConnectionController::class, 'show'])->name('whatsapp.show');
+    Route::middleware('erp.permission:settings.whatsapp.edit')->group(function () {
+        Route::post('whatsapp/connect', [WhatsAppConnectionController::class, 'start'])->name('whatsapp.connect');
+        Route::post('whatsapp/refresh', [WhatsAppConnectionController::class, 'refresh'])->name('whatsapp.refresh');
+        Route::post('whatsapp/register', [WhatsAppConnectionController::class, 'register'])->middleware('throttle:5,1')->name('whatsapp.register');
+        Route::delete('whatsapp', [WhatsAppConnectionController::class, 'disconnect'])->name('whatsapp.disconnect');
+    });
 
     Route::middleware('erp.permission:settings.academic-sessions.create')->post('academic-sessions', [AcademicSessionController::class, 'store'])->name('academic-sessions.store');
     Route::middleware('erp.permission:settings.academic-sessions.edit')->put('academic-sessions/{academicSession}', [AcademicSessionController::class, 'update'])->name('academic-sessions.update');

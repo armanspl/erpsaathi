@@ -695,6 +695,11 @@ class PermissionCatalog
                         'path' => '/settings/student-portal',
                         'actions' => ['view' => 'View', 'edit' => 'Edit'],
                     ],
+                    'whatsapp' => [
+                        'label' => 'WhatsApp',
+                        'path' => '/settings/whatsapp',
+                        'actions' => ['view' => 'View', 'edit' => 'Connect / Disconnect'],
+                    ],
                 ],
             ],
             'account' => [
