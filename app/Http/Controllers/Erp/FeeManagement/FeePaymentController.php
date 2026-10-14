@@ -322,7 +322,8 @@ class FeePaymentController extends Controller
             'student_id' => 'required|exists:students,id',
             'items' => 'nullable|array',
             'items.*.fee_head_id' => 'required_with:items|exists:fee_heads,id',
-            'items.*.amount' => 'required_with:items|numeric|min:0.01',
+            // ₹0 is allowed on a line only together with a discount (a waiver line — checked below).
+            'items.*.amount' => 'required_with:items|numeric|min:0',
             'items.*.charge' => 'nullable|numeric|min:0',
             'items.*.discount' => 'nullable|numeric|min:0',
             'items.*.months' => 'nullable|array',
@@ -343,6 +344,12 @@ class FeePaymentController extends Controller
             'backdate' => 'nullable|boolean',
             'receipt_no' => 'nullable|string|max:50',
         ]);
+
+        foreach ($data['items'] ?? [] as $i => $line) {
+            if ((float) ($line['amount'] ?? 0) <= 0 && (float) ($line['discount'] ?? 0) <= 0) {
+                throw ValidationException::withMessages(["items.$i.amount" => 'Each fee line needs a paid amount or a discount.']);
+            }
+        }
 
         // Back-date entry (Super Admin → per-school switch): past payment date + own receipt no.
         // The session comes from the header picker like every other fee screen.
@@ -529,7 +536,8 @@ class FeePaymentController extends Controller
                     'transport_stop_id' => $item['transport_stop_id'] ?? null,
                 ], fn ($v) => $v !== null);
 
-                if (($line['amount'] ?? 0) > 0) {
+                // Keep discount-only (waiver) lines too — they settle the month without income.
+                if (($line['amount'] ?? 0) > 0 || ($line['discount'] ?? 0) > 0) {
                     $items->push($line);
                     $runningCovered[$feeHeadId][$monthKey] = ($runningCovered[$feeHeadId][$monthKey] ?? 0)
                         + $paidTake + $discTake;
@@ -565,21 +573,30 @@ class FeePaymentController extends Controller
             }
         }
 
-        $discountAmount = (float) ($data['discount_amount'] ?? 0);
+        // Receipt-level discount = the head-wise discounts actually saved on the lines (so it can
+        // never claim a concession that no fee line carries); the posted total is only a fallback.
+        $discountAmount = round((float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0)), 2);
         if ($discountAmount <= 0) {
-            $discountAmount = (float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0));
+            $discountAmount = (float) ($data['discount_amount'] ?? 0);
+        }
+
+        $amount = round((float) $items->sum('amount') + (float) ($data['fine_amount'] ?? 0), 2);
+        $remarks = $data['remarks'] ?? null;
+        if ($amount <= 0 && blank($remarks)) {
+            // Nothing received: a pure waiver receipt (100% discount) — say so on the receipt.
+            $remarks = 'Fee waiver — 100% discount, nothing received';
         }
 
         $attributes = [
             'student_id' => $data['student_id'],
             'academic_session_id' => $session->id,
             'items' => $items->values()->all(),
-            'amount' => $items->sum('amount') + ($data['fine_amount'] ?? 0),
+            'amount' => $amount,
             'discount_amount' => $discountAmount,
             'fine_amount' => $data['fine_amount'] ?? 0,
             'payment_mode' => $paymentMode,
             'payment_date' => $data['payment_date'] ?? now()->toDateString(),
-            'remarks' => $data['remarks'] ?? null,
+            'remarks' => $remarks,
             'reference_no' => $data['reference_no'] ?? null,
             'collected_by_id' => Auth::guard('erp')->id(),
         ];
@@ -591,7 +608,7 @@ class FeePaymentController extends Controller
         // fee_payments has no bank_account_id column, so the link to the chosen account is a
         // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums these,
         // the same mechanism a manually-entered deposit or an imported fee payment uses.
-        if (! empty($data['bank_account_id'])) {
+        if (! empty($data['bank_account_id']) && (float) $payment->amount > 0) {
             BankTransaction::create([
                 'bank_account_id' => $data['bank_account_id'],
                 'type' => 'Deposit',

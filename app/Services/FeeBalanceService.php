@@ -275,11 +275,15 @@ class FeeBalanceService
         foreach ($payments as $payment) {
             $gross = (float) $payment->amount;
             $net = $gross - (float) $payment->refunded_amount;
-            if ($net <= 0 || $gross <= 0) {
+            if ($gross <= 0) {
+                // ₹0 receipt = a fee waiver (discount-only lines): nothing to refund, so its
+                // discounts count in full; its paid amounts are all 0.
+                $scale = 1.0;
+            } elseif ($net <= 0) {
                 continue;
+            } else {
+                $scale = $net / $gross;
             }
-
-            $scale = $net / $gross;
 
             foreach ($payment->items ?? [] as $item) {
                 $feeHeadId = (int) ($item['fee_head_id'] ?? 0);

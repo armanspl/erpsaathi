@@ -202,10 +202,13 @@ class DocumentDataBuilder
         foreach ($priorPayments as $prev) {
             $gross = (float) $prev->amount;
             $net = $gross - (float) $prev->refunded_amount;
-            if ($net <= 0 || $gross <= 0) {
+            if ($gross <= 0) {
+                $scale = 1.0; // ₹0 waiver receipt — its discount lines still cover the fee
+            } elseif ($net <= 0) {
                 continue;
+            } else {
+                $scale = $net / $gross;
             }
-            $scale = $net / $gross;
 
             foreach ($prev->items ?? [] as $prevItem) {
                 $headId = (int) ($prevItem['fee_head_id'] ?? 0);

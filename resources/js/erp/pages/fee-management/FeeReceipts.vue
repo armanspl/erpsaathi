@@ -1242,11 +1242,19 @@ const summary = computed(() => {
 const canSubmit = computed(() => {
     if (!student.value) return false;
     if (!unpaidSelectedMonths().length) return false;
-    if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value) return false;
-    const hasFee = selectedHeadIds.value.some((id) => (Number(amounts[id]) || 0) > 0);
+    if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value && hasCashReceived()) return false;
+    // A fee line counts when something is paid OR discounted on it — a 100% discount with ₹0
+    // paid is a waiver and is saved as a discount-only line (it settles the fee, not as income).
+    const hasFee = selectedHeadIds.value.some((id) => (Number(amounts[id]) || 0) > 0 || (Number(discounts[id]) || 0) > 0);
     const hasTransport = transport.apply && (Number(transport.fee) || 0) > 0;
     return hasFee || hasTransport;
 });
+
+/** Is any money actually received on this receipt (fee paid or transport)? */
+function hasCashReceived() {
+    const fee = selectedHeadIds.value.some((id) => (Number(amounts[id]) || 0) > 0);
+    return fee || (transport.apply && (Number(transport.fee) || 0) > 0);
+}
 
 const studentReceiptsAllSelected = computed(
     () => studentReceipts.value.length > 0 && studentReceiptSelected.value.length === studentReceipts.value.length,
@@ -1960,7 +1968,7 @@ function allocateHeadAcrossMonths(item, months, paidAmt, discountAmt) {
 
     if (freq === 'annual' || freq === 'one_time') {
         const dueAmt = Math.max(0, amount - alreadyPaidForHead(item));
-        if (paidAmt <= 0) return [];
+        if (paidAmt <= 0 && discountAmt <= 0) return [];
         return [{
             fee_head_id: item.fee_head_id,
             amount: paidAmt,
@@ -2000,16 +2008,23 @@ function allocateHeadAcrossMonths(item, months, paidAmt, discountAmt) {
         lines[lines.length - 1].charge = Math.max(lines[lines.length - 1].charge, lines[lines.length - 1].amount);
     }
 
-    return lines.filter((l) => l.amount > 0);
+    return lines.filter((l) => l.amount > 0 || l.discount > 0);
 }
 
 async function collect() {
     if (!canSubmit.value) {
-        if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value) {
+        if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value && hasCashReceived()) {
             pushToast('Select which bank account received this transfer.', 'error');
         } else {
-            pushToast(unpaidSelectedMonths().length ? 'Enter at least one paid amount.' : 'Select unpaid months to collect.', 'error');
+            pushToast(unpaidSelectedMonths().length ? 'Enter a paid amount or a discount.' : 'Select unpaid months to collect.', 'error');
         }
+        return;
+    }
+    const overDiscount = selectedHeadIds.value
+        .map((id) => (due.value?.breakdown || []).find((row) => row.fee_head_id === id))
+        .find((item) => item && (Number(discounts[item.fee_head_id]) || 0) > feeBase(item) + 0.0001);
+    if (overDiscount) {
+        pushToast(`Discount on ${overDiscount.fee_head_name} is more than its due ₹${money(feeBase(overDiscount))}.`, 'error');
         return;
     }
 
@@ -2027,7 +2042,8 @@ async function collect() {
             const item = (due.value?.breakdown || []).find((row) => row.fee_head_id === id);
             const paidAmt = Number(amounts[id]) || 0;
             const discAmt = Number(discounts[id]) || 0;
-            if (!item || paidAmt <= 0) return null;
+            if (!item || (paidAmt <= 0 && discAmt <= 0)) return null;
+            if (paidAmt <= 0) return `${item.fee_head_name || 'Fee'}: waived (discount ₹${money(discAmt)})`;
             const disc = discAmt > 0 ? ` (disc ₹${money(discAmt)})` : '';
             return `${item.fee_head_name || 'Fee'}: ₹${money(paidAmt)}${disc}`;
         })
@@ -2071,8 +2087,9 @@ async function submitFeeConfirmed() {
         for (const id of selectedHeadIds.value) {
             const item = (due.value?.breakdown || []).find((row) => row.fee_head_id === id);
             const paidAmt = Number(amounts[id]) || 0;
-            if (paidAmt <= 0 || !item) continue;
             const discAmt = Number(discounts[id]) || 0;
+            // Discount-only lines (₹0 paid) are kept — they are the waiver record for that fee.
+            if ((paidAmt <= 0 && discAmt <= 0) || !item) continue;
             items.push(...allocateHeadAcrossMonths(item, months, paidAmt, discAmt));
         }
 
