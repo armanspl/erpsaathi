@@ -112,7 +112,7 @@
                                     <span>{{ m.label }}</span>
                                     <span v-if="isMonthWaived(m.key)" class="rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">(Discount)</span>
                                     <span v-else-if="isMonthPaid(m.key)" class="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">(Paid)</span>
-                                    <span v-else-if="isMonthBeforeFeeStart(m.key)" class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">(Before start)</span>
+                                    <span v-else-if="isMonthBeforeFeeStart(m.key)" class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">(Not charged)</span>
                                 </label>
                             </div>
                         </div>
@@ -295,6 +295,24 @@ const transportRoutes = ref([]);
 const transportStops = ref([]);
 const transportHeadId = ref(null);
 const transportFeeStartMonth = ref(null);
+// People > Students Fee Months / Transport Fee Months as Y-m keys for the picker (null = not loaded, old start rule).
+const feeMonthKeys = ref(null);
+const transportMonthKeys = ref(null);
+
+function isFeeMonthKey(key) {
+    if (Array.isArray(feeMonthKeys.value)) return feeMonthKeys.value.includes(key);
+    return !feeStartMonth.value || key >= feeStartMonth.value;
+}
+
+function isTransportMonthKey(key) {
+    if (Array.isArray(transportMonthKeys.value)) return transportMonthKeys.value.includes(key);
+    return !transportFeeStartMonth.value || key >= transportFeeStartMonth.value;
+}
+
+/** Months among $months where school fees (structure heads) are charged. */
+function feeOnly(months) {
+    return months.filter((k) => isFeeMonthKey(k));
+}
 const studentTransport = ref(null);
 const transport = reactive({
     apply: false,
@@ -358,9 +376,7 @@ const transportDue = computed(() => {
 });
 
 function transportBillableMonths(months) {
-    const start = transportFeeStartMonth.value;
-    if (!start) return months;
-    return months.filter((m) => m >= start);
+    return months.filter((m) => isTransportMonthKey(m));
 }
 
 const selectedRemainingDue = computed(() => {
@@ -405,8 +421,9 @@ function isMonthPaid(key) {
     return paidMonths.value.includes(key) && !isMonthWaived(key);
 }
 
+/** Neither school fees nor transport are charged in this month (not in Fee Months). */
 function isMonthBeforeFeeStart(key) {
-    return !!(feeStartMonth.value && key < feeStartMonth.value);
+    return !isFeeMonthKey(key) && !(transportFare.value > 0 && isTransportMonthKey(key));
 }
 
 function isMonthLocked(key) {
@@ -458,7 +475,7 @@ function unitsForFee(item) {
     if (!months.length) return 0;
     const freq = feeFrequency(item);
     if (freq === 'monthly' || freq === 'quarterly') {
-        return chargeMonthsFor(item, months).filter((m) => Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHeadMonth(item, m)) > 0.0001).length;
+        return chargeMonthsFor(item, feeOnly(months)).filter((m) => Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHeadMonth(item, m)) > 0.0001).length;
     }
     return Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHead(item)) > 0.0001 ? 1 : 0;
 }
@@ -473,7 +490,7 @@ function feeBase(item) {
     }
 
     if (freq === 'monthly' || freq === 'quarterly') {
-        return chargeMonthsFor(item, months).reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
+        return chargeMonthsFor(item, feeOnly(months)).reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
     }
 
     return Math.max(0, amount - alreadyPaidForHead(item));
@@ -576,6 +593,8 @@ async function loadDue() {
     paidMonths.value = [];
     waivedMonths.value = [];
     feeStartMonth.value = null;
+    feeMonthKeys.value = null;
+    transportMonthKeys.value = null;
     paidByHead.value = {};
     paidByHeadDiscount.value = {};
     paidByHeadMonth.value = {};
@@ -601,6 +620,8 @@ async function loadDue() {
         paidMonths.value = Array.isArray(data.paid_months) ? data.paid_months : [];
         waivedMonths.value = Array.isArray(data.waived_months) ? data.waived_months : [];
         feeStartMonth.value = data.fee_start_month || null;
+        feeMonthKeys.value = Array.isArray(data.fee_month_keys) ? data.fee_month_keys : null;
+        transportMonthKeys.value = Array.isArray(data.transport_month_keys) ? data.transport_month_keys : null;
         transportFeeStartMonth.value = data.transport_fee_start_month || null;
         paidByHead.value = data.paid_by_head && typeof data.paid_by_head === 'object' ? data.paid_by_head : {};
         paidByHeadDiscount.value = data.paid_by_head_discount && typeof data.paid_by_head_discount === 'object'
@@ -633,7 +654,7 @@ async function loadDue() {
         const currMonths = feeMeta.value?.current_session?.months || [];
         const allMonths = monthBlocks.value.flatMap((b) => b.months.map((m) => m.key));
         const nowKey = new Date().toISOString().slice(0, 7);
-        const isBillable = (k) => !feeStartMonth.value || k >= feeStartMonth.value;
+        const isBillable = (k) => !isMonthBeforeFeeStart(k);
         const unpaidCurr = currMonths.map((m) => m.key).filter((k) => isBillable(k) && !paidMonths.value.includes(k));
         const unpaidAll = allMonths.filter((k) => isBillable(k) && !paidMonths.value.includes(k));
         if (unpaidCurr.includes(nowKey)) selectedMonths.value = unpaidCurr.filter((k) => k <= nowKey);
@@ -655,6 +676,8 @@ function clearStudent() {
     paidMonths.value = [];
     waivedMonths.value = [];
     feeStartMonth.value = null;
+    feeMonthKeys.value = null;
+    transportMonthKeys.value = null;
     paidByHead.value = {};
     paidByHeadDiscount.value = {};
     paidByHeadMonth.value = {};
@@ -717,12 +740,12 @@ function allocateHeadAcrossMonths(item, months, paidAmt) {
             fee_head_id: item.fee_head_id,
             amount: paidAmt,
             charge: Math.max(dueAmt, paidAmt),
-            months: sorted.length ? [sorted[0]] : [],
+            months: feeOnly(sorted).length ? [feeOnly(sorted)[0]] : sorted.slice(0, 1),
         }];
     }
 
     let paidLeft = paidAmt;
-    const targets = chargeMonthsFor(item, sorted);
+    const targets = chargeMonthsFor(item, feeOnly(sorted));
     const lines = [];
 
     for (const m of targets) {

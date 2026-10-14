@@ -291,6 +291,13 @@ class StudRecSumReport
             return $charge;
         }
 
+        // People > Students Fee Months / Transport Fee Months (unset = old fee start rule).
+        $balance = app(FeeBalanceService::class);
+        $feeKeys = array_values(array_filter($monthKeys, fn ($k) => $balance->isFeeMonth($student, (string) $k)));
+        $transportKeys = array_values(array_filter($monthKeys, fn ($k) => $balance->isTransportMonth($student, (string) $k)));
+        $monthKeys = $feeKeys;
+        $monthCount = count($feeKeys);
+
         foreach (FeeCalculator::breakdownOnly($student, $session) as $plan) {
             $code = self::headCode((string) ($plan['fee_head_name'] ?? ''));
             if (! isset($charge[$code])) {
@@ -302,7 +309,7 @@ class StudRecSumReport
             }
             $freq = strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'one_time')));
             if (in_array($freq, ['annual', 'one_time'], true)) {
-                $charge[$code] += $unit;
+                $charge[$code] += $feeKeys !== [] ? $unit : 0.0;
             } elseif ($freq === 'quarterly' || \App\Support\FeeSchedule::chosenMonths($plan) !== []) {
                 // Quarterly months, or the Fee Structure's "Apply in months" (e.g. Sep + Mar).
                 $n = 0;
@@ -318,16 +325,8 @@ class StudRecSumReport
         }
 
         $fare = (float) ($transport?->routeStop?->fare ?? 0);
-        if ($fare > 0 && $monthCount > 0) {
-            $feeStart = $transport?->feeStartMonthKey();
-            $billable = 0;
-            foreach ($monthKeys as $monthKey) {
-                if ($feeStart && (string) $monthKey < (string) $feeStart) {
-                    continue;
-                }
-                $billable++;
-            }
-            $charge['TRA'] += $fare * $billable;
+        if ($fare > 0) {
+            $charge['TRA'] += $fare * count($transportKeys);
         }
 
         return $charge;

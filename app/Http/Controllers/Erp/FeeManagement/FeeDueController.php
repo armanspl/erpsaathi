@@ -470,7 +470,7 @@ class FeeDueController extends Controller
                     ? (count($monthKeys) ? [end($monthKeys)] : [])
                     : $monthKeys;
                 foreach ($keys as $key) {
-                    if (! FeeSchedule::chargesInMonth($item, $key)) {
+                    if (! $balance->isFeeMonth($student, $key) || ! FeeSchedule::chargesInMonth($item, $key)) {
                         continue;
                     }
                     $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
@@ -488,7 +488,7 @@ class FeeDueController extends Controller
                 }
             } elseif ($freq === 'quarterly') {
                 foreach ($monthKeys as $key) {
-                    if (! FeeSchedule::chargesInMonth($item, $key)) {
+                    if (! $balance->isFeeMonth($student, $key) || ! FeeSchedule::chargesInMonth($item, $key)) {
                         continue;
                     }
                     $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);

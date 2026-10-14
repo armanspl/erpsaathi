@@ -287,8 +287,18 @@ class FeePaymentController extends Controller
             ['description' => 'School transport fee']
         );
 
+        // Fee Months / Transport Fee Months (People > Students) for every month the Fee Receipt /
+        // Pay Fee month picker shows (previous, current and next session).
+        $pickerKeys = collect(AcademicSession::neighbors($session))->filter()
+            ->flatMap(fn (AcademicSession $s) => array_column($s->months(), 'key'))->unique()->values();
+        [$fare] = $balance->transportFareAndHead($student);
+
         return response()->json([
             ...$calc,
+            'fee_month_keys' => $pickerKeys->filter(fn ($k) => $balance->isFeeMonth($student, $k))->values(),
+            'transport_month_keys' => $fare > 0
+                ? $pickerKeys->filter(fn ($k) => $balance->isTransportMonth($student, $k))->values()
+                : [],
             'paid_months' => $paidMonths,
             'waived_months' => $waivedMonths,
             'discount_months' => $balance->waiverMonthNumbers($student, $session),
@@ -421,7 +431,6 @@ class FeePaymentController extends Controller
             ->with('routeStop:id,fare')
             ->first();
         $transportFare = (float) ($transportAssignment?->routeStop?->fare ?? 0);
-        $transportFeeStart = $transportAssignment?->feeStartMonthKey();
         $transportHead = null;
         if ($transportFare > 0) {
             $transportHead = FeeHead::query()->firstOrCreate(
@@ -455,12 +464,16 @@ class FeePaymentController extends Controller
                 ['description' => 'School transport fee']
             );
             $transportCharge = (float) ($data['transport_charge'] ?? $transportFee);
-            $transportMonths = $globalMonths;
-            if ($transportFeeStart) {
-                $transportMonths = array_values(array_filter(
-                    $globalMonths,
-                    fn ($m) => (string) $m >= $transportFeeStart
-                ));
+            // Only the student's Transport Fee Months (old rule: on/after transport fee start).
+            $balanceService = app(FeeBalanceService::class);
+            $transportMonths = array_values(array_filter(
+                $globalMonths,
+                fn ($m) => $balanceService->isTransportMonth($student, (string) $m)
+            ));
+            if ($globalMonths !== [] && $transportMonths === []) {
+                throw ValidationException::withMessages([
+                    'months' => 'Transport is not charged in '.implode(', ', $globalMonths).' (not in the student\'s Transport Fee Months, or before the transport Start Date).',
+                ]);
             }
             $rawItems->push(array_filter([
                 'fee_head_id' => $transportHead->id,
@@ -563,14 +576,20 @@ class FeePaymentController extends Controller
             ]);
         }
 
-        $feeStart = app(FeeBalanceService::class)->feeStartKey($student);
-        if ($feeStart) {
-            $beforeStart = $requestedMonths->filter(fn ($m) => (string) $m < $feeStart)->values()->all();
-            if ($beforeStart !== []) {
-                throw ValidationException::withMessages([
-                    'months' => 'These months are before the student fee start ('.$feeStart.'): '.implode(', ', $beforeStart).'.',
-                ]);
-            }
+        // Each line only in months the student is charged that kind of fee in (People > Students →
+        // Fee Months / Transport Fee Months; unset = the old fee start rule).
+        $balanceService = app(FeeBalanceService::class);
+        $notCharged = $items->flatMap(function ($i) use ($balanceService, $student, $transportHead) {
+            $isTransport = $transportHead && (int) $i['fee_head_id'] === (int) $transportHead->id;
+
+            return collect($i['months'] ?? [])->filter(fn ($m) => $isTransport
+                ? ! $balanceService->isTransportMonth($student, (string) $m)
+                : ! $balanceService->isFeeMonth($student, (string) $m));
+        })->unique()->sort()->values()->all();
+        if ($notCharged !== []) {
+            throw ValidationException::withMessages([
+                'months' => 'These months are not in the student\'s Fee Months: '.implode(', ', $notCharged).'. Uncheck them, or tick them under People > Students.',
+            ]);
         }
 
         // Receipt-level discount = the head-wise discounts actually saved on the lines (so it can

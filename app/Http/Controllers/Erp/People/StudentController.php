@@ -18,7 +18,7 @@ use App\Models\Section;
 use App\Models\Student;
 use App\Models\StudentAdditionalDetail;
 use App\Models\StudentDocument;
-use App\Models\StudentFeeDiscountMonth;
+use App\Models\StudentFeeMonth;
 use App\Models\StudentSessionHistory;
 use App\Models\StudentUdiseDetail;
 use App\Services\FeeBalanceService;
@@ -206,7 +206,7 @@ class StudentController extends Controller
             $this->saveUdiseDetail($student, $udiseData);
             $this->saveDocuments($student, $request);
             $this->saveSessionHistory($student, $request);
-            $this->saveFeeDiscountMonths($student, $request);
+            $this->saveFeeMonths($student, $request);
 
             return $student;
         });
@@ -238,7 +238,7 @@ class StudentController extends Controller
             $this->saveUdiseDetail($student, $udiseData);
             $this->saveDocuments($student, $request);
             $this->saveSessionHistory($student, $request);
-            $this->saveFeeDiscountMonths($student, $request);
+            $this->saveFeeMonths($student, $request);
         });
 
         AdmissionsCache::forget();
@@ -349,77 +349,100 @@ class StudentController extends Controller
         ]);
 
         $student->setAttribute('tc_certificate', $this->tcCertificateInfo($student));
-        $student->setAttribute('discount_months', $this->discountMonthsForRequest($student, $request));
 
         return $student;
     }
 
     /**
-     * Calendar month numbers (1–12) waived for the selected / current academic session.
-     *
-     * @return list<int>
+     * Fee Months / Transport Fee Months for the header session: every month April→March with
+     * whether it is ticked, what is paid / due on it, and whether a payment locks it.
      */
-    private function discountMonthsForRequest(Student $student, ?Request $request = null): array
+    public function feeMonths(Request $request, Student $student)
     {
-        $session = AcademicSession::fromRequest($request, true);
-        if (! $session) {
-            return [];
-        }
+        $session = $this->feeMonthsSession($request);
+        abort_unless($session, 422, 'No academic session is selected.');
 
-        return app(FeeBalanceService::class)->waiverMonthNumbers($student, $session);
+        FeeBalanceService::flushRuntimeCache();
+
+        return response()->json(app(FeeBalanceService::class)->feeMonthsOverview($student, $session));
     }
 
-    /** Persist session-scoped discount months from the student form (JSON or array). */
-    private function saveFeeDiscountMonths(Student $student, Request $request): void
+    private function feeMonthsSession(Request $request): ?AcademicSession
     {
-        // Always save when the People > Students form posts this field (including empty = clear).
-        if (! $request->has('discount_months') && ! $request->exists('discount_months')) {
+        return $request->filled('fee_months_session_id')
+            ? AcademicSession::find($request->input('fee_months_session_id'))
+            : AcademicSession::fromRequest($request, true);
+    }
+
+    /** @return list<int>|null null when the form did not send the field */
+    private function monthsFromRequest(Request $request, string $field): ?array
+    {
+        if (! $request->exists($field)) {
+            return null;
+        }
+        $raw = $request->input($field);
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+
+        return \App\Support\FeeSchedule::normalizeMonths(is_array($raw) ? $raw : []);
+    }
+
+    /**
+     * Persist Fee Months / Transport Fee Months for the session from the student form. A month
+     * that already has a payment or waiver on it cannot be unticked (its money would lose its
+     * month) — reverse the payment first.
+     */
+    private function saveFeeMonths(Student $student, Request $request): void
+    {
+        $fee = $this->monthsFromRequest($request, 'fee_months');
+        $transport = $this->monthsFromRequest($request, 'transport_months');
+        if ($fee === null && $transport === null) {
             return;
         }
 
-        $raw = $request->input('discount_months');
-        if (is_string($raw)) {
-            $decoded = json_decode($raw, true);
-            $raw = is_array($decoded) ? $decoded : array_filter(array_map('trim', explode(',', $raw)));
-        }
-        if (! is_array($raw)) {
-            $raw = [];
-        }
-
-        $months = collect($raw)
-            ->map(fn ($m) => (int) $m)
-            ->filter(fn ($m) => $m >= 1 && $m <= 12)
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
-
-        $session = $request->filled('academic_session_id')
-            ? AcademicSession::find($request->input('academic_session_id'))
-            : AcademicSession::fromRequest($request, true);
-
+        $session = $this->feeMonthsSession($request);
         if (! $session) {
             return;
         }
 
         FeeBalanceService::flushRuntimeCache();
-
-        if ($months === []) {
-            StudentFeeDiscountMonth::query()
-                ->where('student_id', $student->id)
-                ->where('academic_session_id', $session->id)
-                ->delete();
-
-            return;
+        $balance = app(FeeBalanceService::class);
+        $overview = $balance->feeMonthsOverview($student, $session);
+        $removed = ['fee' => [], 'transport' => []];
+        foreach ($overview['months'] as $m) {
+            if ($fee !== null && $m['fee']['locked'] && ! in_array($m['month'], $fee, true)) {
+                $removed['fee'][] = $m['label'];
+            }
+            if ($transport !== null && $m['transport']['locked'] && ! in_array($m['month'], $transport, true)) {
+                $removed['transport'][] = $m['label'];
+            }
+        }
+        if ($removed['fee'] !== [] || $removed['transport'] !== []) {
+            throw ValidationException::withMessages(['fee_months' => trim(
+                ($removed['fee'] ? 'Fee Months '.implode(', ', $removed['fee']).' already have a payment or waiver. ' : '')
+                .($removed['transport'] ? 'Transport Fee Months '.implode(', ', $removed['transport']).' already have a payment. ' : '')
+                .'Reverse the payment first, then untick the month.'
+            )]);
         }
 
-        StudentFeeDiscountMonth::query()->updateOrCreate(
-            [
-                'student_id' => $student->id,
-                'academic_session_id' => $session->id,
-            ],
-            ['months' => $months]
-        );
+        $row = StudentFeeMonth::query()->firstOrNew([
+            'student_id' => $student->id,
+            'academic_session_id' => $session->id,
+        ]);
+        if ($fee !== null) {
+            $row->fee_months = $fee;
+        }
+        if ($transport !== null) {
+            $row->transport_months = $transport;
+        }
+        $row->save();
+
+        FeeBalanceService::flushRuntimeCache();
     }
 
     /** The student's Transfer Certificate, if one has ever been issued — powers the TC info shown on People > Students > view. */

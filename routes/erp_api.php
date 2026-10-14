@@ -280,6 +280,7 @@ Route::prefix('people')->name('people.')->group(function () {
     Route::middleware('erp.permission:people.students.view')->group(function () {
         Route::get('students', [StudentController::class, 'index'])->name('students.index');
         Route::get('students/{student}', [StudentController::class, 'show'])->name('students.show');
+        Route::get('students/{student}/fee-months', [StudentController::class, 'feeMonths'])->name('students.fee-months');
     });
     Route::middleware('erp.permission:people.students.download')->get('students/{student}/documents/{type}', [StudentController::class, 'downloadDocument'])->name('students.documents.download');
     Route::middleware('erp.permission:people.udiseplus-s03.view|people.udise-plus.view')->group(function () {

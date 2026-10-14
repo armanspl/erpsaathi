@@ -8,6 +8,7 @@ use App\Models\FeePayment;
 use App\Models\ManualFeeDue;
 use App\Models\Student;
 use App\Models\StudentFeeDiscountMonth;
+use App\Models\StudentFeeMonth;
 use App\Models\StudentTransport;
 use App\Support\FeeSchedule;
 
@@ -29,6 +30,15 @@ class FeeBalanceService
 
     private static bool $waiverWarmed = false;
 
+    /** @var array<string, array{fee: ?list<int>, transport: ?list<int>}> studentId:sessionId => saved Fee Months */
+    private static array $feeMonthsByKey = [];
+
+    /** @var array<string, ?int> Y-m => academic session id containing it */
+    private static array $sessionIdByMonthKey = [];
+
+    /** @var list<array{id: int, keys: array<string, true>}>|null */
+    private static ?array $sessionMonthIndex = null;
+
     public static function flushRuntimeCache(): void
     {
         self::$transportByStudent = [];
@@ -36,6 +46,206 @@ class FeeBalanceService
         self::$transportWarmed = false;
         self::$waiverMonthsByKey = [];
         self::$waiverWarmed = false;
+        self::$feeMonthsByKey = [];
+        self::$sessionIdByMonthKey = [];
+        self::$sessionMonthIndex = null;
+    }
+
+    // ── Fee Months / Transport Fee Months (People > Students, saved per student + session) ─────
+
+    /** Academic session id a Y-m month belongs to (null when no session covers it). */
+    public function sessionIdForMonthKey(string $monthKey): ?int
+    {
+        $monthKey = substr($monthKey, 0, 7);
+        if (array_key_exists($monthKey, self::$sessionIdByMonthKey)) {
+            return self::$sessionIdByMonthKey[$monthKey];
+        }
+
+        if (self::$sessionMonthIndex === null) {
+            self::$sessionMonthIndex = AcademicSession::query()->orderBy('start_date')->get()
+                ->map(fn (AcademicSession $s) => [
+                    'id' => (int) $s->id,
+                    'keys' => array_fill_keys(array_column($s->months(), 'key'), true),
+                ])->all();
+        }
+
+        foreach (self::$sessionMonthIndex as $row) {
+            if (isset($row['keys'][$monthKey])) {
+                return self::$sessionIdByMonthKey[$monthKey] = $row['id'];
+            }
+        }
+
+        return self::$sessionIdByMonthKey[$monthKey] = null;
+    }
+
+    /**
+     * Saved Fee Months for a student in a session; each list is null when not chosen yet.
+     *
+     * @return array{fee: ?list<int>, transport: ?list<int>}
+     */
+    public function savedFeeMonths(Student $student, int $sessionId): array
+    {
+        $key = $student->id.':'.$sessionId;
+        if (! array_key_exists($key, self::$feeMonthsByKey)) {
+            $row = StudentFeeMonth::query()
+                ->where('student_id', $student->id)
+                ->where('academic_session_id', $sessionId)
+                ->first(['fee_months', 'transport_months']);
+            self::$feeMonthsByKey[$key] = [
+                'fee' => is_array($row?->fee_months) ? FeeSchedule::normalizeMonths($row->fee_months) : null,
+                'transport' => is_array($row?->transport_months) ? FeeSchedule::normalizeMonths($row->transport_months) : null,
+            ];
+        }
+
+        return self::$feeMonthsByKey[$key];
+    }
+
+    /** Prefetch saved Fee Months for a cohort (avoids one query per student in reports). */
+    public function warmFeeMonths(array $studentIds, array $sessionIds): void
+    {
+        if ($studentIds === [] || $sessionIds === []) {
+            return;
+        }
+        foreach ($studentIds as $sid) {
+            foreach ($sessionIds as $sessId) {
+                self::$feeMonthsByKey[$sid.':'.$sessId] = ['fee' => null, 'transport' => null];
+            }
+        }
+        foreach (StudentFeeMonth::query()->whereIn('student_id', $studentIds)->whereIn('academic_session_id', $sessionIds)->get() as $row) {
+            self::$feeMonthsByKey[$row->student_id.':'.$row->academic_session_id] = [
+                'fee' => is_array($row->fee_months) ? FeeSchedule::normalizeMonths($row->fee_months) : null,
+                'transport' => is_array($row->transport_months) ? FeeSchedule::normalizeMonths($row->transport_months) : null,
+            ];
+        }
+    }
+
+    /**
+     * Is the student charged school fees (structure heads) in this Y-m month? The saved Fee Months
+     * of that month's session decide; with none saved, the old rule — on/after Fee Start Month
+     * (or admission month) — applies unchanged.
+     */
+    public function isFeeMonth(Student $student, string $monthKey): bool
+    {
+        $monthKey = substr($monthKey, 0, 7);
+        $sessionId = $this->sessionIdForMonthKey($monthKey);
+        if ($sessionId) {
+            $saved = $this->savedFeeMonths($student, $sessionId)['fee'];
+            if ($saved !== null) {
+                return in_array((int) substr($monthKey, 5, 2), $saved, true);
+            }
+        }
+
+        $start = $student->feeStartMonthKey();
+
+        return ! $start || $monthKey >= $start;
+    }
+
+    /**
+     * Is transport fare charged in this Y-m month? Saved Transport Fee Months decide (never before
+     * the transport Start Date); with none saved, the old rule — on/after the transport fee start
+     * and the student's fee start — applies unchanged.
+     */
+    public function isTransportMonth(Student $student, string $monthKey): bool
+    {
+        $monthKey = substr($monthKey, 0, 7);
+        $assignment = $this->activeTransport($student);
+
+        $sessionId = $this->sessionIdForMonthKey($monthKey);
+        if ($sessionId) {
+            $saved = $this->savedFeeMonths($student, $sessionId)['transport'];
+            if ($saved !== null) {
+                $startKey = $assignment?->start_date?->format('Y-m');
+
+                return in_array((int) substr($monthKey, 5, 2), $saved, true)
+                    && (! $startKey || $monthKey >= $startKey);
+            }
+        }
+
+        $transportStart = $assignment?->feeStartMonthKey();
+        $studentStart = $student->feeStartMonthKey();
+
+        return (! $transportStart || $monthKey >= $transportStart)
+            && (! $studentStart || $monthKey >= $studentStart);
+    }
+
+    private function activeTransport(Student $student): ?StudentTransport
+    {
+        if (self::$transportWarmed && array_key_exists((int) $student->id, self::$transportByStudent)) {
+            return self::$transportByStudent[(int) $student->id];
+        }
+
+        return StudentTransport::query()
+            ->where('student_id', $student->id)
+            ->where('status', 'Active')
+            ->with('routeStop:id,fare')
+            ->first();
+    }
+
+    /**
+     * Fee Months as shown on People > Students for one session: each month with whether it is
+     * ticked, and what has been paid / is still due on it (fee heads and transport separately).
+     * A month with any payment or waiver on it is locked (cannot be unticked).
+     */
+    public function feeMonthsOverview(Student $student, AcademicSession $session): array
+    {
+        $calc = FeeCalculator::forStudent($student, $session);
+        $info = $this->paidByHead($student, $session, $calc);
+        [$fare, $transportHeadId] = $this->transportFareAndHead($student);
+        $transportKey = $transportHeadId ? (string) $transportHeadId : '';
+        $feeHeadIds = collect($calc['breakdown'] ?? [])->pluck('fee_head_id')->map(fn ($id) => (int) $id)
+            ->reject(fn ($id) => $transportHeadId && $id === (int) $transportHeadId)->unique()->values()->all();
+        $saved = $this->savedFeeMonths($student, (int) $session->id);
+
+        $touched = function (string $monthKey, bool $transport) use ($info, $transportKey): float {
+            $sum = 0.0;
+            foreach (['by_month', 'discount_by_month'] as $bucket) {
+                foreach ($info[$bucket] ?? [] as $headKey => $months) {
+                    // Array keys come back as ints for numeric head ids — compare as strings.
+                    if (((string) $headKey === $transportKey) !== $transport) {
+                        continue;
+                    }
+                    $sum += (float) ($months[$monthKey] ?? 0);
+                }
+            }
+
+            return $sum;
+        };
+
+        $months = [];
+        foreach ($session->months() as $m) {
+            $key = $m['key'];
+            $fee = $this->remainingForMonths($student, $session, [$key], $calc, $info, $feeHeadIds ?: [0]);
+            $tr = $fare > 0 && $transportHeadId
+                ? $this->remainingForMonths($student, $session, [$key], $calc, $info, [(int) $transportHeadId])
+                : ['charge' => 0.0, 'paid' => 0.0, 'discount' => 0.0, 'due' => 0.0];
+            $feeTouched = $touched($key, false);
+            $trTouched = $touched($key, true);
+
+            $months[] = [
+                'key' => $key,
+                'month' => (int) substr($key, 5, 2),
+                'label' => \Carbon\Carbon::createFromFormat('Y-m', $key)->format('F'),
+                'fee' => [
+                    'selected' => $this->isFeeMonth($student, $key),
+                    'locked' => $feeTouched > 0.0001,
+                    'charge' => $fee['charge'], 'paid' => $fee['paid'], 'discount' => $fee['discount'], 'due' => $fee['due'],
+                ],
+                'transport' => [
+                    'selected' => $this->isTransportMonth($student, $key),
+                    'locked' => $trTouched > 0.0001,
+                    'charge' => $tr['charge'], 'paid' => $tr['paid'], 'discount' => $tr['discount'], 'due' => $tr['due'],
+                ],
+            ];
+        }
+
+        return [
+            'session' => ['id' => $session->id, 'name' => $session->name],
+            'fee_saved' => $saved['fee'] !== null,
+            'transport_saved' => $saved['transport'] !== null,
+            'transport_fare' => (float) $fare,
+            'transport_start' => $this->activeTransport($student)?->start_date?->format('Y-m-d'),
+            'months' => $months,
+        ];
     }
 
     /**
@@ -77,6 +287,7 @@ class FeeBalanceService
             ->values()
             ->all();
         $this->warmWaiverMonths($studentIds, $sessionIds);
+        $this->warmFeeMonths($studentIds, $sessionIds);
     }
 
     /**
@@ -119,6 +330,12 @@ class FeeBalanceService
     public function waiverMonthNumbers(Student $student, ?AcademicSession $session): array
     {
         if (! $session) {
+            return [];
+        }
+
+        // Once Fee Months are saved for the session they replace the old Discount Months (an
+        // unticked month is simply not charged); the old discount rows are kept, just unused.
+        if ($this->savedFeeMonths($student, (int) $session->id)['fee'] !== null) {
             return [];
         }
 
@@ -181,32 +398,36 @@ class FeeBalanceService
     }
 
     /**
-     * Drop months before the student's fee start month.
+     * Keep only months the student is charged anything in — a Fee Month (school fees) or a
+     * Transport Fee Month. With nothing saved this is exactly the old "from fee start" filter.
      *
      * @param  list<string>  $monthKeys
      * @return list<string>
      */
     public function filterMonthsFromFeeStart(Student $student, array $monthKeys): array
     {
-        $start = $this->feeStartKey($student);
-        if (! $start) {
-            return array_values($monthKeys);
-        }
+        [$fare] = $this->transportFareAndHead($student);
 
-        return array_values(array_filter($monthKeys, fn ($k) => (string) $k >= $start));
+        return array_values(array_filter(
+            $monthKeys,
+            fn ($k) => $this->isFeeMonth($student, (string) $k) || ($fare > 0 && $this->isTransportMonth($student, (string) $k))
+        ));
     }
 
-    /** First session month that is on/after fee start (annual / one-time attach here). */
+    /** First Fee Month of the session — annual / one-time heads are charged here. */
     public function firstBillableMonth(Student $student, ?AcademicSession $session): ?string
     {
         if (! $session) {
             return $this->feeStartKey($student);
         }
 
-        $keys = collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all();
-        $filtered = $this->filterMonthsFromFeeStart($student, $keys);
+        foreach ($session->months() as $m) {
+            if (! empty($m['key']) && $this->isFeeMonth($student, $m['key'])) {
+                return $m['key'];
+            }
+        }
 
-        return $filtered[0] ?? null;
+        return null;
     }
 
     /**
@@ -379,18 +600,19 @@ class FeeBalanceService
             ? collect($session->months())->map(fn ($m) => $m['key'] ?? null)->filter()->values()->all()
             : [];
         $firstBillableMonth = $this->firstBillableMonth($student, $session);
-        $feeStart = $this->feeStartKey($student);
+        // Months the student is charged anything in (Fee Months or Transport Fee Months).
+        $billable = fn (string $key): bool => $this->filterMonthsFromFeeStart($student, [$key]) !== [];
 
         $monthKeys = [];
         foreach ($sessionMonthKeys as $key) {
-            if ($feeStart && $key < $feeStart) {
+            if (! $billable($key)) {
                 continue;
             }
             $monthKeys[$key] = true;
         }
         foreach ($paidByMonth as $headMonths) {
             foreach (array_keys($headMonths) as $key) {
-                if ($feeStart && $key < $feeStart) {
+                if (! $billable((string) $key)) {
                     continue;
                 }
                 $monthKeys[$key] = true;
@@ -424,12 +646,13 @@ class FeeBalanceService
             }
 
             $monthNum = (int) substr($monthKey, 5, 2);
+            $feeMonth = $this->isFeeMonth($student, (string) $monthKey);
             $required = 0.0;
             $got = 0.0;
 
             foreach ($monthlyPlans as $plan) {
                 $charge = (float) ($plan['amount'] ?? 0);
-                if ($charge <= 0 || ! FeeSchedule::chargesInMonth($plan, $monthNum)) {
+                if ($charge <= 0 || ! $feeMonth || ! FeeSchedule::chargesInMonth($plan, $monthNum)) {
                     continue;
                 }
                 $headKey = (string) (int) ($plan['fee_head_id'] ?? 0);
@@ -438,7 +661,7 @@ class FeeBalanceService
             }
 
             foreach ($quarterlyPlans as $plan) {
-                if (! FeeSchedule::chargesInMonth($plan, $monthNum)) {
+                if (! $feeMonth || ! FeeSchedule::chargesInMonth($plan, $monthNum)) {
                     continue;
                 }
                 $charge = (float) ($plan['amount'] ?? 0);
@@ -490,7 +713,7 @@ class FeeBalanceService
         foreach ($manualPaid as $due) {
             if ($due->month) {
                 $key = $due->month->format('Y-m');
-                if ($feeStart && $key < $feeStart) {
+                if (! $billable($key)) {
                     continue;
                 }
                 $paid[$key] = true;
@@ -592,6 +815,7 @@ class FeeBalanceService
         foreach ($monthKeys as $monthKey) {
             $monthNum = (int) substr($monthKey, 5, 2);
             $waive = $this->isMonthWaived($student, $session, $monthKey);
+            $feeMonth = $this->isFeeMonth($student, $monthKey);
 
             foreach ($breakdown as $plan) {
                 $freq = $normalizeFreq($plan);
@@ -606,7 +830,7 @@ class FeeBalanceService
                 }
 
                 if ($freq === 'monthly' || $freq === 'quarterly') {
-                    if (FeeSchedule::chargesInMonth($plan, $monthNum)) {
+                    if ($feeMonth && FeeSchedule::chargesInMonth($plan, $monthNum)) {
                         $applyUnit($headKey, $unit, $monthKey, $waive);
                     }
                 } elseif (in_array($freq, ['annual', 'one_time'], true)) {
@@ -683,7 +907,7 @@ class FeeBalanceService
                 }
 
                 $include = match ($freq) {
-                    'monthly', 'quarterly' => FeeSchedule::chargesInMonth($plan, $monthNum),
+                    'monthly', 'quarterly' => $this->isFeeMonth($student, $monthKey) && FeeSchedule::chargesInMonth($plan, $monthNum),
                     'annual', 'one_time' => $firstBillableMonth && $monthKey === $firstBillableMonth,
                     default => $firstBillableMonth && $monthKey === $firstBillableMonth,
                 };
@@ -832,7 +1056,8 @@ class FeeBalanceService
             } else {
                 foreach ($monthKeys as $monthKey) {
                     $monthNum = (int) substr($monthKey, 5, 2);
-                    if (in_array($freq, ['monthly', 'quarterly'], true) && ! FeeSchedule::chargesInMonth($plan, $monthNum)) {
+                    if (! $this->isFeeMonth($student, $monthKey)
+                        || (in_array($freq, ['monthly', 'quarterly'], true) && ! FeeSchedule::chargesInMonth($plan, $monthNum))) {
                         continue;
                     }
                     $waive = $this->isMonthWaived($student, $session, $monthKey);
@@ -934,16 +1159,12 @@ class FeeBalanceService
         return [$fare, $headId, $feeStart];
     }
 
-    /** Whether transport fare applies for this month key. */
+    /**
+     * Whether transport fare applies for this month key — Transport Fee Months (see
+     * isTransportMonth()). $transportFeeStart is no longer needed; kept for existing callers.
+     */
     public function transportAppliesInMonth(Student $student, string $monthKey, ?string $transportFeeStart = null): bool
     {
-        if ($transportFeeStart === null) {
-            [, , $transportFeeStart] = $this->transportFareAndHead($student);
-        }
-        if (! $transportFeeStart) {
-            return true;
-        }
-
-        return $monthKey >= $transportFeeStart;
+        return $this->isTransportMonth($student, $monthKey);
     }
 }

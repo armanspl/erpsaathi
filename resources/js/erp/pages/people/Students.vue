@@ -230,36 +230,31 @@
                     <label class="form-label">Admission Date</label>
                     <input v-model="form.admission_date" type="date" class="form-input" />
                 </div>
-                <div>
-                    <label class="form-label">Fee Start Month</label>
-                    <input v-model="form.fee_start_month" type="month" class="form-input" />
-                    <p class="mt-1 text-xs text-slate-400">Fees are charged only from this month onward.</p>
-                </div>
             </div>
             <div>
-                <label class="form-label">Discount Months</label>
+                <label class="form-label">Fee Months <span v-if="feeMonths.sessionName" class="font-normal text-slate-400">— session {{ feeMonths.sessionName }}</span></label>
                 <p class="mb-2 text-xs text-slate-400">
-                    For the selected academic session, fee in these months is fully waived (₹0 payable). This is not a payment — collection stays ₹0.
+                    The student is charged school fees only in ticked months. Months with a payment are locked — reverse the payment to untick them.
                 </p>
-                <div class="flex flex-wrap gap-2">
-                    <button
-                        v-for="m in discountMonthOptions"
-                        :key="m.value"
-                        type="button"
-                        class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition"
-                        :class="isDiscountMonthSelected(m.value)
-                            ? 'border-primary-600 bg-primary-50 text-primary-700 dark:border-primary-500 dark:bg-primary-500/10 dark:text-primary-300'
-                            : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300'"
-                        @click="toggleDiscountMonth(m.value)"
+                <p v-if="feeMonths.loading" class="text-xs text-slate-400">Loading months…</p>
+                <div v-else class="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+                    <label
+                        v-for="m in feeMonths.rows"
+                        :key="`fee-${m.key}`"
+                        class="flex items-center gap-2 px-3 py-1.5 text-sm"
+                        :class="m.fee.locked ? 'cursor-not-allowed' : 'cursor-pointer'"
                     >
-                        <span
-                            class="flex h-3.5 w-3.5 items-center justify-center rounded border text-[10px]"
-                            :class="isDiscountMonthSelected(m.value)
-                                ? 'border-primary-600 bg-primary-600 text-white'
-                                : 'border-slate-300 dark:border-slate-600'"
-                        >{{ isDiscountMonthSelected(m.value) ? '✓' : '' }}</span>
-                        {{ m.label }}
-                    </button>
+                        <input
+                            type="checkbox"
+                            class="rounded border-slate-300 text-primary-600 disabled:opacity-60"
+                            :checked="feeMonths.fee.includes(m.month)"
+                            :disabled="m.fee.locked"
+                            @change="toggleFeeMonth('fee', m.month, $event.target.checked)"
+                        />
+                        <span class="text-slate-800 dark:text-slate-100">{{ m.label }}</span>
+                        <span v-if="monthStatus(m.fee)" class="text-xs" :class="monthStatus(m.fee).cls">— {{ monthStatus(m.fee).text }}</span>
+                    </label>
+                    <p v-if="!feeMonths.rows.length" class="px-3 py-2 text-xs text-slate-400">No session months — set academic sessions in Settings.</p>
                 </div>
             </div>
 
@@ -334,10 +329,30 @@
                         <label class="form-label">Start Date</label>
                         <input v-model="transportForm.start_date" type="date" class="form-input" />
                     </div>
-                    <div>
-                        <label class="form-label">Transport Fee Start Month</label>
-                        <input v-model="transportForm.fee_start_month" type="month" class="form-input" />
-                        <p class="mt-1 text-xs text-slate-400">Transport fare charged only from this month.</p>
+                </div>
+                <div>
+                    <label class="form-label">Transport Fee Months <span v-if="feeMonths.sessionName" class="font-normal text-slate-400">— session {{ feeMonths.sessionName }}</span></label>
+                    <p class="mb-2 text-xs text-slate-400">
+                        Transport fare is charged only in ticked months, and never before the Start Date. Months with a payment are locked.
+                    </p>
+                    <div class="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+                        <label
+                            v-for="m in feeMonths.rows"
+                            :key="`tr-${m.key}`"
+                            class="flex items-center gap-2 px-3 py-1.5 text-sm"
+                            :class="m.transport.locked ? 'cursor-not-allowed' : 'cursor-pointer'"
+                        >
+                            <input
+                                type="checkbox"
+                                class="rounded border-slate-300 text-primary-600 disabled:opacity-60"
+                                :checked="feeMonths.transport.includes(m.month)"
+                                :disabled="m.transport.locked"
+                                @change="toggleFeeMonth('transport', m.month, $event.target.checked)"
+                            />
+                            <span class="text-slate-800 dark:text-slate-100">{{ m.label }}</span>
+                            <span v-if="transportBeforeStart(m.key) && feeMonths.transport.includes(m.month)" class="text-xs text-amber-600">— before Start Date, not charged</span>
+                            <span v-else-if="monthStatus(m.transport)" class="text-xs" :class="monthStatus(m.transport).cls">— {{ monthStatus(m.transport).text }}</span>
+                        </label>
                     </div>
                 </div>
                 <div>
@@ -796,8 +811,7 @@ function blankForm() {
         admission_no: '', roll_no: null, name: '', branch_id: null, school_class_id: null, section_id: null,
         gender: null, mobile: '', status: 'Active', father_id: null, mother_id: null, guardian_id: null,
         dob: '', blood_group: '', category: '', religion: '', nationality: '', aadhar_no: '', email: '',
-        address: '', city: '', state: '', pincode: '', admission_date: '', fee_start_month: '',
-        discount_months: [],
+        address: '', city: '', state: '', pincode: '', admission_date: '',
         student_pen: '', name_as_per_aadhaar: '', admission_type: 'New', is_in_udise: false,
         house: '', family: '',
         height: null, weight: null, vision_left: '', vision_right: '', dental_hygiene: '',
@@ -814,40 +828,116 @@ function blankForm() {
 
 const form = reactive(blankForm());
 
-const discountMonthOptions = [
-    { value: 1, label: 'January' },
-    { value: 2, label: 'February' },
-    { value: 3, label: 'March' },
-    { value: 4, label: 'April' },
-    { value: 5, label: 'May' },
-    { value: 6, label: 'June' },
-    { value: 7, label: 'July' },
-    { value: 8, label: 'August' },
-    { value: 9, label: 'September' },
-    { value: 10, label: 'October' },
-    { value: 11, label: 'November' },
-    { value: 12, label: 'December' },
-];
+// ── Fee Months / Transport Fee Months (saved per student + header session) ────────────────────
+// rows: one per session month (April → March) with fee/transport status from the server
+// (paid / due / locked); fee + transport: ticked calendar month numbers (1–12).
+const feeMonths = reactive({
+    loading: false,
+    sessionId: null,
+    sessionName: '',
+    rows: [],
+    fee: [],
+    transport: [],
+    feeTouched: false,
+    transportTouched: false,
+});
 
-function normalizeDiscountMonths(raw) {
-    return [...new Set(
-        (Array.isArray(raw) ? raw : [])
-            .map((m) => Number(m))
-            .filter((m) => m >= 1 && m <= 12),
-    )].sort((a, b) => a - b);
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const blankMonthStatus = () => ({ selected: true, locked: false, charge: 0, paid: 0, discount: 0, due: 0 });
+
+/** Session months (Y-m) of the header session, or the current one. */
+function headerSessionRecord() {
+    const records = erpStore.sessionRecords || [];
+    return records.find((s) => s.name === erpStore.currentSession) || records.find((s) => s.is_current) || null;
 }
 
-function isDiscountMonthSelected(month) {
-    return normalizeDiscountMonths(form.discount_months).includes(Number(month));
+function sessionMonthRows(session) {
+    if (!session?.start_date || !session?.end_date) return [];
+    const rows = [];
+    const cursor = new Date(`${String(session.start_date).slice(0, 7)}-01T00:00:00`);
+    const end = new Date(`${String(session.end_date).slice(0, 7)}-01T00:00:00`);
+    while (cursor <= end && rows.length < 24) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+        rows.push({ key, month: cursor.getMonth() + 1, label: MONTH_NAMES[cursor.getMonth()], fee: blankMonthStatus(), transport: blankMonthStatus() });
+        cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return rows;
 }
 
-function toggleDiscountMonth(month) {
-    const value = Number(month);
-    const current = normalizeDiscountMonths(form.discount_months);
-    form.discount_months = current.includes(value)
-        ? current.filter((m) => m !== value)
-        : [...current, value].sort((a, b) => a - b);
+/** Months of the session from a date's month onward (all months when the date is before / outside the session). */
+function monthsFromDate(dateStr) {
+    const from = String(dateStr || '').slice(0, 7);
+    const keys = feeMonths.rows.map((r) => r.key);
+    if (!/^\d{4}-\d{2}$/.test(from) || !keys.includes(from)) {
+        return from && keys.length && from > keys[keys.length - 1] ? [] : feeMonths.rows.map((r) => r.month);
+    }
+    return feeMonths.rows.filter((r) => r.key >= from).map((r) => r.month);
 }
+
+function resetFeeMonthsForNew() {
+    const session = headerSessionRecord();
+    feeMonths.loading = false;
+    feeMonths.sessionId = session?.id ?? null;
+    feeMonths.sessionName = session?.name ?? '';
+    feeMonths.rows = sessionMonthRows(session);
+    feeMonths.feeTouched = false;
+    feeMonths.transportTouched = false;
+    // New student: from the admission month onward (earlier months can still be ticked).
+    feeMonths.fee = monthsFromDate(form.admission_date);
+    feeMonths.transport = monthsFromDate(transportForm.start_date);
+}
+
+async function loadFeeMonths(studentId) {
+    feeMonths.loading = true;
+    try {
+        const { data } = await client.get(`/people/students/${studentId}/fee-months`);
+        if (editing.value?.id !== studentId) return;
+        feeMonths.sessionId = data.session?.id ?? null;
+        feeMonths.sessionName = data.session?.name ?? '';
+        feeMonths.rows = data.months || [];
+        feeMonths.fee = feeMonths.rows.filter((m) => m.fee.selected).map((m) => m.month);
+        feeMonths.transport = feeMonths.rows.filter((m) => m.transport.selected).map((m) => m.month);
+        // Student had no transport yet: pre-tick from the transport Start Date like a new one.
+        if (!transportAssignment.value) feeMonths.transport = monthsFromDate(transportForm.start_date);
+        feeMonths.feeTouched = false;
+        feeMonths.transportTouched = false;
+    } catch {
+        resetFeeMonthsForNew();
+    } finally {
+        feeMonths.loading = false;
+    }
+}
+
+function toggleFeeMonth(kind, month, checked) {
+    const row = feeMonths.rows.find((r) => r.month === month);
+    if (row?.[kind]?.locked) return;
+    const set = new Set(feeMonths[kind]);
+    if (checked) set.add(month); else set.delete(month);
+    feeMonths[kind] = feeMonths.rows.map((r) => r.month).filter((m) => set.has(m));
+    feeMonths[kind === 'fee' ? 'feeTouched' : 'transportTouched'] = true;
+}
+
+/** "Paid" / "₹250 due" / "Waived" next to a month that has money on it. */
+function monthStatus(s) {
+    if (!s || !s.locked) return null;
+    const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+    if (s.due > 0.0001) return { text: `${money(s.due)} due (part paid)`, cls: 'text-amber-600' };
+    if (s.paid <= 0.0001 && s.discount > 0.0001) return { text: 'Waived', cls: 'text-sky-600' };
+    return { text: 'Paid', cls: 'font-semibold text-emerald-600' };
+}
+
+function transportBeforeStart(key) {
+    const start = String(transportForm.start_date || '').slice(0, 7);
+    return !!start && key < start;
+}
+
+// New student: keep the pre-ticked months following the dates until the user ticks by hand.
+watch(() => form.admission_date, (d) => {
+    if (!editing.value && !feeMonths.feeTouched) feeMonths.fee = monthsFromDate(d);
+});
+watch(() => transportForm.start_date, (d) => {
+    if (!transportAssignment.value && !feeMonths.transportTouched) feeMonths.transport = monthsFromDate(d);
+});
 
 // Held outside `form`/reactive() on purpose — Vue's reactive() deep-proxies nested objects,
 // and a Proxy-wrapped File fails native browser checks (e.g. FormData.append expects a real
@@ -1059,7 +1149,9 @@ async function syncStudentTransport(studentId) {
         route_id: transportForm.route_id,
         route_stop_id: transportForm.route_stop_id,
         start_date: transportForm.start_date || new Date().toISOString().slice(0, 10),
-        fee_start_month: transportForm.fee_start_month
+        // Old transport fee start — no longer edited here (Transport Fee Months replace it); kept
+        // as-is for an existing assignment so unsaved sessions keep their old months.
+        fee_start_month: (transportAssignment.value?.id ? transportForm.fee_start_month : '')
             || (transportForm.start_date || '').toString().slice(0, 7)
             || new Date().toISOString().slice(0, 7),
         status: transportForm.status || 'Active',
@@ -1077,7 +1169,7 @@ function openAdd() {
     resetDocumentPicks();
     resetTransportForm();
     Object.assign(form, blankForm());
-    form.fee_start_month = new Date().toISOString().slice(0, 7);
+    resetFeeMonthsForNew();
     formErrors.value = {};
     drawerOpen.value = true;
     ensureTransportCatalog();
@@ -1110,8 +1202,6 @@ function fillFormFromStudent(full) {
         state: full.state || '',
         pincode: full.pincode || '',
         admission_date: toDateInput(full.admission_date),
-        fee_start_month: toMonthInput(full.fee_start_month) || toMonthInput(full.admission_date),
-        discount_months: normalizeDiscountMonths(full.discount_months),
         student_pen: full.udise_detail?.student_pen || detail.pen_no || '',
         name_as_per_aadhaar: full.udise_detail?.name_as_per_aadhaar || '',
         admission_type: full.udise_detail?.admission_type || 'New',
@@ -1165,7 +1255,7 @@ async function openEdit(student) {
             return null;
         }),
         ensureTransportCatalog(),
-        loadStudentTransport(studentId),
+        loadStudentTransport(studentId).then(() => loadFeeMonths(studentId)),
     ]);
     if (full && editing.value?.id === studentId) {
         editing.value = full;
@@ -1186,14 +1276,19 @@ function buildFormData() {
     Object.entries(form).forEach(([key, value]) => {
         if (key === 'custom_field_values') {
             formData.append(key, JSON.stringify(value || {}));
-        } else if (key === 'discount_months') {
-            formData.append(key, JSON.stringify(normalizeDiscountMonths(value)));
         } else if (typeof value === 'boolean') {
             formData.append(key, value ? '1' : '0');
         } else {
             formData.append(key, value === null || value === undefined ? '' : value);
         }
     });
+
+    // Fee Months / Transport Fee Months for the session shown in the form.
+    if (feeMonths.sessionId && feeMonths.rows.length && !feeMonths.loading) {
+        formData.append('fee_months_session_id', feeMonths.sessionId);
+        formData.append('fee_months', JSON.stringify(feeMonths.fee));
+        if (transportForm.apply) formData.append('transport_months', JSON.stringify(feeMonths.transport));
+    }
 
     Object.entries(documentFiles).forEach(([key, file]) => {
         if (file) formData.append(`${key}_file`, file);
