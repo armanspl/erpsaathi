@@ -14,6 +14,7 @@ class ErpFeeStructurePlanItem extends Model
         'label',
         'amount',
         'frequency',
+        'months',
         'sort_order',
     ];
 
@@ -21,6 +22,7 @@ class ErpFeeStructurePlanItem extends Model
     {
         return [
             'amount' => 'decimal:2',
+            'months' => 'array',
         ];
     }
 

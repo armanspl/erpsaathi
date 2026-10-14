@@ -198,7 +198,7 @@
                                         <input v-model="selectedHeadIds" type="checkbox" class="mt-1 rounded border-slate-300 text-primary-600" :value="item.fee_head_id" @change="syncFeePaid(item)" />
                                         <span>
                                             <span class="block text-sm font-medium text-slate-800 dark:text-slate-100">{{ item.fee_head_name }}</span>
-                                            <span class="text-xs text-slate-400">{{ frequencyLabel(item.frequency) }} · ₹{{ money(item.amount) }}</span>
+                                            <span class="text-xs text-slate-400">{{ frequencyLabel(item.frequency) }}<template v-if="item.months?.length"> ({{ monthsLabel(item.months) }})</template> · ₹{{ money(item.amount) }}</span>
                                             <span class="mt-0.5 block text-xs text-amber-600">{{ feeStatusLabel(item) }}</span>
                                         </span>
                                     </label>
@@ -880,6 +880,7 @@ import client from '../../api/client';
 import { fetchFeeStudentsLite, invalidateFeeLookups } from '../../api/feeManagement';
 import { erpStore } from '../../store';
 import { downloadPdf } from '../../utils/documentPdf';
+import { chargeMonthsFor, monthsLabel } from '../../utils/feeSchedule';
 import { pushToast } from '../../utils/toast';
 import ConfirmDialog from '../../components/common/ConfirmDialog.vue';
 
@@ -1150,24 +1151,12 @@ function alreadyPaidForHeadMonth(item, monthKey) {
     return (Number(byMonth[monthKey]) || 0) + (Number(discByMonth[monthKey]) || 0);
 }
 
-function quarterlyMonths(months) {
-    return months.filter((key) => {
-        const monthNum = Number(String(key).slice(5, 7));
-        return [4, 7, 10, 1].includes(monthNum);
-    });
-}
-
 function unitsForFee(item) {
     const months = unpaidSelectedMonths();
     if (!months.length) return 0;
     const freq = feeFrequency(item);
-    if (freq === 'monthly') {
-        return months.filter((m) => Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHeadMonth(item, m)) > 0.0001).length;
-    }
-    if (freq === 'quarterly') {
-        const qMonths = quarterlyMonths(months);
-        const targets = qMonths.length ? qMonths : months.slice(0, 1);
-        return targets.filter((m) => Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHeadMonth(item, m)) > 0.0001).length;
+    if (freq === 'monthly' || freq === 'quarterly') {
+        return chargeMonthsFor(item, months).filter((m) => Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHeadMonth(item, m)) > 0.0001).length;
     }
     // annual / one_time — once per session until fully paid
     return Math.max(0, (Number(item.amount) || 0) - alreadyPaidForHead(item)) > 0.0001 ? 1 : 0;
@@ -1178,11 +1167,7 @@ function unitsForFeeFull(item) {
     const months = unpaidSelectedMonths();
     if (!months.length) return 0;
     const freq = feeFrequency(item);
-    if (freq === 'monthly') return months.length;
-    if (freq === 'quarterly') {
-        const qMonths = quarterlyMonths(months);
-        return qMonths.length || (months.length ? 1 : 0);
-    }
+    if (freq === 'monthly' || freq === 'quarterly') return chargeMonthsFor(item, months).length;
     return 1;
 }
 
@@ -1203,14 +1188,8 @@ function feeBase(item) {
         return Math.max(0, amount - alreadyPaidForHead(item));
     }
 
-    if (freq === 'monthly') {
-        return months.reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
-    }
-
-    if (freq === 'quarterly') {
-        const qMonths = quarterlyMonths(months);
-        const targets = qMonths.length ? qMonths : (months.length ? [months[0]] : []);
-        return targets.reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
+    if (freq === 'monthly' || freq === 'quarterly') {
+        return chargeMonthsFor(item, months).reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
     }
 
     return Math.max(0, amount - alreadyPaidForHead(item));
@@ -1291,13 +1270,8 @@ function feeBaseForMonths(item, months) {
     if (freq === 'annual' || freq === 'one_time') {
         return Math.max(0, amount - alreadyPaidForHead(item));
     }
-    if (freq === 'monthly') {
-        return months.reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
-    }
-    if (freq === 'quarterly') {
-        const qMonths = quarterlyMonths(months);
-        const targets = qMonths.length ? qMonths : [months[0]];
-        return targets.reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
+    if (freq === 'monthly' || freq === 'quarterly') {
+        return chargeMonthsFor(item, months).reduce((sum, m) => sum + Math.max(0, amount - alreadyPaidForHeadMonth(item, m)), 0);
     }
     return Math.max(0, amount - alreadyPaidForHead(item));
 }
@@ -1998,9 +1972,7 @@ function allocateHeadAcrossMonths(item, months, paidAmt, discountAmt) {
 
     let paidLeft = paidAmt;
     let discLeft = discountAmt;
-    const targets = freq === 'quarterly'
-        ? (quarterlyMonths(sorted).length ? quarterlyMonths(sorted) : sorted.slice(0, 1))
-        : sorted;
+    const targets = chargeMonthsFor(item, sorted);
 
     for (const m of targets) {
         const unitDue = Math.max(0, amount - alreadyPaidForHeadMonth(item, m));

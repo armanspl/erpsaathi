@@ -396,6 +396,7 @@ class FeePaymentController extends Controller
         // Unit charges so multi-month lines can be split FIFO at save time.
         $unitByHead = [];
         $freqByHead = [];
+        $monthsByHead = [];
         $calc = FeeCalculator::forStudent($student, $session);
         foreach ($calc['breakdown'] ?? [] as $row) {
             $hid = (int) ($row['fee_head_id'] ?? 0);
@@ -404,6 +405,7 @@ class FeePaymentController extends Controller
             }
             $unitByHead[$hid] = (float) ($row['amount'] ?? 0);
             $freqByHead[$hid] = strtolower(str_replace(' ', '_', (string) ($row['frequency'] ?? 'monthly')));
+            $monthsByHead[$hid] = \App\Support\FeeSchedule::chosenMonths($row);
         }
 
         $transportAssignment = StudentTransport::query()
@@ -499,7 +501,8 @@ class FeePaymentController extends Controller
                 $months,
                 $unit,
                 $already,
-                $freq
+                $freq,
+                $monthsByHead[$feeHeadId] ?? []
             );
 
             foreach ($shares as $monthKey => $share) {

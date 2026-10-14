@@ -14,6 +14,7 @@ use App\Services\DocumentRenderService;
 use App\Services\FeeBalanceService;
 use App\Services\FeeCalculator;
 use App\Support\DashboardCache;
+use App\Support\FeeSchedule;
 use Carbon\Carbon;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -469,6 +470,9 @@ class FeeDueController extends Controller
                     ? (count($monthKeys) ? [end($monthKeys)] : [])
                     : $monthKeys;
                 foreach ($keys as $key) {
+                    if (! FeeSchedule::chargesInMonth($item, $key)) {
+                        continue;
+                    }
                     $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
                     $mDisc = (float) ($discountByMonth[$headKey][$key] ?? 0);
                     $covered = min($base, $mPaid + $mDisc);
@@ -484,8 +488,7 @@ class FeeDueController extends Controller
                 }
             } elseif ($freq === 'quarterly') {
                 foreach ($monthKeys as $key) {
-                    $monthNum = (int) substr($key, 5, 2);
-                    if (! in_array($monthNum, [4, 7, 10, 1], true)) {
+                    if (! FeeSchedule::chargesInMonth($item, $key)) {
                         continue;
                     }
                     $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);

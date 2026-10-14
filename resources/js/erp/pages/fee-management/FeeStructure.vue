@@ -127,7 +127,7 @@
                                         <div v-for="item in plan.items" :key="item.id" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900">
                                             <div class="font-medium text-slate-700 dark:text-slate-200">{{ item.label }}</div>
                                             <div class="mt-0.5 text-slate-500">
-                                                ₹{{ formatMoney(item.amount) }}<span v-if="!plan.is_transport"> · {{ frequencyLabel(item.frequency) }}</span>
+                                                ₹{{ formatMoney(item.amount) }}<span v-if="!plan.is_transport"> · {{ item.months?.length ? monthsLabel(item.months) : frequencyLabel(item.frequency) }}</span>
                                                 <span v-if="item.km != null && item.km !== ''"> · {{ item.km }} km</span>
                                             </div>
                                         </div>
@@ -350,32 +350,50 @@
                     <button type="button" class="btn-outline !py-1.5 !text-xs" @click="addItem">+ Add More</button>
                 </div>
                 <div class="space-y-3">
-                    <div v-for="(item, index) in form.items" :key="index" class="grid items-end gap-3 sm:grid-cols-[1fr_140px_160px_auto]">
-                        <div>
-                            <label class="form-label">Label</label>
-                            <input v-model="item.label" type="text" class="form-input" placeholder="e.g. Tuition" />
+                    <div v-for="(item, index) in form.items" :key="index" class="space-y-2">
+                        <div class="grid items-end gap-3 sm:grid-cols-[1fr_140px_160px_auto]">
+                            <div>
+                                <label class="form-label">Label</label>
+                                <input v-model="item.label" type="text" class="form-input" placeholder="e.g. Tuition" />
+                            </div>
+                            <div>
+                                <label class="form-label">Fee</label>
+                                <input v-model.number="item.amount" type="number" min="0" step="0.01" class="form-input" />
+                            </div>
+                            <div>
+                                <label class="form-label">Fee timing</label>
+                                <select v-model="item.frequency" class="form-input">
+                                    <option value="monthly">Monthly</option>
+                                    <option value="selected_months">Selected months</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="annual">Annual</option>
+                                    <option value="one_time">One time</option>
+                                </select>
+                            </div>
+                            <button
+                                type="button"
+                                class="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40"
+                                :disabled="form.items.length <= 1"
+                                @click="removeItem(index)"
+                            >
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"/></svg>
+                            </button>
                         </div>
-                        <div>
-                            <label class="form-label">Fee</label>
-                            <input v-model.number="item.amount" type="number" min="0" step="0.01" class="form-input" />
+                        <div v-if="item.frequency === 'selected_months'" class="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                            <p class="mb-2 text-xs text-slate-500">Apply in months — the fee above is charged in each ticked month (e.g. Examination Fee in Sep and Mar).</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                <button
+                                    v-for="m in MONTH_OPTIONS"
+                                    :key="m.value"
+                                    type="button"
+                                    class="rounded-md border px-2.5 py-1 text-xs font-medium transition"
+                                    :class="(item.months || []).includes(m.value)
+                                        ? 'border-primary-600 bg-primary-600 text-white'
+                                        : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300'"
+                                    @click="toggleItemMonth(item, m.value)"
+                                >{{ m.label }}</button>
+                            </div>
                         </div>
-                        <div>
-                            <label class="form-label">Fee timing</label>
-                            <select v-model="item.frequency" class="form-input">
-                                <option value="monthly">Monthly</option>
-                                <option value="quarterly">Quarterly</option>
-                                <option value="annual">Annual</option>
-                                <option value="one_time">One time</option>
-                            </select>
-                        </div>
-                        <button
-                            type="button"
-                            class="mb-0.5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40"
-                            :disabled="form.items.length <= 1"
-                            @click="removeItem(index)"
-                        >
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"/></svg>
-                        </button>
                     </div>
                 </div>
             </div>
@@ -390,6 +408,7 @@ import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
 import { erpStore, matchesSelectedSession } from '../../store';
 import { pushToast } from '../../utils/toast';
+import { MONTH_OPTIONS, monthsLabel } from '../../utils/feeSchedule';
 
 const mode = ref('list');
 const loading = ref(true);
@@ -531,6 +550,13 @@ function toggleSection(branchId, classId, sectionId, checked) {
 
 function addItem() {
     form.items.push({ label: '', amount: null, frequency: 'monthly' });
+}
+
+function toggleItemMonth(item, month) {
+    const set = new Set(item.months || []);
+    if (set.has(month)) set.delete(month);
+    else set.add(month);
+    item.months = MONTH_OPTIONS.map((m) => m.value).filter((v) => set.has(v));
 }
 
 function removeItem(index) {
@@ -698,7 +724,13 @@ function openEdit(plan) {
             section_id: s.section_id,
         })),
         items: (plan.items || []).length
-            ? plan.items.map((i) => ({ label: i.label, amount: i.amount, frequency: i.frequency }))
+            ? plan.items.map((i) => ({
+                label: i.label,
+                amount: i.amount,
+                // A line with its own months is shown as "Selected months" (stored as monthly + months).
+                frequency: i.months?.length ? 'selected_months' : i.frequency,
+                months: i.months?.length ? [...i.months] : [],
+            }))
             : [{ label: '', amount: null, frequency: 'monthly' }],
         routeFees: [],
     });
@@ -750,6 +782,11 @@ async function save() {
         pushToast('Add at least one fee type with a label.', 'error');
         return;
     }
+    const noMonths = items.find((i) => i.frequency === 'selected_months' && !(i.months || []).length);
+    if (noMonths) {
+        pushToast(`Tick at least one month for "${String(noMonths.label).trim()}".`, 'error');
+        return;
+    }
     saving.value = true;
     try {
         const payload = {
@@ -760,7 +797,8 @@ async function save() {
             items: items.map((i) => ({
                 label: String(i.label).trim(),
                 amount: Number(i.amount || 0),
-                frequency: i.frequency,
+                frequency: i.frequency === 'selected_months' ? 'monthly' : i.frequency,
+                months: i.frequency === 'selected_months' ? i.months : null,
             })),
         };
         if (editingId.value) {

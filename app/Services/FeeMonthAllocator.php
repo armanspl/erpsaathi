@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\FeeSchedule;
+
 /**
  * Credits multi-month fee lines to earliest months first (FIFO),
  * so a follow-up that clears Apr remainder + May full does not
@@ -12,6 +14,7 @@ class FeeMonthAllocator
     /**
      * @param  list<string>  $months  Y-m keys (any order)
      * @param  array<string, float>  $alreadyCoveredByMonth  paid+discount already applied per month
+     * @param  list<int>  $chargeMonths  Fee Structure "Apply in months" (1–12) — overrides the quarterly default
      * @return array<string, array{paid: float, discount: float}>
      */
     public static function distribute(
@@ -20,7 +23,8 @@ class FeeMonthAllocator
         array $months,
         float $unitCharge,
         array $alreadyCoveredByMonth = [],
-        string $frequency = 'monthly'
+        string $frequency = 'monthly',
+        array $chargeMonths = []
     ): array {
         $freq = strtolower(str_replace(' ', '_', $frequency));
         $sorted = collect($months)
@@ -47,13 +51,11 @@ class FeeMonthAllocator
             ];
         }
 
+        $allowedMonths = FeeSchedule::monthNumbersFor($freq, FeeSchedule::normalizeMonths($chargeMonths));
         $applicable = [];
         foreach ($sorted as $monthKey) {
-            if ($freq === 'quarterly') {
-                $monthNum = (int) substr($monthKey, 5, 2);
-                if (! in_array($monthNum, [4, 7, 10, 1], true)) {
-                    continue;
-                }
+            if ($allowedMonths !== null && ! in_array((int) substr($monthKey, 5, 2), $allowedMonths, true)) {
+                continue;
             }
             $applicable[] = $monthKey;
         }

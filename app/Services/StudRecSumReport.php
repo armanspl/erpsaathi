@@ -303,10 +303,11 @@ class StudRecSumReport
             $freq = strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'one_time')));
             if (in_array($freq, ['annual', 'one_time'], true)) {
                 $charge[$code] += $unit;
-            } elseif ($freq === 'quarterly') {
+            } elseif ($freq === 'quarterly' || \App\Support\FeeSchedule::chosenMonths($plan) !== []) {
+                // Quarterly months, or the Fee Structure's "Apply in months" (e.g. Sep + Mar).
                 $n = 0;
                 foreach ($monthKeys as $monthKey) {
-                    if (in_array((int) substr((string) $monthKey, 5, 2), [4, 7, 10, 1], true)) {
+                    if (\App\Support\FeeSchedule::chargesInMonth($plan, (string) $monthKey)) {
                         $n++;
                     }
                 }

@@ -10,6 +10,7 @@ use App\Models\ErpFeeStructurePlanItem;
 use App\Models\ErpFeeStructurePlanScope;
 use App\Models\TransportRoute;
 use App\Support\DashboardCache;
+use App\Support\FeeSchedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -132,6 +133,7 @@ class ErpFeeStructureController extends Controller
                     'label' => $item->label,
                     'amount' => $item->amount,
                     'frequency' => $item->frequency,
+                    'months' => $item->months,
                     'sort_order' => $item->sort_order,
                 ]);
             }
@@ -170,6 +172,8 @@ class ErpFeeStructureController extends Controller
             'items.*.label' => 'required|string|max:150',
             'items.*.amount' => 'required|numeric|min:0',
             'items.*.frequency' => ['required', Rule::in(['one_time', 'monthly', 'quarterly', 'annual'])],
+            'items.*.months' => 'nullable|array',
+            'items.*.months.*' => 'integer|between:1,12',
         ]);
     }
 
@@ -203,6 +207,10 @@ class ErpFeeStructureController extends Controller
                 'label' => $item['label'],
                 'amount' => $item['amount'],
                 'frequency' => $item['frequency'],
+                // "Apply in months" only means something for monthly / quarterly lines.
+                'months' => in_array($item['frequency'], ['monthly', 'quarterly'], true)
+                    ? (FeeSchedule::normalizeMonths($item['months'] ?? null) ?: null)
+                    : null,
                 'sort_order' => $index,
             ]);
         }
@@ -236,6 +244,7 @@ class ErpFeeStructureController extends Controller
             'label' => $item->label,
             'amount' => (float) $item->amount,
             'frequency' => $item->frequency,
+            'months' => FeeSchedule::normalizeMonths($item->months) ?: null,
             'sort_order' => $item->sort_order,
         ])->values();
 

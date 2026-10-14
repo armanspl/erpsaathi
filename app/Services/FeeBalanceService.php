@@ -9,6 +9,7 @@ use App\Models\ManualFeeDue;
 use App\Models\Student;
 use App\Models\StudentFeeDiscountMonth;
 use App\Models\StudentTransport;
+use App\Support\FeeSchedule;
 
 /**
  * Shared fee balance math used by Fee Receipt, Pay Fee, and Fee Due.
@@ -228,6 +229,7 @@ class FeeBalanceService
 
         $unitByHead = [];
         $freqByHead = [];
+        $monthsByHead = [];
         if ($session) {
             $calc ??= FeeCalculator::forStudent($student, $session);
             foreach ($calc['breakdown'] ?? [] as $row) {
@@ -237,6 +239,7 @@ class FeeBalanceService
                 }
                 $unitByHead[$hid] = (float) ($row['amount'] ?? 0);
                 $freqByHead[$hid] = strtolower(str_replace(' ', '_', (string) ($row['frequency'] ?? 'monthly')));
+                $monthsByHead[$hid] = FeeSchedule::chosenMonths($row);
             }
         }
 
@@ -317,7 +320,8 @@ class FeeBalanceService
                     $itemMonths,
                     $unit,
                     $already,
-                    $freq
+                    $freq,
+                    $monthsByHead[$feeHeadId] ?? []
                 );
 
                 foreach ($shares as $monthKey => $share) {
@@ -421,7 +425,7 @@ class FeeBalanceService
 
             foreach ($monthlyPlans as $plan) {
                 $charge = (float) ($plan['amount'] ?? 0);
-                if ($charge <= 0) {
+                if ($charge <= 0 || ! FeeSchedule::chargesInMonth($plan, $monthNum)) {
                     continue;
                 }
                 $headKey = (string) (int) ($plan['fee_head_id'] ?? 0);
@@ -430,7 +434,7 @@ class FeeBalanceService
             }
 
             foreach ($quarterlyPlans as $plan) {
-                if (! in_array($monthNum, [4, 7, 10, 1], true)) {
+                if (! FeeSchedule::chargesInMonth($plan, $monthNum)) {
                     continue;
                 }
                 $charge = (float) ($plan['amount'] ?? 0);
@@ -597,10 +601,8 @@ class FeeBalanceService
                     continue;
                 }
 
-                if ($freq === 'monthly') {
-                    $applyUnit($headKey, $unit, $monthKey, $waive);
-                } elseif ($freq === 'quarterly') {
-                    if (in_array($monthNum, [4, 7, 10, 1], true)) {
+                if ($freq === 'monthly' || $freq === 'quarterly') {
+                    if (FeeSchedule::chargesInMonth($plan, $monthNum)) {
                         $applyUnit($headKey, $unit, $monthKey, $waive);
                     }
                 } elseif (in_array($freq, ['annual', 'one_time'], true)) {
@@ -677,8 +679,7 @@ class FeeBalanceService
                 }
 
                 $include = match ($freq) {
-                    'monthly' => true,
-                    'quarterly' => in_array($monthNum, [4, 7, 10, 1], true),
+                    'monthly', 'quarterly' => FeeSchedule::chargesInMonth($plan, $monthNum),
                     'annual', 'one_time' => $firstBillableMonth && $monthKey === $firstBillableMonth,
                     default => $firstBillableMonth && $monthKey === $firstBillableMonth,
                 };
@@ -827,7 +828,7 @@ class FeeBalanceService
             } else {
                 foreach ($monthKeys as $monthKey) {
                     $monthNum = (int) substr($monthKey, 5, 2);
-                    if ($freq === 'quarterly' && ! in_array($monthNum, [4, 7, 10, 1], true)) {
+                    if (in_array($freq, ['monthly', 'quarterly'], true) && ! FeeSchedule::chargesInMonth($plan, $monthNum)) {
                         continue;
                     }
                     $waive = $this->isMonthWaived($student, $session, $monthKey);

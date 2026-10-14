@@ -381,12 +381,18 @@ class FeeCalculator
             foreach ($plan->items as $item) {
                 /** @var ErpFeeStructurePlanItem $item */
                 $headId = self::resolveHeadId($item->label, $plan->type);
-                $rows[] = [
+                $row = [
                     'fee_head_id' => $headId,
                     'fee_head_name' => $item->label,
                     'amount' => (float) $item->amount,
                     'frequency' => $item->frequency,
                 ];
+                // Fee Structure "Apply in months" (e.g. Examination Fee in Sep + Mar) — see FeeSchedule.
+                $months = \App\Support\FeeSchedule::normalizeMonths($item->months);
+                if ($months !== [] && in_array($item->frequency, ['monthly', 'quarterly'], true)) {
+                    $row['months'] = $months;
+                }
+                $rows[] = $row;
             }
         }
 

@@ -129,20 +129,21 @@ class DocumentDataBuilder
         $breakdown = collect($calc['breakdown'] ?? []);
         $byHead = $breakdown->keyBy(fn ($r) => (int) ($r['fee_head_id'] ?? 0));
 
-        $unitsForFee = function (string $frequency, array $itemMonths): int {
+        $unitsForFee = function (string $frequency, array $itemMonths, array $chosenMonths = []): int {
             $freq = strtolower(str_replace(' ', '_', (string) ($frequency ?: 'monthly')));
             $months = array_values($itemMonths);
-            if ($freq === 'monthly') {
+            if ($freq === 'monthly' && $chosenMonths === []) {
                 return count($months);
             }
-            if ($freq === 'quarterly') {
-                $quarterMonths = [4, 7, 10, 1];
+            if ($freq === 'monthly' || $freq === 'quarterly') {
+                // Quarterly default months, or the Fee Structure's "Apply in months".
+                $chargeMonths = \App\Support\FeeSchedule::monthNumbersFor($freq, $chosenMonths) ?? [];
                 $matched = 0;
                 foreach ($months as $m) {
                     $key = substr((string) $m, 0, 7);
                     if (preg_match('/^\d{4}-\d{2}$/', $key)) {
                         $monthNum = (int) substr($key, 5, 2);
-                        if (in_array($monthNum, $quarterMonths, true)) {
+                        if (in_array($monthNum, $chargeMonths, true)) {
                             $matched++;
                         }
                     }
@@ -167,6 +168,7 @@ class DocumentDataBuilder
 
         $unitByHead = [];
         $freqByHead = [];
+        $monthsByHead = [];
         foreach ($breakdown as $row) {
             $hid = (int) ($row['fee_head_id'] ?? 0);
             if (! $hid) {
@@ -174,6 +176,7 @@ class DocumentDataBuilder
             }
             $unitByHead[$hid] = (float) ($row['amount'] ?? 0);
             $freqByHead[$hid] = strtolower(str_replace(' ', '_', (string) ($row['frequency'] ?? 'monthly')));
+            $monthsByHead[$hid] = \App\Support\FeeSchedule::chosenMonths($row);
         }
 
         $transportAssignment = StudentTransport::query()
@@ -235,7 +238,8 @@ class DocumentDataBuilder
                     $prevMonths,
                     (float) ($unitByHead[$headId] ?? 0),
                     $already,
-                    $freqByHead[$headId] ?? 'monthly'
+                    $freqByHead[$headId] ?? 'monthly',
+                    $monthsByHead[$headId] ?? []
                 );
 
                 foreach ($shares as $monthKey => $share) {
@@ -271,7 +275,7 @@ class DocumentDataBuilder
                 $lineDue = round($storedCharge, 2);
             } elseif ($plan) {
                 $basePerUnit = (float) ($plan['amount'] ?? 0);
-                $units = $unitsForFee($frequency, $itemMonths);
+                $units = $unitsForFee($frequency, $itemMonths, \App\Support\FeeSchedule::chosenMonths($plan));
                 $full = round($basePerUnit * $units, 2);
                 $priorCovered = 0.0;
                 if (in_array($frequency, ['annual', 'one_time'], true)) {
@@ -342,7 +346,7 @@ class DocumentDataBuilder
             if ($storedCharge > 0) {
                 $lineAmount = round($storedCharge, 2);
             } elseif ($plan) {
-                $full = round(((float) ($plan['amount'] ?? 0)) * $unitsForFee($frequency, $itemMonths), 2);
+                $full = round(((float) ($plan['amount'] ?? 0)) * $unitsForFee($frequency, $itemMonths, \App\Support\FeeSchedule::chosenMonths($plan)), 2);
                 $priorCovered = 0.0;
                 if (in_array($frequency, ['annual', 'one_time'], true)) {
                     $priorCovered = (float) ($priorByHead[$feeHeadId] ?? 0);
