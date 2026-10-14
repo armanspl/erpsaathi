@@ -171,6 +171,7 @@ class FeeDueController extends Controller
             'current_session' => $pack($neighbors['current']),
             'previous_session' => $pack($neighbors['previous']),
             'next_session' => $pack($neighbors['next']),
+            'backdate_fee_allowed' => \App\Support\Tenancy\BackdateFee::allowed(),
         ]);
     }
 

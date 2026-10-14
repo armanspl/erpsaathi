@@ -18,6 +18,7 @@ use App\Services\FeeBalanceService;
 use App\Services\FeeCalculator;
 use App\Services\FeeMonthAllocator;
 use App\Support\DashboardCache;
+use App\Support\Tenancy\BackdateFee;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -339,7 +340,34 @@ class FeePaymentController extends Controller
             'transport_charge' => 'nullable|numeric|min:0',
             'transport_route_id' => 'nullable|integer',
             'transport_stop_id' => 'nullable|integer',
+            'backdate' => 'nullable|boolean',
+            'receipt_no' => 'nullable|string|max:50',
         ]);
+
+        // Back-date entry (Super Admin → per-school switch): past payment date + own receipt no.
+        // The session comes from the header picker like every other fee screen.
+        $backdateAllowed = BackdateFee::allowed();
+        $backdate = (bool) ($data['backdate'] ?? false);
+        $manualReceiptNo = trim((string) ($data['receipt_no'] ?? ''));
+        if (($backdate || $manualReceiptNo !== '') && ! $backdateAllowed) {
+            throw ValidationException::withMessages(['payment_date' => 'Back-date fee entry is not enabled for this school.']);
+        }
+        if (! $backdateAllowed && ! empty($data['payment_date'])
+            && Carbon::parse($data['payment_date'])->lt(now()->startOfDay())) {
+            throw ValidationException::withMessages(['payment_date' => 'Payment date cannot be in the past — back-date fee entry is not enabled for this school.']);
+        }
+        if ($backdate) {
+            if (empty($data['payment_date'])) {
+                throw ValidationException::withMessages(['payment_date' => 'Enter the date this payment was made.']);
+            }
+            // +1 day: the server clock is UTC, the school's "today" can already be tomorrow.
+            if (Carbon::parse($data['payment_date'])->gt(now()->addDay()->endOfDay())) {
+                throw ValidationException::withMessages(['payment_date' => 'A back-dated payment cannot have a future date.']);
+            }
+        }
+        if ($manualReceiptNo !== '' && FeePayment::query()->where('receipt_no', $manualReceiptNo)->exists()) {
+            throw ValidationException::withMessages(['receipt_no' => "Receipt no. {$manualReceiptNo} already exists."]);
+        }
 
         if (empty($data['items']) && (float) ($data['transport_fee'] ?? 0) <= 0) {
             throw ValidationException::withMessages(['items' => 'Add at least one fee item or a transport fee.']);
@@ -540,7 +568,7 @@ class FeePaymentController extends Controller
         }
 
         $payment = FeePayment::create([
-            'receipt_no' => FeePayment::nextReceiptNo($session),
+            'receipt_no' => $manualReceiptNo !== '' ? $manualReceiptNo : FeePayment::nextReceiptNo($session),
             'student_id' => $data['student_id'],
             'academic_session_id' => $session->id,
             'items' => $items->values()->all(),

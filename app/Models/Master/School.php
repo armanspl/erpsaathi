@@ -23,6 +23,7 @@ class School extends Model
         'is_first_school',
         'notes',
         'demo_settings',
+        'allow_backdate_fee',
         'last_error',
     ];
 
@@ -33,7 +34,14 @@ class School extends Model
             'price' => 'decimal:2',
             'renewal_charge' => 'decimal:2',
             'demo_settings' => 'array',
+            'allow_backdate_fee' => 'boolean',
         ];
+    }
+
+    /** Super Admin switch read by Fee Receipt (back-date entry); see BackdateFee. */
+    public function allowsBackdateFee(): bool
+    {
+        return (bool) $this->allow_backdate_fee;
     }
 
     public function domains(): HasMany

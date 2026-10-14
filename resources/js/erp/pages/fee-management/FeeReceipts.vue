@@ -23,6 +23,38 @@
                 </div>
             </div>
 
+            <!-- Back-date entry (Super Admin switch per school) -->
+            <div
+                v-if="backdateAllowed"
+                class="rounded-2xl border p-4 shadow-sm"
+                :class="backdate.on ? 'border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/10' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'"
+            >
+                <label class="inline-flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+                    <input v-model="backdate.on" type="checkbox" class="rounded border-slate-300 text-primary-600" />
+                    Back-date entry
+                </label>
+                <p class="mt-1 text-xs text-slate-500">
+                    Enter an old payment: pick its session, the date it was paid and the receipt no. Then select the student (Browse → class / section),
+                    tick the months it paid for and choose the payment mode — fee heads and transport are filled from the class fee structure and the student's transport, like a normal receipt.
+                </p>
+                <div v-if="backdate.on" class="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="form-label">Session</label>
+                        <select v-model="backdateSession" class="form-input">
+                            <option v-for="s in erpStore.sessionRecords" :key="s.id" :value="s.name">{{ s.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Payment date (when it was paid)</label>
+                        <input v-model="paymentDate" type="date" class="form-input" :max="todayLocal()" />
+                    </div>
+                    <div>
+                        <label class="form-label">Receipt no.</label>
+                        <input v-model="manualReceiptNo" type="text" maxlength="50" class="form-input" placeholder="Auto-generated if blank" />
+                    </div>
+                </div>
+            </div>
+
             <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">Student</h2>
@@ -198,9 +230,9 @@
                             </div>
 
                             <div class="mt-4 grid gap-3 sm:grid-cols-3">
-                                <div>
+                                <div v-if="!backdate.on">
                                     <label class="form-label">Payment date</label>
-                                    <input v-model="paymentDate" type="date" class="form-input" />
+                                    <input v-model="paymentDate" type="date" class="form-input" :min="backdateAllowed ? null : todayLocal()" />
                                 </div>
                                 <div>
                                     <label class="form-label">Payment mode</label>
@@ -884,8 +916,22 @@ const paidByHeadDiscount = ref({});
 const paidByHeadMonth = ref({});
 const paidByHeadMonthDiscount = ref({});
 const applyAllMonths = ref(true);
-const paymentDate = ref(new Date().toISOString().slice(0, 10));
+/** Today in the browser's own time zone (toISOString() is UTC — yesterday before 05:30 IST). */
+function todayLocal() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const paymentDate = ref(todayLocal());
 const paymentMode = ref('Cash');
+// Back-date entry — only offered when Super Admin allows it for this school (due/meta flag).
+const backdateAllowed = computed(() => !!feeMeta.value?.backdate_fee_allowed);
+const backdate = reactive({ on: false });
+const manualReceiptNo = ref('');
+/** Session for a back-dated receipt — the header session picker, so dues/months reload with it. */
+const backdateSession = computed({
+    get: () => erpStore.currentSession,
+    set: (name) => { erpStore.currentSession = name; },
+});
 const bankAccounts = ref([]);
 const bankAccountId = ref(null);
 const referenceNo = ref('');
@@ -1792,7 +1838,9 @@ async function selectStudent(s) {
     paidByHeadMonthDiscount.value = {};
     remarks.value = '';
     referenceNo.value = '';
-    paymentDate.value = new Date().toISOString().slice(0, 10);
+    // Back-date entry keeps the chosen date across students (entering a day's old receipts).
+    if (!backdate.on) paymentDate.value = todayLocal();
+    manualReceiptNo.value = '';
     transport.apply = false;
     transport.route_id = null;
     transport.stop_id = null;
@@ -1855,7 +1903,10 @@ async function selectStudent(s) {
         const isBillable = (k) => !feeStartMonth.value || k >= feeStartMonth.value;
         const unpaidCurr = currMonths.map((m) => m.key).filter((k) => isBillable(k) && !paidMonths.value.includes(k));
         const unpaidAll = allMonths.filter((k) => isBillable(k) && !paidMonths.value.includes(k));
-        if (unpaidCurr.includes(nowKey)) {
+        if (backdate.on) {
+            // Old receipt: the user ticks exactly the months it paid for.
+            selectedMonths.value = [];
+        } else if (unpaidCurr.includes(nowKey)) {
             // Include all unpaid months up to the current month (so partial payments
             // like Aug due ₹500 automatically carry into Sep totals).
             selectedMonths.value = unpaidCurr.filter((k) => k <= nowKey);
@@ -2014,6 +2065,12 @@ async function collect() {
     const s = summary.value;
 
     confirmSubmitSummary.value = [
+        ...(backdate.on
+            ? [
+                { label: 'Back-date entry', value: `Session ${erpStore.currentSession || '—'}`, emphasis: true },
+                { label: 'Receipt no.', value: manualReceiptNo.value.trim() || 'Auto-generated' },
+            ]
+            : []),
         { label: 'Student', value: student.value?.name || '—' },
         { label: 'Admission No', value: student.value?.admission_no || '—' },
         { label: 'Class', value: studentPlaceLabel.value },
@@ -2062,6 +2119,8 @@ async function submitFeeConfirmed() {
             payment_mode: paymentMode.value,
             bank_account_id: paymentMode.value === 'Bank Transfer' ? bankAccountId.value : null,
             payment_date: paymentDate.value,
+            backdate: backdate.on,
+            receipt_no: backdate.on ? (manualReceiptNo.value.trim() || null) : null,
             reference_no: referenceNo.value || null,
             remarks: remarks.value || null,
             transport_fee: transportFee,
@@ -2075,7 +2134,7 @@ async function submitFeeConfirmed() {
         await selectStudent(student.value);
     } catch (e) {
         const errors = e?.response?.data?.errors;
-        const msg = errors?.months?.[0] || e?.response?.data?.message || 'Could not submit fee.';
+        const msg = errors?.months?.[0] || errors?.receipt_no?.[0] || errors?.payment_date?.[0] || e?.response?.data?.message || 'Could not submit fee.';
         pushToast(msg, 'error');
     } finally {
         collecting.value = false;
@@ -2194,6 +2253,12 @@ watch(selectedMonths, () => {
     syncTransportPaid();
 }, { deep: true });
 watch(applyAllMonths, () => refreshSelectedAmounts());
+watch(() => backdate.on, (on) => {
+    if (!on) {
+        paymentDate.value = todayLocal();
+        manualReceiptNo.value = '';
+    }
+});
 watch(
     () => transport.apply,
     (on) => {

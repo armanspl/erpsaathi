@@ -75,10 +75,11 @@ class SchoolController extends Controller
             'demo_settings' => ['sometimes', 'nullable', 'array'],
             'demo_settings.hidden_import_export' => ['sometimes', 'array'],
             'demo_settings.hidden_import_export.*' => ['string', 'max:80'],
+            'allow_backdate_fee' => ['sometimes', 'boolean'],
         ]);
 
         $school->fill(collect($data)->only([
-            'name', 'admin_email', 'notes', 'price', 'renewal_charge', 'billing_currency', 'demo_settings',
+            'name', 'admin_email', 'notes', 'price', 'renewal_charge', 'billing_currency', 'demo_settings', 'allow_backdate_fee',
         ])->all());
         if (isset($data['billing_currency'])) {
             $school->billing_currency = strtoupper(trim((string) $data['billing_currency'])) ?: 'INR';

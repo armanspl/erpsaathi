@@ -155,6 +155,7 @@
                     <td>
                       <span class="sa-pill" :class="statusClass(s.status)">{{ s.status }}</span>
                       <div v-if="s.is_first_school" class="sa-muted sa-tiny">first school</div>
+                      <div class="sa-muted sa-tiny">Back-date fee: {{ s.allow_backdate_fee ? 'allowed' : 'off' }}</div>
                     </td>
                     <td class="sa-muted">
                       <div v-for="d in s.domains || []" :key="d.id">{{ d.domain }}</div>
@@ -164,6 +165,12 @@
                         <button v-if="s.status === 'active'" type="button" class="sa-text-btn warn" @click="setStatus(s, 'inactive')">Deactivate</button>
                         <button v-else-if="s.status !== 'provisioning'" type="button" class="sa-text-btn ok" @click="setStatus(s, 'active')">Activate</button>
                         <button type="button" class="sa-text-btn" @click="openEdit(s)">Edit billing</button>
+                        <button
+                          type="button"
+                          class="sa-text-btn"
+                          :class="s.allow_backdate_fee ? 'warn' : 'ok'"
+                          @click="toggleBackdateFee(s)"
+                        >{{ s.allow_backdate_fee ? 'Disallow back-date fee' : 'Allow back-date fee' }}</button>
                         <button
                           v-if="isDemoSchool(s)"
                           type="button"
@@ -567,6 +574,25 @@ export default {
         this.error = e.message;
       } finally {
         this.saving = false;
+      }
+    },
+    async toggleBackdateFee(school) {
+      const allow = !school.allow_backdate_fee;
+      const msg = allow
+        ? `Allow ${school.name} to enter fee receipts with a past date, own receipt no. and chosen session?`
+        : `Stop ${school.name} from entering back-dated fee receipts?`;
+      if (!window.confirm(msg)) return;
+      this.flash = null;
+      this.error = null;
+      try {
+        await this.api(`/super-admin/api/schools/${school.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ allow_backdate_fee: allow }),
+        });
+        this.flash = `Back-date fee entry ${allow ? 'allowed' : 'switched off'} for ${school.name}.`;
+        await this.refresh();
+      } catch (e) {
+        this.error = e.message;
       }
     },
     async saveBilling() {
