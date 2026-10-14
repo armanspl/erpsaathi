@@ -128,6 +128,7 @@
                                             <div class="font-medium text-slate-700 dark:text-slate-200">{{ item.label }}</div>
                                             <div class="mt-0.5 text-slate-500">
                                                 ₹{{ formatMoney(item.amount) }}<span v-if="!plan.is_transport"> · {{ item.months?.length ? monthsLabel(item.months) : frequencyLabel(item.frequency) }}</span>
+                                                <span v-if="!plan.is_transport && item.applies_to && item.applies_to !== 'all'"> · {{ item.applies_to === 'new' ? 'New students' : 'Old students' }}</span>
                                                 <span v-if="item.km != null && item.km !== ''"> · {{ item.km }} km</span>
                                             </div>
                                         </div>
@@ -351,10 +352,10 @@
                 </div>
                 <div class="space-y-3">
                     <div v-for="(item, index) in form.items" :key="index" class="space-y-2">
-                        <div class="grid items-end gap-3 sm:grid-cols-[1fr_140px_160px_auto]">
+                        <div class="grid items-end gap-3 sm:grid-cols-[1fr_140px_160px_150px_auto]">
                             <div>
                                 <label class="form-label">Label</label>
-                                <input v-model="item.label" type="text" class="form-input" placeholder="e.g. Tuition" />
+                                <input v-model="item.label" type="text" class="form-input" placeholder="e.g. Tuition" @change="suggestAppliesTo(item)" />
                             </div>
                             <div>
                                 <label class="form-label">Fee</label>
@@ -368,6 +369,14 @@
                                     <option value="quarterly">Quarterly</option>
                                     <option value="annual">Annual</option>
                                     <option value="one_time">One time</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">For students</label>
+                                <select v-model="item.applies_to" class="form-input" @change="item.appliesToTouched = true" title="Charged to students whose Admission Type is New, Old, or both">
+                                    <option value="all">All (New + Old)</option>
+                                    <option value="new">New only</option>
+                                    <option value="old">Old only</option>
                                 </select>
                             </div>
                             <button
@@ -439,7 +448,7 @@ const form = reactive({
     type: 'Faculty',
     status: 'active',
     scopes: [],
-    items: [{ label: '', amount: null, frequency: 'monthly' }],
+    items: [emptyItem()],
     routeFees: [],
 });
 
@@ -548,8 +557,19 @@ function toggleSection(branchId, classId, sectionId, checked) {
     }
 }
 
+function emptyItem() {
+    return { label: '', amount: null, frequency: 'monthly', months: [], applies_to: 'all', appliesToTouched: false };
+}
+
 function addItem() {
-    form.items.push({ label: '', amount: null, frequency: 'monthly' });
+    form.items.push(emptyItem());
+}
+
+/** Admission / Registration Fee are normally New-only — pre-pick that unless already chosen. */
+function suggestAppliesTo(item) {
+    if (item.appliesToTouched) return;
+    const name = String(item.label || '').trim().toLowerCase();
+    item.applies_to = ['admission fee', 'registration fee'].includes(name) ? 'new' : 'all';
 }
 
 function toggleItemMonth(item, month) {
@@ -670,7 +690,7 @@ function resetForm(type = activeTab.value) {
         type: type === 'Transport' ? 'Transport' : 'Faculty',
         status: 'active',
         scopes: [],
-        items: [{ label: '', amount: null, frequency: 'monthly' }],
+        items: [emptyItem()],
         routeFees: [],
     });
 }
@@ -690,7 +710,7 @@ function openEdit(plan) {
             type: 'Transport',
             status: 'active',
             scopes: [],
-            items: [{ label: '', amount: null, frequency: 'monthly' }],
+            items: [emptyItem()],
             routeFees: [],
         });
         mode.value = 'edit';
@@ -730,8 +750,10 @@ function openEdit(plan) {
                 // A line with its own months is shown as "Selected months" (stored as monthly + months).
                 frequency: i.months?.length ? 'selected_months' : i.frequency,
                 months: i.months?.length ? [...i.months] : [],
+                applies_to: i.applies_to || 'all',
+                appliesToTouched: true,
             }))
-            : [{ label: '', amount: null, frequency: 'monthly' }],
+            : [emptyItem()],
         routeFees: [],
     });
     mode.value = 'edit';
@@ -799,6 +821,7 @@ async function save() {
                 amount: Number(i.amount || 0),
                 frequency: i.frequency === 'selected_months' ? 'monthly' : i.frequency,
                 months: i.frequency === 'selected_months' ? i.months : null,
+                applies_to: i.applies_to || 'all',
             })),
         };
         if (editingId.value) {

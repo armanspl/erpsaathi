@@ -15,6 +15,7 @@ class ErpFeeStructurePlanItem extends Model
         'amount',
         'frequency',
         'months',
+        'applies_to',
         'sort_order',
     ];
 

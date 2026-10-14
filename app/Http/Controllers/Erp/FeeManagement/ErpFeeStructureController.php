@@ -9,6 +9,7 @@ use App\Models\ErpFeeStructurePlan;
 use App\Models\ErpFeeStructurePlanItem;
 use App\Models\ErpFeeStructurePlanScope;
 use App\Models\TransportRoute;
+use App\Services\FeeCalculator;
 use App\Support\DashboardCache;
 use App\Support\FeeSchedule;
 use Illuminate\Http\Request;
@@ -134,6 +135,7 @@ class ErpFeeStructureController extends Controller
                     'amount' => $item->amount,
                     'frequency' => $item->frequency,
                     'months' => $item->months,
+                    'applies_to' => $item->applies_to,
                     'sort_order' => $item->sort_order,
                 ]);
             }
@@ -174,6 +176,7 @@ class ErpFeeStructureController extends Controller
             'items.*.frequency' => ['required', Rule::in(['one_time', 'monthly', 'quarterly', 'annual'])],
             'items.*.months' => 'nullable|array',
             'items.*.months.*' => 'integer|between:1,12',
+            'items.*.applies_to' => ['nullable', Rule::in(['all', 'new', 'old'])],
         ]);
     }
 
@@ -211,6 +214,8 @@ class ErpFeeStructureController extends Controller
                 'months' => in_array($item['frequency'], ['monthly', 'quarterly'], true)
                     ? (FeeSchedule::normalizeMonths($item['months'] ?? null) ?: null)
                     : null,
+                // For students: all / new / old. Not sent → the default rule for this label.
+                'applies_to' => $item['applies_to'] ?? FeeCalculator::defaultAppliesTo($item['label']),
                 'sort_order' => $index,
             ]);
         }
@@ -245,6 +250,7 @@ class ErpFeeStructureController extends Controller
             'amount' => (float) $item->amount,
             'frequency' => $item->frequency,
             'months' => FeeSchedule::normalizeMonths($item->months) ?: null,
+            'applies_to' => $item->applies_to ?: FeeCalculator::defaultAppliesTo($item->label),
             'sort_order' => $item->sort_order,
         ])->values();
 

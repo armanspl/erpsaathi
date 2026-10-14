@@ -21,6 +21,15 @@ class FeeCalculator
         'registration fee',
     ];
 
+    /**
+     * Who a fee-structure line is charged to when the line has no saved "For students" choice:
+     * Admission / Registration Fee → New only, everything else → all students.
+     */
+    public static function defaultAppliesTo(string $label): string
+    {
+        return in_array(strtolower(trim($label)), self::NEW_ONLY_FEE_HEADS, true) ? 'new' : 'all';
+    }
+
     /** @var array<string, int> */
     private static array $headsByName = [];
 
@@ -220,17 +229,16 @@ class FeeCalculator
             return [];
         }
 
-        $type = strtolower(trim((string) (self::admissionTypeFor($student) ?? 'New')));
-        if ($type !== 'old') {
-            return $breakdown;
-        }
+        $type = strtolower(trim((string) (self::admissionTypeFor($student) ?? 'New'))) === 'old' ? 'old' : 'new';
 
         return array_values(array_filter(
             $breakdown,
-            static function (array $row): bool {
-                $name = strtolower(trim((string) ($row['fee_head_name'] ?? '')));
+            static function (array $row) use ($type): bool {
+                // Fee Structure "For students" (All / New / Old); lines saved before that option
+                // existed fall back to the Admission / Registration = New-only rule.
+                $appliesTo = $row['applies_to'] ?? self::defaultAppliesTo((string) ($row['fee_head_name'] ?? ''));
 
-                return ! in_array($name, self::NEW_ONLY_FEE_HEADS, true);
+                return $appliesTo === 'all' || $appliesTo === $type;
             }
         ));
     }
@@ -391,6 +399,10 @@ class FeeCalculator
                 $months = \App\Support\FeeSchedule::normalizeMonths($item->months);
                 if ($months !== [] && in_array($item->frequency, ['monthly', 'quarterly'], true)) {
                     $row['months'] = $months;
+                }
+                // Fee Structure "For students": all / new / old (null = default rule).
+                if (in_array($item->applies_to, ['all', 'new', 'old'], true)) {
+                    $row['applies_to'] = $item->applies_to;
                 }
                 $rows[] = $row;
             }
