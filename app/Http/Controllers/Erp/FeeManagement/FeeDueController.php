@@ -892,8 +892,7 @@ class FeeDueController extends Controller
 
             $total = collect($items)->sum('amount');
 
-            return FeePayment::create([
-                'receipt_no' => FeePayment::nextReceiptNo($session),
+            return FeePayment::createWithAutoReceiptNo([
                 'student_id' => $data['student_id'],
                 'academic_session_id' => $session->id,
                 'items' => $items,

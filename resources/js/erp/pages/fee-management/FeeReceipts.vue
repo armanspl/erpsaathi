@@ -1812,9 +1812,9 @@ async function selectStudent(s) {
     paidByHeadMonthDiscount.value = {};
     remarks.value = '';
     referenceNo.value = '';
-    // Back-date entry keeps the chosen date across students (entering a day's old receipts).
+    // Back-date entry keeps the chosen date and the typed receipt no. when a student is picked
+    // (both are usually filled first); the receipt no. is cleared only after it has been used.
     if (!backdate.on) paymentDate.value = todayLocal();
-    manualReceiptNo.value = '';
     transport.apply = false;
     transport.route_id = null;
     transport.stop_id = null;
@@ -2101,7 +2101,8 @@ async function submitFeeConfirmed() {
             transport_stop_id: transport.apply ? transport.stop_id : null,
         });
 
-        pushToast('Receipt generated.', 'success');
+        pushToast(`Receipt ${data.receipt_no || ''} generated.`.replace('  ', ' '), 'success');
+        manualReceiptNo.value = '';
         openDepositReceipt(data.id);
         await selectStudent(student.value);
     } catch (e) {

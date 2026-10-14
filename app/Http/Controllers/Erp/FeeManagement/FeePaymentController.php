@@ -570,8 +570,7 @@ class FeePaymentController extends Controller
             $discountAmount = (float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0));
         }
 
-        $payment = FeePayment::create([
-            'receipt_no' => $manualReceiptNo !== '' ? $manualReceiptNo : FeePayment::nextReceiptNo($session),
+        $attributes = [
             'student_id' => $data['student_id'],
             'academic_session_id' => $session->id,
             'items' => $items->values()->all(),
@@ -583,7 +582,11 @@ class FeePaymentController extends Controller
             'remarks' => $data['remarks'] ?? null,
             'reference_no' => $data['reference_no'] ?? null,
             'collected_by_id' => Auth::guard('erp')->id(),
-        ]);
+        ];
+        // Typed receipt no. (back-date entry, checked unique above) or the next RCP-0001 number.
+        $payment = $manualReceiptNo !== ''
+            ? FeePayment::create(['receipt_no' => $manualReceiptNo] + $attributes)
+            : FeePayment::createWithAutoReceiptNo($attributes, $session);
 
         // fee_payments has no bank_account_id column, so the link to the chosen account is a
         // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums these,

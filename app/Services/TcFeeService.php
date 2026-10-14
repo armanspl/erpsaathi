@@ -177,10 +177,7 @@ class TcFeeService
 
             $head = $due->feeHead ?: FeeHead::find($due->fee_head_id);
 
-            return FeePayment::create([
-                'receipt_no' => FeePayment::nextReceiptNo(
-                    $sessionId ? AcademicSession::find($sessionId) : null
-                ),
+            return FeePayment::createWithAutoReceiptNo([
                 'student_id' => $student->id,
                 'academic_session_id' => $sessionId,
                 'items' => [[

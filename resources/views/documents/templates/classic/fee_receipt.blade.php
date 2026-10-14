@@ -52,19 +52,19 @@
     <table class="doc-grid">
         <tr>
             <td style="width: 63%;"><span class="doc-label">Student:</span> <span class="doc-value" style="color:#7f1d1d;">{{ $student_name }}</span></td>
-            <td style="width: 37%;"><span class="doc-label">DATE:</span> <span class="doc-value">{{ $receipt_date }}</span></td>
+            <td style="width: 37%;"><span class="doc-label">Receipt No.</span> <span class="doc-value">{{ $receipt_no }}</span></td>
         </tr>
         <tr>
             <td><span class="doc-label">Father:</span> <span class="doc-value">{{ $father_name }}</span></td>
-            <td><span class="doc-label">Adm. No.</span> <span class="doc-value">{{ $admission_id }}</span></td>
+            <td><span class="doc-label">DATE:</span> <span class="doc-value">{{ $receipt_date }}</span></td>
         </tr>
         <tr>
             <td><span class="doc-label">City / Village:</span> <span class="doc-value">{{ $city }}</span></td>
-            <td><span class="doc-label">Class:</span> <span class="doc-value">{{ $class }}</span></td>
+            <td><span class="doc-label">Adm. No.</span> <span class="doc-value">{{ $admission_id }}</span></td>
         </tr>
         <tr>
             <td><span class="doc-label">Fee For Month(s):</span> <span class="doc-value">{{ $fee_for_months }}</span></td>
-            <td><span class="doc-label">Section:</span> <span class="doc-value">{{ $section }}</span></td>
+            <td><span class="doc-label">Class:</span> <span class="doc-value">{{ $class }}</span> &nbsp; <span class="doc-label">Sec:</span> <span class="doc-value">{{ $section }}</span></td>
         </tr>
     </table>
 

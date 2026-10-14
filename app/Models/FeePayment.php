@@ -185,24 +185,47 @@ class FeePayment extends Model
     }
 
     /**
-     * Next fee receipt number: RCP-{session}-{month}-{seq}
-     * Example: RCP-2026-27-10-0001 (academic year 2026-27, October, sequence 0001).
+     * Next automatic fee receipt number: one running sequence RCP-0001, RCP-0002, … (wider past
+     * 9999). Continues after the highest existing RCP-<digits>; older long-form numbers
+     * (RCP-2026-27-10-0002) and manually typed ones are left as they are, and any number that
+     * already exists is skipped, so the result is never a duplicate at the time of the call.
+     * Save through createWithAutoReceiptNo() to also survive two receipts saved at once.
+     *
+     * @param  int  $skip  extra steps past the highest number (retry after a clash)
      */
-    public static function nextReceiptNo(?AcademicSession $session = null): string
+    public static function nextReceiptNo(?AcademicSession $session = null, int $skip = 0): string
     {
-        $session ??= AcademicSession::query()->where('is_current', true)->first();
-        $yearToken = static::sessionYearToken($session);
-        $month = now()->format('m');
-        $prefix = "RCP-{$yearToken}-{$month}-";
-
         $max = 0;
-        foreach (static::query()->where('receipt_no', 'like', $prefix.'%')->pluck('receipt_no') as $no) {
-            if (preg_match('/(\d+)$/', (string) $no, $m)) {
+        foreach (static::query()->where('receipt_no', 'like', 'RCP-%')->pluck('receipt_no') as $no) {
+            if (preg_match('/^RCP-(\d+)$/', (string) $no, $m)) {
                 $max = max($max, (int) $m[1]);
             }
         }
 
-        return $prefix.str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        $seq = $max + 1 + max(0, $skip);
+        do {
+            $candidate = 'RCP-'.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $seq++;
+        } while (static::query()->where('receipt_no', $candidate)->exists());
+
+        return $candidate;
+    }
+
+    /**
+     * Create a fee payment with the next automatic receipt no. If another receipt took the same
+     * number in the meantime (receipt_no is unique), take the following number and try again.
+     */
+    public static function createWithAutoReceiptNo(array $attributes, ?AcademicSession $session = null): self
+    {
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return static::create(['receipt_no' => static::nextReceiptNo($session, $attempt)] + $attributes);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                if ($attempt >= 4) {
+                    throw $e;
+                }
+            }
+        }
     }
 
     /** Academic year as YYYY-YY (e.g. 2026-27). */
