@@ -10,6 +10,7 @@ use App\Models\FeeDiscount;
 use App\Models\FeeHead;
 use App\Models\FeePayment;
 use App\Models\Student;
+use App\Models\StudentSessionHistory;
 use App\Models\StudentUdiseDetail;
 use Illuminate\Support\Collection;
 
@@ -52,6 +53,15 @@ class FeeCalculator
 
     /** @var array<int, string|null> student_id => admission_type */
     private static array $admissionTypeCache = [];
+
+    /** @var array<int, string|null> student_id => admission_date (Y-m-d) */
+    private static array $admissionDateCache = [];
+
+    /** @var array<int, string|null> student_id => first session in student_session_history ("2026-2027") */
+    private static array $firstSessionCache = [];
+
+    /** @var Collection<int, AcademicSession>|null all sessions, oldest first */
+    private static ?Collection $sessionsCache = null;
 
     private static bool $warmed = false;
 
@@ -117,6 +127,19 @@ class FeeCalculator
             self::$admissionTypeCache[$id] = $types[$id] ?? null;
         }
 
+        $dates = Student::query()->whereIn('id', $studentIds)->pluck('admission_date', 'id');
+        foreach ($studentIds as $id) {
+            self::$admissionDateCache[$id] = isset($dates[$id]) ? substr((string) $dates[$id], 0, 10) : null;
+            self::$firstSessionCache[$id] = null;
+        }
+        foreach (StudentSessionHistory::query()->whereIn('student_id', $studentIds)->get(['student_id', 'session']) as $h) {
+            $name = self::normalizeSessionName((string) $h->session);
+            $current = self::$firstSessionCache[$h->student_id] ?? null;
+            if ($name !== null && ($current === null || $name < $current)) {
+                self::$firstSessionCache[$h->student_id] = $name;
+            }
+        }
+
         self::$warmed = true;
 
         // Keep fee-balance payment/transport N+1 warm in sync with this cohort.
@@ -131,6 +154,9 @@ class FeeCalculator
         self::$paymentRowsCache = [];
         self::$discountCache = [];
         self::$admissionTypeCache = [];
+        self::$admissionDateCache = [];
+        self::$firstSessionCache = [];
+        self::$sessionsCache = null;
         self::$warmed = false;
         FeeBalanceService::flushRuntimeCache();
     }
@@ -169,16 +195,15 @@ class FeeCalculator
             $breakdown = self::legacyStructureBreakdown($student, $session);
         }
 
-        return self::filterBreakdownForAdmissionType($student, $breakdown);
+        return self::filterBreakdownForAdmissionType($student, $breakdown, $session);
     }
 
     /**
      * Compute a student's fee position for a session: what the class-wise fee structure
      * says they owe, minus discounts, minus what they've already paid (net of refunds).
      *
-     * Admission Type (student_udise_details.admission_type):
-     * - New: Admission Fee + Registration Fee + Session Fee (+ other structure heads)
-     * - Old: Session Fee (+ other structure heads); Admission/Registration are not charged
+     * New / Old is decided per session (see admissionTypeForSession()): Fee Structure lines set
+     * to "New only" are charged in the student's admission session, "Old only" in later ones.
      */
     public static function forStudent(Student $student, ?AcademicSession $session = null): array
     {
@@ -212,24 +237,25 @@ class FeeCalculator
             'total_discount' => $totalDiscount,
             'total_paid' => $totalPaid,
             'due' => $due,
-            'admission_type' => self::admissionTypeFor($student) ?? 'New',
+            'admission_type' => self::admissionTypeForSession($student, $session),
         ];
     }
 
     /**
-     * Drop Admission / Registration Fee lines for Old students so Fee Due / Pay Fee
-     * only show Session Fee (and other non-new-only heads) as chargeable.
+     * Keep only the Fee Structure lines this student is charged in $session: "All" lines, plus
+     * "New only" or "Old only" lines depending on whether the student is New or Old in that
+     * session (neither, in a session before the one they were admitted for).
      *
      * @param  list<array{fee_head_id: int, fee_head_name: string, amount: float, frequency: string}>  $breakdown
      * @return list<array{fee_head_id: int, fee_head_name: string, amount: float, frequency: string}>
      */
-    private static function filterBreakdownForAdmissionType(Student $student, array $breakdown): array
+    private static function filterBreakdownForAdmissionType(Student $student, array $breakdown, AcademicSession $session): array
     {
         if ($breakdown === []) {
             return [];
         }
 
-        $type = strtolower(trim((string) (self::admissionTypeFor($student) ?? 'New'))) === 'old' ? 'old' : 'new';
+        $type = strtolower(self::admissionTypeForSession($student, $session));
 
         return array_values(array_filter(
             $breakdown,
@@ -241,6 +267,99 @@ class FeeCalculator
                 return $appliesTo === 'all' || $appliesTo === $type;
             }
         ));
+    }
+
+    /**
+     * "New" in the session the student was admitted for, "Old" in every later session, "None"
+     * in a session before it (not admitted yet: neither New-only nor Old-only fees apply).
+     *
+     * The admission session is the one containing the admission date — or, for an advance
+     * admission taken Oct–Mar for the coming year (first class/session record in the next
+     * session), that next session; the same rule the workbook import uses. The profile's
+     * Admission Type is the student's status today, so it is only the fallback for a student
+     * without an admission date.
+     */
+    public static function admissionTypeForSession(Student $student, AcademicSession $session): string
+    {
+        $admitted = self::admissionDateFor($student);
+        if ($admitted === null) {
+            return strtolower(trim((string) (self::admissionTypeFor($student) ?? 'New'))) === 'old' ? 'Old' : 'New';
+        }
+
+        $start = substr((string) $session->start_date, 0, 10);
+        $admissionSession = self::admissionSessionFor($student, $admitted);
+        if ($admissionSession === null) {
+            // Admission date outside every session: compare with this session's start only.
+            return $admitted < $start ? 'Old' : 'New';
+        }
+        if ((int) $admissionSession->id === (int) $session->id) {
+            return 'New';
+        }
+
+        return substr((string) $admissionSession->start_date, 0, 10) < $start ? 'Old' : 'None';
+    }
+
+    private static function admissionSessionFor(Student $student, string $admitted): ?AcademicSession
+    {
+        $sessions = self::$sessionsCache ??= AcademicSession::query()->orderBy('start_date')->get();
+        $index = $sessions->search(fn (AcademicSession $s) => substr((string) $s->start_date, 0, 10) <= $admitted
+            && substr((string) $s->end_date, 0, 10) >= $admitted);
+        $byDate = $index === false ? null : $sessions[$index];
+        // The next session: after the one containing the date, or (date before any session that
+        // contains it) the first session starting after the date.
+        $next = $index === false
+            ? $sessions->first(fn (AcademicSession $s) => substr((string) $s->start_date, 0, 10) > $admitted)
+            : ($sessions[$index + 1] ?? null);
+        $month = (int) substr($admitted, 5, 2);
+        $nextStart = $next ? substr((string) $next->start_date, 0, 10) : null;
+        // Advance admission = for the session starting within the next 6 months, never a later one.
+        if ($next && ($month >= 10 || $month <= 3)
+            && $nextStart <= date('Y-m-d', strtotime($admitted.' +6 months'))
+            && self::firstEnrolledSessionFor($student) === self::normalizeSessionName((string) $next->name)) {
+            return $next;
+        }
+
+        return $byDate;
+    }
+
+    private static function firstEnrolledSessionFor(Student $student): ?string
+    {
+        if (array_key_exists($student->id, self::$firstSessionCache)) {
+            return self::$firstSessionCache[$student->id];
+        }
+
+        $first = null;
+        foreach (StudentSessionHistory::query()->where('student_id', $student->id)->pluck('session') as $raw) {
+            $name = self::normalizeSessionName((string) $raw);
+            if ($name !== null && ($first === null || $name < $first)) {
+                $first = $name;
+            }
+        }
+
+        return self::$firstSessionCache[$student->id] = $first;
+    }
+
+    /** "2025-26", "2025-2026", "2025 - 2026" → "2025-2026"; null when not a session name. */
+    private static function normalizeSessionName(string $raw): ?string
+    {
+        if (! preg_match('/^\s*(\d{4})\s*-\s*(\d{2}|\d{4})\s*$/', $raw, $m)) {
+            return null;
+        }
+
+        return $m[1].'-'.(strlen($m[2]) === 2 ? substr($m[1], 0, 2).$m[2] : $m[2]);
+    }
+
+    private static function admissionDateFor(Student $student): ?string
+    {
+        if (array_key_exists($student->id, self::$admissionDateCache)) {
+            return self::$admissionDateCache[$student->id];
+        }
+
+        $date = array_key_exists('admission_date', $student->getAttributes())
+            ? $student->admission_date
+            : Student::query()->whereKey($student->id)->value('admission_date');
+
+        return self::$admissionDateCache[$student->id] = $date ? substr((string) $date, 0, 10) : null;
     }
 
     private static function admissionTypeFor(Student $student): ?string

@@ -35,6 +35,10 @@ Route::middleware(['web', 'central'])->prefix('super-admin')->name('super-admin.
                 Route::get('/', 'overview')->name('overview');
                 Route::get('/audits', 'audits')->name('audits');
                 Route::get('/backup', 'backup')->name('backup');
+                Route::post('/import/preview', 'importPreview')->name('import.preview');
+                Route::post('/import', 'importSql')->name('import');
+                Route::get('/import/{token}/download', 'importDownload')->where('token', '[a-f0-9]{32}')->name('import.download');
+                Route::delete('/import/{token}', 'importDiscard')->where('token', '[a-f0-9]{32}')->name('import.discard');
                 Route::prefix('/tables/{table}')->where(['table' => '[A-Za-z0-9_$]{1,64}'])->group(function () {
                     Route::get('/structure', 'structure')->name('structure');
                     Route::get('/rows', 'rows')->name('rows');

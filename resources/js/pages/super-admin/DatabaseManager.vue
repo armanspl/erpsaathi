@@ -62,6 +62,7 @@
         <div class="dbm-head-actions">
           <button type="button" class="dbm-btn ghost sm" :class="{ active: tab === 'activity' && !table }" @click="showActivity">Activity log</button>
           <a class="dbm-btn ghost sm" :href="`${base}/backup`">Backup database (.sql)</a>
+          <button type="button" class="dbm-btn ghost sm" :disabled="!overview" @click="openImport">Import SQL</button>
           <button type="button" class="dbm-btn ghost sm" :disabled="overviewLoading" @click="loadOverview">Refresh</button>
         </div>
       </section>
@@ -378,6 +379,124 @@
             <button type="submit" class="dbm-btn primary" :disabled="record.saving">{{ record.saving ? 'Saving…' : (record.mode === 'insert' ? 'Insert' : 'Save changes') }}</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- ── Import SQL ──────────────────────────────────────────────────── -->
+    <div v-if="imp" class="dbm-backdrop" @click.self="!imp.busy && closeImport()">
+      <div class="dbm-modal wide">
+        <h2>{{ imp.plan?.file?.kind === 'backup' ? 'Restore backup into' : 'Import SQL into' }} <code>{{ overview?.db_name }}</code></h2>
+        <div class="dbm-muted dbm-modal-sub">{{ school?.name }}</div>
+
+        <!-- 1. Choose file -->
+        <template v-if="imp.step === 'pick'">
+          <p class="dbm-help">
+            Upload a <strong>.sql</strong> or <strong>.sql.gz</strong> file (phpMyAdmin export or mysqldump).
+            Nothing is changed in this step: the file is checked first and you see exactly which tables it creates, replaces or adds rows to.
+            <br>Largest upload this server accepts: <strong>{{ overview?.upload_limit || '—' }}</strong> (a .sql.gz file is much smaller).
+          </p>
+          <input type="file" accept=".sql,.gz" class="dbm-input full" :disabled="imp.busy" @change="imp.file = $event.target.files[0] || null" />
+          <div v-if="imp.error" class="dbm-alert error dbm-imp-gap">{{ imp.error }}</div>
+          <div class="dbm-modal-actions">
+            <button type="button" class="dbm-btn ghost" :disabled="imp.busy" @click="closeImport">Cancel</button>
+            <button type="button" class="dbm-btn primary" :disabled="!imp.file || imp.busy" @click="checkImport">{{ imp.busy ? 'Uploading and checking…' : 'Check file' }}</button>
+          </div>
+        </template>
+
+        <!-- 2. Preview + confirm -->
+        <template v-else-if="imp.step === 'preview'">
+          <div class="dbm-note">
+            <strong>{{ imp.plan.file.name }}</strong> · {{ bytes(imp.plan.file.size) }} · {{ num(imp.plan.statements) }} statement(s),
+            {{ num(imp.plan.executable) }} to run<span v-if="imp.plan.skipped_count">, {{ num(imp.plan.skipped_count) }} skipped</span>
+            <span v-if="imp.plan.source_databases.length"> · exported from <code>{{ imp.plan.source_databases.join(', ') }}</code></span>
+          </div>
+
+          <div v-if="imp.plan.errors.length" class="dbm-alert error dbm-imp-gap">
+            <strong>This file cannot be imported:</strong>
+            <ul class="dbm-imp-list">
+              <li v-for="(e, i) in imp.plan.errors" :key="i">
+                <span v-if="e.line">Line {{ e.line }}: </span>{{ e.reason }}
+                <div v-if="e.statement" class="dbm-imp-sql">{{ e.statement }}</div>
+              </li>
+            </ul>
+          </div>
+
+          <div v-if="imp.plan.warnings.length" class="dbm-note warn dbm-imp-gap">
+            <ul class="dbm-imp-list">
+              <li v-for="(w, i) in imp.plan.warnings" :key="i">{{ w }}</li>
+            </ul>
+          </div>
+
+          <div v-if="imp.plan.tables.length" class="dbm-scroll dbm-imp-tables">
+            <table class="dbm-table">
+              <thead><tr><th>Table</th><th>Now in database</th><th>This file will</th></tr></thead>
+              <tbody>
+                <tr v-for="t in imp.plan.tables" :key="t.name">
+                  <td><code>{{ t.name }}</code></td>
+                  <td>{{ t.exists ? `${num(t.rows_now)} row(s)` : 'not present' }}</td>
+                  <td :class="{ 'dbm-imp-replace': t.replaces }">{{ t.effects.join(' · ') || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <template v-if="imp.plan.can_import">
+            <label class="dbm-imp-check">
+              <input v-model="imp.runMigrations" type="checkbox" />
+              Run ERP migrations after import (recommended: brings an older database up to this ERP version)
+            </label>
+            <div class="dbm-note">
+              Before anything runs, a full backup of the current <code>{{ overview?.db_name }}</code> is saved automatically; you can download it or restore it from the result screen.
+              The import stops at the first MySQL error.
+            </div>
+            <div class="dbm-field dbm-imp-gap">
+              <label>Type <code>{{ overview?.db_name }}</code> to confirm</label>
+              <input v-model="imp.confirm" class="dbm-input full" autocomplete="off" />
+            </div>
+          </template>
+          <div v-if="imp.error" class="dbm-alert error dbm-imp-gap">{{ imp.error }}</div>
+
+          <div class="dbm-modal-actions">
+            <button type="button" class="dbm-btn ghost" :disabled="imp.busy" @click="closeImport">Cancel</button>
+            <button
+              v-if="imp.plan.can_import"
+              type="button"
+              class="dbm-btn danger"
+              :disabled="imp.busy || imp.confirm.trim() !== overview?.db_name"
+              @click="runImport"
+            >{{ imp.busy ? 'Backing up and importing… do not close this page' : (imp.plan.file.kind === 'backup' ? 'Restore backup' : 'Import') }}</button>
+          </div>
+        </template>
+
+        <!-- 3. Result -->
+        <template v-else>
+          <div class="dbm-alert" :class="imp.result.ok ? 'ok' : 'error'">
+            <template v-if="imp.result.ok">
+              Done: {{ num(imp.result.executed) }} statement(s) ran in {{ imp.result.seconds }}s<span v-if="imp.result.skipped">, {{ num(imp.result.skipped) }} skipped</span>.
+            </template>
+            <template v-else>
+              Import stopped at statement {{ imp.result.failed.number }}<span v-if="imp.result.failed.line"> (line {{ imp.result.failed.line }})</span>
+              after {{ num(imp.result.executed) }} statement(s) ran: {{ imp.result.failed.message }}
+              <div v-if="imp.result.failed.statement" class="dbm-imp-sql">{{ imp.result.failed.statement }}</div>
+              <div class="dbm-imp-gap">The database may now be partly imported. Restore the backup below to return it to how it was before.</div>
+            </template>
+          </div>
+          <div v-if="imp.result.migrations.ran" class="dbm-note dbm-imp-gap">
+            ERP migrations ran.
+            <pre v-if="imp.result.migrations.output" class="dbm-pre dbm-imp-gap">{{ imp.result.migrations.output }}</pre>
+          </div>
+          <div v-if="imp.result.migrations.error" class="dbm-alert error dbm-imp-gap">ERP migrations failed: {{ imp.result.migrations.error }}</div>
+          <div class="dbm-note dbm-imp-gap">
+            Backup taken before this import: <strong>{{ imp.result.backup.name }}</strong> ({{ bytes(imp.result.backup.size) }}) ·
+            <a :href="`${base}/import/${imp.result.backup.token}/download`">Download</a>
+            <div class="dbm-muted">Kept on the server for 7 days.</div>
+          </div>
+          <div v-if="imp.error" class="dbm-alert error dbm-imp-gap">{{ imp.error }}</div>
+          <div class="dbm-modal-actions">
+            <button type="button" class="dbm-btn warn" :disabled="imp.busy" @click="restoreBackup">Restore this backup…</button>
+            <button type="button" class="dbm-btn primary" :disabled="imp.busy" @click="closeImport">Close</button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -755,6 +874,80 @@ async function runConfirm() {
   }
 }
 
+// ── Import SQL ───────────────────────────────────────────────────────────
+const imp = ref(null);
+
+function openImport() {
+  imp.value = { step: 'pick', file: null, plan: null, result: null, confirm: '', runMigrations: true, busy: false, error: null };
+}
+
+function closeImport() {
+  const box = imp.value;
+  imp.value = null;
+  // A checked upload that was not imported is removed straight away (backups are kept).
+  if (box?.step === 'preview' && box.plan?.file?.kind === 'upload') {
+    rawApi(`${base.value}/import/${box.plan.token}`, 'DELETE', {}).catch(() => {});
+  }
+}
+
+async function postImport(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    credentials: 'same-origin',
+    body: body instanceof FormData ? body : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 413) throw new Error(`The file is larger than this server accepts (${overview.value?.upload_limit}). Upload it gzipped (.sql.gz) or raise upload_max_filesize / post_max_size.`);
+    throw new Error(data.errors ? Object.values(data.errors).flat()[0] : (data.message || `Request failed (${res.status})`));
+  }
+  return data;
+}
+
+async function checkImport() {
+  const box = imp.value;
+  box.busy = true;
+  box.error = null;
+  try {
+    const fd = new FormData();
+    fd.append('file', box.file);
+    box.plan = await postImport(`${base.value}/import/preview`, fd);
+    box.step = 'preview';
+  } catch (e) { box.error = e.message; } finally { box.busy = false; }
+}
+
+async function runImport() {
+  const box = imp.value;
+  box.busy = true;
+  box.error = null;
+  try {
+    box.result = await postImport(`${base.value}/import`, {
+      token: box.plan.token,
+      confirmation: box.confirm.trim(),
+      run_migrations: box.runMigrations,
+    });
+    box.step = 'done';
+    table.value = null;
+    loadOverview();
+  } catch (e) { box.error = e.message; } finally { box.busy = false; }
+}
+
+async function restoreBackup() {
+  const box = imp.value;
+  box.busy = true;
+  box.error = null;
+  try {
+    const plan = await postImport(`${base.value}/import/preview`, { token: box.result.backup.token });
+    imp.value = { step: 'preview', file: null, plan, result: null, confirm: '', runMigrations: false, busy: false, error: null };
+  } catch (e) { box.error = e.message; box.busy = false; }
+}
+
 // ── Formatting ───────────────────────────────────────────────────────────
 const num = (n) => Number(n || 0).toLocaleString('en-IN');
 function bytes(n) {
@@ -766,9 +959,13 @@ function bytes(n) {
 }
 const dateTime = (s) => (s ? new Date(s).toLocaleString() : '');
 const statusClass = (s) => ({ active: 'ok', inactive: 'muted', provisioning: 'warn', failed: 'danger' }[s] || 'muted');
-const auditClass = (a) => (/drop|truncate|empty|delete/.test(a) ? 'danger' : /backup/.test(a) ? 'muted' : 'ok');
+const auditClass = (a) => (/drop|truncate|empty|delete|import|restore/.test(a) ? 'danger' : /backup/.test(a) ? 'muted' : 'ok');
 function auditDetail(a) {
   const parts = [];
+  if (a.details?.file) {
+    parts.push(`${a.details.file} · ${a.details.ok ? 'completed' : 'stopped with an error'} · ${a.details.executed} statement(s)`);
+    if (a.details.backup_file) parts.push(`backup ${a.details.backup_file}`);
+  }
   if (a.record_key) parts.push(`key ${JSON.stringify(a.record_key)}`);
   if (a.details?.after) parts.push(`changed ${Object.keys(a.details.after).join(', ')}`);
   if (a.details?.values) parts.push(`values ${Object.keys(a.details.values).length} column(s)`);
@@ -896,6 +1093,13 @@ onMounted(() => {
 .dbm-nullbox { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--sa-muted, #64748b); margin-top: 4px; }
 .dbm-field-error { color: #b91c1c; font-size: 12px; margin-top: 3px; }
 .dbm-modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 14px; }
+.dbm-imp-gap { margin-top: 10px; }
+.dbm-imp-list { margin: 6px 0 0; padding-left: 18px; }
+.dbm-imp-list li + li { margin-top: 4px; }
+.dbm-imp-sql { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; opacity: 0.85; word-break: break-all; margin-top: 2px; }
+.dbm-imp-tables { max-height: 300px; overflow: auto; margin-top: 10px; border: 1px solid var(--sa-line, #e2e8f0); border-radius: 10px; }
+.dbm-imp-replace { color: #b91c1c; font-weight: 700; }
+.dbm-imp-check { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 8px; font-weight: 600; }
 code { font-size: 12px; }
 @media (max-width: 1000px) {
   .dbm-layout { grid-template-columns: 1fr; }
