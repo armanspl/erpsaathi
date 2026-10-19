@@ -343,10 +343,17 @@ class StudentMasterImportService
                 $row[$field] = strtolower($value) === 'none' ? '' : $value;
             }
 
-            // Skip silently, don't count — covers the known trailing fully-blank row and
-            // any other row with no Adm No.
-            if (($row['admission_no'] ?? '') === '') {
+            // Skip only fully blank trailing/empty rows. Rows with a Name but blank ADM NO.
+            // must still be imported (schools often leave Adm No empty for new / pending
+            // students) — assign a stable placeholder so unique(admission_no) is satisfied
+            // and every session-row for the same person merges to one student.
+            $adm = trim((string) ($row['admission_no'] ?? ''));
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($adm === '' && $name === '') {
                 continue;
+            }
+            if ($adm === '') {
+                $row['admission_no'] = $this->placeholderAdmissionNo($row);
             }
 
             $parsedRows[] = $row;
@@ -517,8 +524,14 @@ class StudentMasterImportService
     {
         $identifier = $row['admission_no'] ?? null;
 
-        if (($row['admission_no'] ?? '') === '' || ($row['name'] ?? '') === '') {
-            return $this->failedRow($row, 'Adm No. and Name are required.');
+        // Name is required. Adm No. may be blank in the sheet — import() already filled a
+        // stable PEND-* placeholder before this runs; keep a defensive backfill here too.
+        if (($row['name'] ?? '') === '') {
+            return $this->failedRow($row, 'Name is required.');
+        }
+        if (($row['admission_no'] ?? '') === '') {
+            $row['admission_no'] = $this->placeholderAdmissionNo($row);
+            $identifier = $row['admission_no'];
         }
 
         $existingStudent = $cache['students'][$row['admission_no']] ?? null;
@@ -843,6 +856,29 @@ class StudentMasterImportService
             'route_id' => $route->id,
             'route_stop_id' => $stop->id,
         ];
+    }
+
+    /**
+     * Stable placeholder when the sheet leaves ADM NO. blank. Same Name + Father + DOB
+     * (+ Aadhaar when present) always yields the same code, so multi-session history rows
+     * for one student still upsert to a single record on re-import.
+     */
+    private function placeholderAdmissionNo(array $row): string
+    {
+        $aadhaar = preg_replace('/\D+/', '', (string) ($row['aadhaar_no'] ?? ''));
+        if (is_string($aadhaar) && strlen($aadhaar) >= 8) {
+            return 'PEND-A'.$aadhaar;
+        }
+
+        $normalize = static fn (?string $v): string => strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '', (string) $v));
+        $name = $normalize($row['name'] ?? '') ?: 'X';
+        $father = $normalize($row['father_name'] ?? '') ?: 'X';
+        $dob = preg_replace('/\D+/', '', (string) ($row['dob'] ?? '')) ?: '0';
+        $mobile = preg_replace('/\D+/', '', (string) ($row['mobile'] ?? '')) ?: '';
+
+        $hash = strtoupper(substr(md5($name.'|'.$father.'|'.$dob.'|'.$mobile), 0, 10));
+
+        return 'PEND-'.$hash;
     }
 
     /** Builds the outcome array for a row that failed validation or matching, before any writes happened. */
