@@ -157,7 +157,19 @@
                             {{ d.label }}
                         </button>
                     </nav>
-                    <div class="flex items-center gap-2 text-xs">
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <div class="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+                            <button
+                                v-for="tab in [{ id: 'class', label: 'Class wise' }, { id: 'teacher', label: 'Teacher wise' }]"
+                                :key="tab.id"
+                                type="button"
+                                class="rounded-md px-3 py-1 text-xs font-semibold transition"
+                                :class="editLayout === tab.id ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+                                @click="editLayout = tab.id"
+                            >
+                                {{ tab.label }}
+                            </button>
+                        </div>
                         <span class="text-slate-400">Copy {{ dayLabel(activeDay) }} to:</span>
                         <select v-model="copyTargetDay" class="form-input !py-1 !text-xs">
                             <option :value="null">Select day</option>
@@ -167,7 +179,8 @@
                     </div>
                 </div>
 
-                <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                <!-- CLASS WISE EDIT -->
+                <div v-if="editLayout === 'class'" class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
                     <table class="min-w-full border-collapse text-left text-xs">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
@@ -193,7 +206,12 @@
                                         </select>
                                         <select v-model="cell(c.id, p).teacher_id" class="form-input !py-1 !text-[11px]" @change="onTeacherPick(c.id, p)">
                                             <option :value="null">{{ cell(c.id, p).teacher_label ? `⚠ ${cell(c.id, p).teacher_label}` : '— teacher —' }}</option>
-                                            <option v-for="t in teachers" :key="t.id" :value="t.id">{{ t.name }}</option>
+                                            <optgroup v-if="freeTeachersForPeriod(p, c.id).length" label="Free (leisure)">
+                                                <option v-for="t in freeTeachersForPeriod(p, c.id)" :key="'f'+t.id" :value="t.id">{{ t.name }}</option>
+                                            </optgroup>
+                                            <optgroup v-if="busyTeachersForPeriod(p, c.id).length" label="Busy this period">
+                                                <option v-for="t in busyTeachersForPeriod(p, c.id)" :key="'b'+t.id" :value="t.id">{{ t.name }} — {{ t.busyIn }}</option>
+                                            </optgroup>
                                         </select>
                                         <div v-if="cell(c.id, p).teacher_id || cell(c.id, p).teacher_label" class="flex items-center gap-1">
                                             <input v-model="cell(c.id, p).color" type="color" class="h-5 w-6 shrink-0 cursor-pointer rounded border-0 p-0" title="Badge colour for this cell" />
@@ -207,6 +225,77 @@
                                 <td class="min-w-[140px] px-1.5 py-1.5 align-top">
                                     <input v-model="classRemarks[c.id]" type="text" class="form-input !py-1 !text-[11px]" placeholder="Remarks" />
                                 </td>
+                            </tr>
+                            <tr class="bg-emerald-50/80 dark:bg-emerald-500/10">
+                                <td class="sticky left-0 z-10 whitespace-nowrap bg-emerald-50 px-3 py-2 align-top text-[11px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">Leisure / Free</td>
+                                <td v-for="p in periodsRange" :key="'leisure-'+p" class="min-w-[130px] px-1.5 py-1.5 align-top">
+                                    <div class="max-h-28 overflow-y-auto rounded-lg border border-emerald-200 bg-white/80 px-1.5 py-1 text-[10px] font-semibold leading-snug text-emerald-800 dark:border-emerald-500/30 dark:bg-slate-900/40 dark:text-emerald-300">
+                                        <template v-if="leisureTeachers(p).length">
+                                            <div v-for="t in leisureTeachers(p)" :key="t.id">{{ t.name }}</div>
+                                        </template>
+                                        <span v-else class="font-normal text-slate-400">—</span>
+                                    </div>
+                                </td>
+                                <td class="px-1.5 py-1.5 text-[10px] text-slate-400">Free teachers by period</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- TEACHER WISE EDIT: assign class + subject per teacher per period -->
+                <div v-else class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
+                        Pick a class (and subject) for each teacher in each period. Free periods stay empty. Changing class moves that teacher onto that class for this period.
+                    </p>
+                    <table class="min-w-full border-collapse text-left text-xs">
+                        <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
+                            <tr>
+                                <th class="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 font-semibold text-slate-500 dark:bg-slate-800">Teacher</th>
+                                <th v-for="p in periodsRange" :key="p" class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">P{{ p }}</th>
+                                <th class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">Periods</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-if="!teachers.length">
+                                <td :colspan="periodsRange.length + 2" class="px-3 py-6 text-center text-slate-400">No teachers found — add them under People → Teachers first.</td>
+                            </tr>
+                            <tr v-for="t in teachers" :key="t.id">
+                                <td class="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2 align-top font-medium text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                    <span
+                                        class="inline-block max-w-[140px] truncate rounded px-1.5 py-0.5 text-[11px] font-semibold"
+                                        :style="{ background: t.color || '#e2e8f0', color: contrastColor(t.color) }"
+                                    >{{ t.name }}</span>
+                                </td>
+                                <td v-for="p in periodsRange" :key="p" class="min-w-[140px] px-1.5 py-1.5 align-top">
+                                    <div
+                                        class="space-y-1 rounded-lg border p-1.5"
+                                        :class="teacherPeriodClash(t.id, p)
+                                            ? 'border-rose-300 bg-rose-50 dark:border-rose-500/40 dark:bg-rose-500/10'
+                                            : teacherPeriodClassId(t.id, p)
+                                                ? 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60'
+                                                : 'border-dashed border-emerald-300 bg-emerald-50/50 dark:border-emerald-500/30 dark:bg-emerald-500/5'"
+                                    >
+                                        <select
+                                            class="form-input !py-1 !text-[11px]"
+                                            :value="teacherPeriodClassId(t.id, p) ?? ''"
+                                            @change="onTeacherWiseClassChange(t.id, p, $event.target.value)"
+                                        >
+                                            <option value="">— FREE —</option>
+                                            <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}</option>
+                                        </select>
+                                        <select
+                                            v-if="teacherPeriodClassId(t.id, p)"
+                                            class="form-input !py-1 !text-[11px]"
+                                            :value="cell(teacherPeriodClassId(t.id, p), p).subject_id ?? ''"
+                                            @change="onTeacherWiseSubjectChange(t.id, p, $event.target.value)"
+                                        >
+                                            <option value="">{{ cell(teacherPeriodClassId(t.id, p), p).subject_label ? `⚠ ${cell(teacherPeriodClassId(t.id, p), p).subject_label}` : '— subject —' }}</option>
+                                            <option v-for="sub in subjects" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
+                                        </select>
+                                        <div v-if="teacherPeriodClash(t.id, p)" class="text-[10px] font-semibold text-rose-600 dark:text-rose-400">Clash: {{ teacherPeriodClash(t.id, p) }}</div>
+                                    </div>
+                                </td>
+                                <td class="px-2 py-2 text-center align-top text-sm font-semibold text-slate-600 dark:text-slate-300">{{ teacherPeriodCount(t.id) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -323,6 +412,8 @@ const activeDay = ref(1);
 const copyTargetDay = ref(null);
 // Inside an open routine: 'edit' = the editable grid, 'view' = Excel-style class/teacher-wise view.
 const mode = ref('edit');
+// Within edit mode: class-centric grid vs teacher-centric assign grid (same underlying data).
+const editLayout = ref('class');
 
 const periodsRange = computed(() => Array.from({ length: form.periods_per_day || 0 }, (_, i) => i + 1));
 
@@ -368,6 +459,120 @@ function onTeacherPick(classId, period) {
         const t = teachers.value.find((x) => x.id === c.teacher_id);
         if (t?.color && !c.color) c.color = t.color;
     }
+}
+
+/** teacher_id -> class name(s) already assigned for active day + period (excluding one class when editing that cell). */
+function busyMapForPeriod(period, excludeClassId = null) {
+    const busy = new Map();
+    const dayGrid = grid[activeDay.value] || {};
+    classes.value.forEach((c) => {
+        if (excludeClassId != null && c.id === excludeClassId) return;
+        const cellData = dayGrid[c.id]?.[period];
+        const tid = cellData?.teacher_id;
+        if (!tid) return;
+        const prev = busy.get(tid) || [];
+        prev.push(c.name);
+        busy.set(tid, prev);
+    });
+    return busy;
+}
+
+function freeTeachersForPeriod(period, classId) {
+    const busy = busyMapForPeriod(period, classId);
+    return teachers.value.filter((t) => !busy.has(t.id));
+}
+
+function busyTeachersForPeriod(period, classId) {
+    const busy = busyMapForPeriod(period, classId);
+    return teachers.value
+        .filter((t) => busy.has(t.id))
+        .map((t) => ({ ...t, busyIn: (busy.get(t.id) || []).join(', ') }));
+}
+
+/** Free teachers for the LEISURE row (no class excluded — pure free list). */
+function leisureTeachers(period) {
+    const busy = busyMapForPeriod(period, null);
+    return teachers.value.filter((t) => !busy.has(t.id));
+}
+
+/** Class ids this teacher is assigned to on the active day + period. */
+function teacherPeriodClassIds(teacherId, period) {
+    const dayGrid = grid[activeDay.value] || {};
+    const ids = [];
+    classes.value.forEach((c) => {
+        if (dayGrid[c.id]?.[period]?.teacher_id === teacherId) ids.push(c.id);
+    });
+    return ids;
+}
+
+function teacherPeriodClassId(teacherId, period) {
+    const ids = teacherPeriodClassIds(teacherId, period);
+    return ids[0] ?? null;
+}
+
+function teacherPeriodClash(teacherId, period) {
+    const ids = teacherPeriodClassIds(teacherId, period);
+    if (ids.length < 2) return '';
+    return ids.map((id) => classes.value.find((c) => c.id === id)?.name || `#${id}`).join(' + ');
+}
+
+function teacherPeriodCount(teacherId) {
+    let n = 0;
+    periodsRange.value.forEach((p) => {
+        if (teacherPeriodClassIds(teacherId, p).length) n += 1;
+    });
+    return n;
+}
+
+/** Clear this teacher from every class in this period (active day). */
+function clearTeacherFromPeriod(teacherId, period) {
+    ensureDay(activeDay.value);
+    classes.value.forEach((c) => {
+        const cellData = grid[activeDay.value][c.id]?.[period];
+        if (!cellData || cellData.teacher_id !== teacherId) return;
+        cellData.teacher_id = null;
+        cellData.teacher_label = null;
+        // Drop orphan empty cells (no subject either).
+        if (!cellData.subject_id && !cellData.subject_label) {
+            cellData.color = null;
+        }
+    });
+}
+
+function onTeacherWiseClassChange(teacherId, period, classIdRaw) {
+    const classId = classIdRaw === '' || classIdRaw == null ? null : Number(classIdRaw);
+    ensureDay(activeDay.value);
+
+    // Remember subject from the teacher's previous slot this period (if any).
+    const prevClassId = teacherPeriodClassId(teacherId, period);
+    const prevSubjectId = prevClassId ? cell(prevClassId, period).subject_id : null;
+    const prevSubjectLabel = prevClassId ? cell(prevClassId, period).subject_label : null;
+
+    clearTeacherFromPeriod(teacherId, period);
+
+    if (!classId) return;
+
+    const target = cell(classId, period);
+    // If another teacher already had this class+period, replace them.
+    target.teacher_id = teacherId;
+    target.teacher_label = null;
+    const t = teachers.value.find((x) => x.id === teacherId);
+    if (t?.color) target.color = t.color;
+
+    // Keep subject if the class already had one; else carry over from previous slot.
+    if (!target.subject_id && !target.subject_label) {
+        target.subject_id = prevSubjectId;
+        target.subject_label = prevSubjectId ? null : prevSubjectLabel;
+    }
+}
+
+function onTeacherWiseSubjectChange(teacherId, period, subjectIdRaw) {
+    const classId = teacherPeriodClassId(teacherId, period);
+    if (!classId) return;
+    const subjectId = subjectIdRaw === '' || subjectIdRaw == null ? null : Number(subjectIdRaw);
+    const target = cell(classId, period);
+    target.subject_id = subjectId;
+    target.subject_label = null;
 }
 
 function contrastColor(hex) {

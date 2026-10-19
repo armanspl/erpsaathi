@@ -80,6 +80,19 @@
                 </ul>
             </div>
 
+            <!-- Form tabs (fields keep their values when hidden; Save sends all tabs) -->
+            <div class="sticky -top-5 z-10 -mx-5 -mt-5 flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-5 pt-3 dark:border-slate-800 dark:bg-slate-900">
+                <button
+                    v-for="t in FORM_TABS"
+                    :key="t.id"
+                    type="button"
+                    class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition"
+                    :class="formTab === t.id ? 'border-primary-600 text-primary-600 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'"
+                    @click="formTab = t.id"
+                >{{ t.label }}</button>
+            </div>
+
+            <div v-show="formTab === 'personal'" class="space-y-4">
             <!-- Identity & Academic -->
             <div>
                 <label class="form-label">Admission No</label>
@@ -106,14 +119,20 @@
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="form-label">Class</label>
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">Class</label>
+                        <button type="button" class="quick-add-btn" title="Add class" @click="openQuickAdd('class')">+</button>
+                    </div>
                     <select v-model="form.school_class_id" class="form-input" @change="form.section_id = null">
                         <option :value="null">Select class</option>
                         <option v-for="c in classesForSelectedBranch" :key="c.id" :value="c.id">{{ c.name }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="form-label">Section</label>
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">Section</label>
+                        <button type="button" class="quick-add-btn" title="Add section to the selected class" @click="openQuickAdd('section')">+</button>
+                    </div>
                     <select v-model="form.section_id" class="form-input">
                         <option :value="null">Select section</option>
                         <option v-for="s in sectionsForSelectedClass" :key="s.id" :value="s.id">{{ s.name }}</option>
@@ -231,6 +250,9 @@
                     <input v-model="form.admission_date" type="date" class="form-input" />
                 </div>
             </div>
+            </div>
+
+            <div v-show="formTab === 'fees'" class="space-y-4">
             <div>
                 <label class="form-label">Fee Months <span v-if="feeMonths.sessionName" class="font-normal text-slate-400">— session {{ feeMonths.sessionName }}</span></label>
                 <p class="mb-2 text-xs text-slate-400">
@@ -257,12 +279,22 @@
                     <p v-if="!feeMonths.rows.length" class="px-3 py-2 text-xs text-slate-400">No session months — set academic sessions in Settings.</p>
                 </div>
             </div>
+            <div>
+                <label class="form-label">Opening Balance</label>
+                <input v-model.number="form.opening_balance" type="number" step="0.01" class="form-input" />
+                <p class="mt-1 text-xs text-slate-400">Historical reference only — the ERP computes the student's real fee balance live from Fee Structure and Payments.</p>
+            </div>
+            </div>
 
+            <div v-show="formTab === 'personal'" class="space-y-4">
             <!-- Family -->
             <h4 class="form-section-heading">Family</h4>
             <div class="grid grid-cols-3 gap-3">
                 <div>
-                    <label class="form-label">Father</label>
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">Father</label>
+                        <button type="button" class="quick-add-btn" title="Add father" @click="openQuickAdd('father')">+</button>
+                    </div>
                     <SearchableSelect
                         v-model="form.father_id"
                         :options="parentOptions"
@@ -271,7 +303,10 @@
                     />
                 </div>
                 <div>
-                    <label class="form-label">Mother</label>
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">Mother</label>
+                        <button type="button" class="quick-add-btn" title="Add mother" @click="openQuickAdd('mother')">+</button>
+                    </div>
                     <SearchableSelect
                         v-model="form.mother_id"
                         :options="parentOptions"
@@ -289,7 +324,7 @@
                     />
                 </div>
             </div>
-            <p class="text-xs text-slate-400">Need to add a new parent first? Go to People &gt; Parents.</p>
+            <p class="text-xs text-slate-400">Parent not in the list? Use <span class="font-semibold">+</span> to add one.</p>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="form-label">House</label>
@@ -300,7 +335,9 @@
                     <input v-model="form.family" type="text" class="form-input" />
                 </div>
             </div>
+            </div>
 
+            <div v-show="formTab === 'transport'" class="space-y-4">
             <!-- Transport -->
             <h4 class="form-section-heading">Transport</h4>
             <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
@@ -309,14 +346,20 @@
             </label>
             <div v-if="transportForm.apply" class="space-y-3">
                 <div>
-                    <label class="form-label">Route</label>
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">Route</label>
+                        <button type="button" class="quick-add-btn" title="Add route" @click="openQuickAdd('route')">+</button>
+                    </div>
                     <select v-model.number="transportForm.route_id" class="form-input" @change="onTransportRouteChange">
                         <option :value="null">Select route</option>
                         <option v-for="r in transportRoutes" :key="r.id" :value="r.id">{{ r.name }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="form-label">Stop / Address</label>
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">Stop / Address</label>
+                        <button type="button" class="quick-add-btn" title="Add stop to the selected route" @click="openQuickAdd('stop')">+</button>
+                    </div>
                     <select v-model.number="transportForm.route_stop_id" class="form-input" :disabled="!transportForm.route_id">
                         <option :value="null">Select stop</option>
                         <option v-for="s in transportStopsForRoute" :key="s.id" :value="s.id">
@@ -363,7 +406,9 @@
                     </select>
                 </div>
             </div>
+            </div>
 
+            <div v-show="formTab === 'personal'" class="space-y-4">
             <!-- Health -->
             <h4 class="form-section-heading">Health</h4>
             <div class="grid grid-cols-2 gap-3">
@@ -442,7 +487,9 @@
                     />
                 </div>
             </template>
+            </div>
 
+            <div v-show="formTab === 'documents'" class="space-y-4">
             <!-- Admission & Documents -->
             <h4 class="form-section-heading">Admission &amp; Documents</h4>
             <div class="grid grid-cols-2 gap-3">
@@ -481,9 +528,11 @@
                 <label class="form-label">Remarks 2</label>
                 <input v-model="form.remarks_2" type="text" class="form-input" />
             </div>
+            </div>
 
-            <!-- IDs & Financial -->
-            <h4 class="form-section-heading">IDs &amp; Financial</h4>
+            <div v-show="formTab === 'personal'" class="space-y-4">
+            <!-- IDs -->
+            <h4 class="form-section-heading">IDs</h4>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="form-label">Student ID</label>
@@ -508,12 +557,9 @@
                 <label class="form-label">GR No.</label>
                 <input v-model="form.gr_no" type="text" class="form-input" />
             </div>
-            <div>
-                <label class="form-label">Opening Balance</label>
-                <input v-model.number="form.opening_balance" type="number" step="0.01" class="form-input" />
-                <p class="mt-1 text-xs text-slate-400">Historical reference only — the ERP computes the student's real fee balance live from Fee Structure and Payments.</p>
             </div>
 
+            <div v-show="formTab === 'documents'" class="space-y-4">
             <!-- Documents -->
             <details class="rounded-lg border border-slate-100 dark:border-slate-800" open>
                 <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300">Documents</summary>
@@ -538,7 +584,9 @@
                     </div>
                 </div>
             </details>
+            </div>
 
+            <div v-show="formTab === 'personal'" class="space-y-4">
             <!-- Additional Fields -->
             <details class="rounded-lg border border-slate-100 dark:border-slate-800">
                 <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300">Additional Fields (1–10)</summary>
@@ -549,12 +597,119 @@
                     </div>
                 </div>
             </details>
+            </div>
 
             <template #footer>
                 <button type="button" class="btn-outline" @click="drawerOpen = false">Cancel</button>
                 <button type="button" class="btn-primary" :disabled="saving" @click="save">{{ saving ? 'Saving...' : 'Save' }}</button>
             </template>
         </SlideOver>
+
+        <!-- Quick add (Class / Section / Father / Mother / Route / Stop) from the student form -->
+        <div v-if="quickAdd.type" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-slate-900/40" @click="!quickAdd.saving && closeQuickAdd()" />
+            <form class="relative w-full max-w-md space-y-3 rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900" @submit.prevent="saveQuickAdd">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-semibold text-slate-800 dark:text-slate-100">{{ QUICK_ADD_TITLES[quickAdd.type] }}</h3>
+                    <button type="button" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="closeQuickAdd">×</button>
+                </div>
+
+                <template v-if="quickAdd.type === 'class'">
+                    <div>
+                        <label class="form-label">Class name *</label>
+                        <input v-model="quickAdd.fields.name" type="text" class="form-input" placeholder="e.g. Nursery" required />
+                    </div>
+                    <div>
+                        <label class="form-label">Capacity</label>
+                        <input v-model.number="quickAdd.fields.capacity" type="number" min="1" class="form-input" />
+                    </div>
+                </template>
+
+                <template v-else-if="quickAdd.type === 'section'">
+                    <div>
+                        <label class="form-label">Class *</label>
+                        <select v-model="quickAdd.fields.school_class_id" class="form-input" required>
+                            <option :value="null">Select class</option>
+                            <option v-for="c in classesForSelectedBranch" :key="c.id" :value="c.id">{{ c.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Section name *</label>
+                        <input v-model="quickAdd.fields.name" type="text" class="form-input" placeholder="e.g. A" required />
+                    </div>
+                    <div>
+                        <label class="form-label">Capacity</label>
+                        <input v-model.number="quickAdd.fields.capacity" type="number" min="1" class="form-input" />
+                    </div>
+                </template>
+
+                <template v-else-if="quickAdd.type === 'father' || quickAdd.type === 'mother'">
+                    <div>
+                        <label class="form-label">{{ quickAdd.type === 'father' ? "Father's" : "Mother's" }} name *</label>
+                        <input v-model="quickAdd.fields.name" type="text" class="form-input" required />
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="form-label">Phone</label>
+                            <input v-model="quickAdd.fields.phone" type="text" class="form-input" />
+                        </div>
+                        <div>
+                            <label class="form-label">Occupation</label>
+                            <input v-model="quickAdd.fields.occupation" type="text" class="form-input" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label">Email</label>
+                        <input v-model="quickAdd.fields.email" type="email" class="form-input" />
+                    </div>
+                </template>
+
+                <template v-else-if="quickAdd.type === 'route'">
+                    <div>
+                        <label class="form-label">Route name *</label>
+                        <input v-model="quickAdd.fields.name" type="text" class="form-input" required />
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="form-label">Start point</label>
+                            <input v-model="quickAdd.fields.start_point" type="text" class="form-input" />
+                        </div>
+                        <div>
+                            <label class="form-label">End point</label>
+                            <input v-model="quickAdd.fields.end_point" type="text" class="form-input" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label">Route code</label>
+                        <input v-model="quickAdd.fields.route_code" type="text" class="form-input" />
+                    </div>
+                </template>
+
+                <template v-else-if="quickAdd.type === 'stop'">
+                    <div>
+                        <label class="form-label">Route *</label>
+                        <select v-model.number="quickAdd.fields.route_id" class="form-input" required>
+                            <option :value="null">Select route</option>
+                            <option v-for="r in transportRoutes" :key="r.id" :value="r.id">{{ r.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Stop name / address *</label>
+                        <input v-model="quickAdd.fields.stop_name" type="text" class="form-input" required />
+                    </div>
+                    <div>
+                        <label class="form-label">Monthly fare (₹)</label>
+                        <input v-model.number="quickAdd.fields.fare" type="number" min="0" step="0.01" class="form-input" />
+                    </div>
+                </template>
+
+                <p v-if="quickAdd.error" class="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/20 dark:text-rose-200">{{ quickAdd.error }}</p>
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" class="btn-outline" :disabled="quickAdd.saving" @click="closeQuickAdd">Cancel</button>
+                    <button type="submit" class="btn-primary" :disabled="quickAdd.saving">{{ quickAdd.saving ? 'Saving...' : 'Add' }}</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Detail view -->
@@ -721,6 +876,100 @@ const parentOptions = computed(() => parents.value.map((parent) => ({
 })));
 const branches = ref([]);
 const branchOptions = computed(() => branches.value.map((b) => ({ value: b.id, label: b.name })));
+
+// Add / Edit form tabs.
+const FORM_TABS = [
+    { id: 'personal', label: 'Personal Details' },
+    { id: 'fees', label: 'Fee Setup' },
+    { id: 'transport', label: 'Transport' },
+    { id: 'documents', label: 'Documents' },
+];
+const formTab = ref('personal');
+
+// "+" quick add next to Class / Section / Father / Mother / Route / Stop — saves through the
+// same APIs as their own pages, then selects the new record in the student form.
+const QUICK_ADD_TITLES = {
+    class: 'Add Class',
+    section: 'Add Section',
+    father: 'Add Father',
+    mother: 'Add Mother',
+    route: 'Add Transport Route',
+    stop: 'Add Stop',
+};
+const quickAdd = reactive({ type: null, fields: {}, saving: false, error: '' });
+
+function openQuickAdd(type) {
+    const defaults = {
+        class: { name: '', capacity: null },
+        section: { school_class_id: form.school_class_id ?? null, name: '', capacity: null },
+        father: { name: '', phone: '', email: '', occupation: '' },
+        mother: { name: '', phone: '', email: '', occupation: '' },
+        route: { name: '', start_point: '', end_point: '', route_code: '' },
+        stop: { route_id: transportForm.route_id ?? null, stop_name: '', fare: null },
+    };
+    quickAdd.type = type;
+    quickAdd.fields = defaults[type];
+    quickAdd.error = '';
+    quickAdd.saving = false;
+}
+
+function closeQuickAdd() {
+    quickAdd.type = null;
+}
+
+/** Sends only filled-in values, so optional fields are left to the server's defaults. */
+function filledFields(fields) {
+    return Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== null && v !== ''));
+}
+
+async function saveQuickAdd() {
+    const type = quickAdd.type;
+    const f = quickAdd.fields;
+    quickAdd.saving = true;
+    quickAdd.error = '';
+    try {
+        if (type === 'class') {
+            const { data } = await client.post('/academics/classes', filledFields(f));
+            classes.value = [...classes.value, data];
+            form.school_class_id = data.id;
+            form.section_id = null;
+        } else if (type === 'section') {
+            const { data } = await client.post('/academics/sections', filledFields(f));
+            sections.value = [...sections.value, data];
+            form.school_class_id = data.school_class_id;
+            form.section_id = data.id;
+        } else if (type === 'father' || type === 'mother') {
+            const { data } = await client.post('/people/parents', filledFields(f));
+            parents.value = [...parents.value, data];
+            form[`${type}_id`] = data.id;
+        } else if (type === 'route') {
+            const { data } = await client.post('/transport/routes', filledFields({
+                ...f,
+                branch_id: form.branch_id ?? null,
+                status: 'Active',
+            }));
+            transportRoutes.value = [...transportRoutes.value, { ...data, stops: [] }];
+            transportForm.route_id = data.id;
+            transportForm.route_stop_id = null;
+        } else if (type === 'stop') {
+            const onRoute = transportStops.value.filter((s) => s.route_id === f.route_id);
+            const nextSeq = onRoute.reduce((max, s) => Math.max(max, Number(s.sequence_no) || 0), 0) + 1;
+            const { data } = await client.post('/transport/stops', filledFields({ ...f, sequence_no: nextSeq }));
+            transportStops.value = [...transportStops.value, { ...data, route_id: data.route_id ?? f.route_id }];
+            transportForm.route_id = data.route_id ?? f.route_id;
+            transportForm.route_stop_id = data.id;
+        }
+        pushToast(`${QUICK_ADD_TITLES[type].replace('Add ', '')} added.`, 'success');
+        closeQuickAdd();
+    } catch (e) {
+        const errors = e?.response?.data?.errors;
+        quickAdd.error = (errors && Object.values(errors).flat()[0])
+            || e?.response?.data?.message
+            || 'Could not save. Please check the details and try again.';
+    } finally {
+        quickAdd.saving = false;
+    }
+}
 
 const formErrors = ref({});
 const firstErrors = computed(() => {
@@ -1171,6 +1420,7 @@ function openAdd() {
     Object.assign(form, blankForm());
     resetFeeMonthsForNew();
     formErrors.value = {};
+    formTab.value = 'personal';
     drawerOpen.value = true;
     ensureTransportCatalog();
 }
@@ -1246,6 +1496,7 @@ async function openEdit(student) {
     resetDocumentPicks();
     fillFormFromStudent(student);
     formErrors.value = {};
+    formTab.value = 'personal';
     drawerOpen.value = true;
 
     const studentId = student.id;
@@ -1334,6 +1585,12 @@ async function save() {
         const validationErrors = error?.response?.data?.errors;
         if (validationErrors && typeof validationErrors === 'object') {
             formErrors.value = validationErrors;
+            // Show the tab holding the first problem field.
+            const first = Object.keys(validationErrors)[0] || '';
+            formTab.value = first.startsWith('transport') ? 'transport'
+                : first.startsWith('fee_months') || first === 'opening_balance' ? 'fees'
+                    : /^(documents?|form_no|scholarship_no|discontinue_date|remarks_)/.test(first) ? 'documents'
+                        : 'personal';
         }
     } finally {
         saving.value = false;
@@ -1383,3 +1640,24 @@ async function onRowAction({ type, row }) {
     pushToast(`${type[0].toUpperCase()}${type.slice(1)} — demo action on "${row.name}".`, 'info');
 }
 </script>
+
+<style scoped>
+/* "+" quick-add button beside a form label (Class, Section, Father, Mother, Route, Stop). */
+.quick-add-btn {
+    display: inline-flex;
+    height: 1.25rem;
+    width: 1.25rem;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.25rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(203 213 225);
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1;
+    color: rgb(37 99 235);
+}
+.quick-add-btn:hover {
+    background: rgb(239 246 255);
+}
+</style>
