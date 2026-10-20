@@ -1006,6 +1006,8 @@ class GlobalWorkbookImportController extends Controller
                         $stats['fees_discount_cleared']++;
                         $hadAny = true;
                     }
+                    // Clear any discount we previously stamped onto this student's receipts.
+                    $this->stampFeesDiscountOnPayments((int) $studentId, (int) $headId, null);
 
                     continue;
                 }
@@ -1014,23 +1016,24 @@ class GlobalWorkbookImportController extends Controller
                 if ($existing) {
                     if ($existing->type === 'fixed' && abs((float) $existing->value - $amount) < 0.005) {
                         $stats['fees_discount_unchanged']++;
-
-                        continue;
+                    } else {
+                        $existing->update(['type' => 'fixed', 'value' => $amount]);
+                        $stats['fees_discount_applied']++;
                     }
-                    $existing->update(['type' => 'fixed', 'value' => $amount]);
+                } else {
+                    FeeDiscount::create([
+                        'student_id' => $studentId,
+                        'fee_head_id' => $headId,
+                        'type' => 'fixed',
+                        'value' => $amount,
+                        'reason' => self::FEES_DISCOUNT_REASON,
+                    ]);
                     $stats['fees_discount_applied']++;
-
-                    continue;
                 }
 
-                FeeDiscount::create([
-                    'student_id' => $studentId,
-                    'fee_head_id' => $headId,
-                    'type' => 'fixed',
-                    'value' => $amount,
-                    'reason' => self::FEES_DISCOUNT_REASON,
-                ]);
-                $stats['fees_discount_applied']++;
+                // Stamp onto Fee Paid receipt lines so Discount / Final Amount show the concession
+                // (structure FeeDiscount alone only reduces due — it does not appear on receipts).
+                $this->stampFeesDiscountOnPayments((int) $studentId, (int) $headId, $amount);
             }
 
             if ($hadAny) {
@@ -1083,6 +1086,85 @@ class GlobalWorkbookImportController extends Controller
         }
 
         return trim((string) $value);
+    }
+
+    /**
+     * Put a FEES DISCOUNT amount onto the student's receipt line(s) for that fee head so Fee Paid
+     * shows Discount / Final Amount. Cash collected (payment.amount / item.amount) is unchanged —
+     * only item.discount is set (tagged discount_source=fees_discount for safe re-import clears).
+     */
+    private function stampFeesDiscountOnPayments(int $studentId, int $headId, ?float $discountAmount): void
+    {
+        $payments = FeePayment::query()
+            ->where('student_id', $studentId)
+            ->where(function ($q) {
+                $q->whereNull('status')->orWhereNotIn('status', ['Rolled Back', 'Refunded']);
+            })
+            ->orderBy('payment_date')
+            ->orderBy('id')
+            ->get(['id', 'items', 'discount_amount']);
+
+        if ($payments->isEmpty()) {
+            return;
+        }
+
+        $clear = $discountAmount === null || $discountAmount <= 0;
+        $remaining = $clear ? 0.0 : round($discountAmount, 2);
+
+        foreach ($payments as $payment) {
+            $items = is_array($payment->items) ? $payment->items : [];
+            if ($items === []) {
+                continue;
+            }
+            $changed = false;
+            foreach ($items as $i => $item) {
+                if ((int) ($item['fee_head_id'] ?? 0) !== $headId) {
+                    continue;
+                }
+                $wasOurs = ($item['discount_source'] ?? null) === 'fees_discount';
+                $currentDisc = (float) ($item['discount'] ?? 0);
+
+                if ($clear) {
+                    if ($wasOurs) {
+                        $items[$i]['discount'] = 0;
+                        unset($items[$i]['discount_source']);
+                        $changed = true;
+                    }
+
+                    continue;
+                }
+
+                // Keep operator-entered discounts; only fill blank lines or refresh our own stamp.
+                if ($currentDisc > 0.005 && ! $wasOurs) {
+                    continue;
+                }
+
+                if ($remaining > 0.005) {
+                    $items[$i]['discount'] = $remaining;
+                    $items[$i]['discount_source'] = 'fees_discount';
+                    $remaining = 0.0;
+                    $changed = true;
+                } elseif ($wasOurs) {
+                    $items[$i]['discount'] = 0;
+                    unset($items[$i]['discount_source']);
+                    $changed = true;
+                }
+            }
+
+            if (! $changed) {
+                continue;
+            }
+
+            $sumDisc = round(array_sum(array_map(
+                static fn ($it) => (float) ($it['discount'] ?? 0),
+                $items
+            )), 2);
+
+            $payment->update([
+                'items' => array_values($items),
+                'discount_amount' => $sumDisc,
+            ]);
+        }
     }
 
     /**

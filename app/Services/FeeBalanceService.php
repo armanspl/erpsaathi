@@ -335,6 +335,27 @@ class FeeBalanceService
     }
 
     /**
+     * Structure FeeDiscount pools minus discounts already on payment items for that head
+     * (e.g. FEES DISCOUNT stamped onto receipts) so due math never counts the same ₹ twice.
+     *
+     * @param  array<int, float>  $pools
+     * @param  array<string, float>  $paidDiscounts  headKey => amount from paidByHead()
+     * @return array<int, float>
+     */
+    private function structurePoolsNetOfPayments(array $pools, array $paidDiscounts): array
+    {
+        foreach ($pools as $headId => $amount) {
+            if ((int) $headId <= 0) {
+                continue;
+            }
+            $already = (float) ($paidDiscounts[(string) $headId] ?? 0);
+            $pools[$headId] = max(0.0, (float) $amount - $already);
+        }
+
+        return $pools;
+    }
+
+    /**
      * Prefetch discount/waiver months for a cohort.
      *
      * @param  list<int>  $studentIds
@@ -663,9 +684,9 @@ class FeeBalanceService
             }
         }
 
-        $structurePools = FeeCalculator::structureDiscountPools(
-            $this->structureDiscountsFor($student),
-            $breakdown->all()
+        $structurePools = $this->structurePoolsNetOfPayments(
+            FeeCalculator::structureDiscountPools($this->structureDiscountsFor($student), $breakdown->all()),
+            $paidDiscounts
         );
 
         $coveredToward = static function (string $headKey, float $charge, ?string $monthKey = null) use (
@@ -837,9 +858,10 @@ class FeeBalanceService
 
         // fee_discounts (Fee Discounts screen / FEES DISCOUNT workbook import) — consume as a
         // per-head pool so monthly heads share a session-level concession across months.
-        $structurePools = FeeCalculator::structureDiscountPools(
-            $this->structureDiscountsFor($student),
-            $breakdown->all()
+        // Shrink by discounts already stamped on payment items so re-import doesn't double-count.
+        $structurePools = $this->structurePoolsNetOfPayments(
+            FeeCalculator::structureDiscountPools($this->structureDiscountsFor($student), $breakdown->all()),
+            $paidDiscounts
         );
 
         $normalizeFreq = static function ($row): string {
@@ -980,9 +1002,9 @@ class FeeBalanceService
         $discountByMonth = $paidInfo['discount_by_month'];
         $paidTotals = $paidInfo['totals'];
         $paidDiscounts = $paidInfo['discounts'];
-        $structurePools = FeeCalculator::structureDiscountPools(
-            $this->structureDiscountsFor($student),
-            $breakdown->all()
+        $structurePools = $this->structurePoolsNetOfPayments(
+            FeeCalculator::structureDiscountPools($this->structureDiscountsFor($student), $breakdown->all()),
+            $paidDiscounts
         );
 
         $normalizeFreq = static function ($row): string {
