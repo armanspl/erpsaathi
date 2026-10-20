@@ -25,6 +25,6 @@ class BackfillFeeStartMonths extends Command
      */
     public function handle()
     {
-        //
+        
     }
 }
