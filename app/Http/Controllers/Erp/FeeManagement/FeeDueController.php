@@ -65,7 +65,7 @@ class FeeDueController extends Controller
             'schoolClass:id,name',
             'section:id,name',
             'branch:id,name',
-            'father:id,name',
+            'father:id,name,phone',
             'mother:id,name',
             'udiseDetail:student_id,admission_type',
         ])->where('status', 'Active');
@@ -125,6 +125,7 @@ class FeeDueController extends Controller
                 'school_class' => $student->schoolClass?->name,
                 'section' => $student->section?->name,
                 'father' => $student->father?->name,
+                'father_phone' => $student->father?->phone,
                 'mother' => $student->mother?->name,
                 'scope_label' => $scopeLabel,
                 'total_fee' => round($totalFee, 2),
@@ -144,7 +145,7 @@ class FeeDueController extends Controller
         $header = ['Admission No', 'Student', 'Roll No', 'Branch', 'Class', 'Section', 'Father', 'Mother', 'Charge', 'Paid', 'Concession', 'Due'];
         $table = $rows->map(fn (array $r) => [
             $r['admission_no'], $r['name'], $r['roll_no'], $r['branch'], $r['school_class'], $r['section'],
-            $r['father'], $r['mother'], $r['total_fee'], $r['total_paid'], $r['total_discount'], $r['due'],
+            $this->fatherWithPhone($r['father'] ?? null, $r['father_phone'] ?? null), $r['mother'], $r['total_fee'], $r['total_paid'], $r['total_discount'], $r['due'],
         ])->all();
 
         return $this->streamTable($request, $header, $table, 'fee-due-automatic', 'Fee Due (Automatic) — '.$this->sessionLabel($request));
@@ -214,7 +215,7 @@ class FeeDueController extends Controller
             'student.branch:id,name',
             'student.schoolClass:id,name',
             'student.section:id,name',
-            'student.father:id,name',
+            'student.father:id,name,phone',
             'student.mother:id,name',
         ])->where('academic_session_id', $session->id);
 
@@ -259,6 +260,7 @@ class FeeDueController extends Controller
                 'school_class' => $student->schoolClass?->name,
                 'section' => $student->section?->name,
                 'father' => $student->father?->name,
+                'father_phone' => $student->father?->phone,
                 'mother' => $student->mother?->name,
                 'fee_types' => implode(', ', $feeNames),
                 'months_label' => implode('-', $months),
@@ -310,7 +312,7 @@ class FeeDueController extends Controller
             'branch:id,name',
             'schoolClass:id,name',
             'section:id,name',
-            'father:id,name',
+            'father:id,name,phone',
             'mother:id,name',
         ]);
 
@@ -396,6 +398,7 @@ class FeeDueController extends Controller
                 'admission_no' => $student->admission_no,
                 'roll_no' => $student->roll_no,
                 'father' => $student->father?->name,
+                'father_phone' => $student->father?->phone,
                 'mother' => $student->mother?->name,
                 'branch' => $student->branch?->name,
                 'class' => $student->schoolClass?->name,
@@ -438,7 +441,7 @@ class FeeDueController extends Controller
             'branch:id,name',
             'schoolClass:id,name',
             'section:id,name',
-            'father:id,name',
+            'father:id,name,phone',
             'mother:id,name',
         ]);
 
@@ -614,6 +617,7 @@ class FeeDueController extends Controller
                 'admission_no' => $student->admission_no,
                 'roll_no' => $student->roll_no,
                 'father' => $student->father?->name,
+                'father_phone' => $student->father?->phone,
                 'mother' => $student->mother?->name,
                 'branch' => $student->branch?->name,
                 'class' => $student->schoolClass?->name,
@@ -670,6 +674,7 @@ class FeeDueController extends Controller
         $remaining = round(array_sum(array_column($monthRows, 'due')), 2);
 
         $categories = $balance->categoryRows($student, $session, $monthKeys, $calc, $paidInfo);
+        $dueDetails = $this->automaticDueDetailLines($student, $session, $scope, $monthKeys, $calc, $paidInfo, $balance);
 
         $payments = FeePayment::where('student_id', $student->id)
             ->touchingSessions([$session->id])
@@ -722,10 +727,132 @@ class FeeDueController extends Controller
                 'concession' => $totalConcession,
                 'remaining_due' => $remaining,
             ],
+            'due_details' => $dueDetails,
             'months' => $monthRows,
             'categories' => $categories,
             'payments' => $payments,
         ]);
+    }
+
+    /**
+     * Outstanding automatic fee lines for the Fee Due slide-down table.
+     * Numbers every charged line, then keeps only unpaid rows (so # can skip).
+     *
+     * @param  list<string>  $monthKeys
+     * @param  array<string, mixed>  $calc
+     * @param  array{by_month: array, discount_by_month: array, totals: array, discounts: array}  $paidInfo
+     * @return list<array{sno: int, fee_name: string, fee_type: string, session: string, payment_month: string, payment_year: string, fee_amount: float}>
+     */
+    private function automaticDueDetailLines(
+        Student $student,
+        AcademicSession $session,
+        string $scope,
+        array $monthKeys,
+        array $calc,
+        array $paidInfo,
+        FeeBalanceService $balance
+    ): array {
+        $paidByMonth = $paidInfo['by_month'];
+        $discountByMonth = $paidInfo['discount_by_month'];
+        $paidTotals = $paidInfo['totals'];
+        $paidDiscounts = $paidInfo['discounts'];
+        $firstBillableMonth = $balance->firstBillableMonth($student, $session);
+        [$transportFare, $transportHeadId, $transportFeeStart] = $balance->transportFareAndHead($student);
+
+        $sessionLabel = preg_replace('/\s*-\s*/', ' - ', (string) $session->name) ?: (string) $session->name;
+        $freqLabel = static function (string $freq): string {
+            return match ($freq) {
+                'monthly' => 'Monthly',
+                'quarterly' => 'Quarterly',
+                'half_yearly' => 'Half Yearly',
+                'annual', 'yearly' => 'Yearly',
+                'one_time' => 'One Time',
+                default => ucwords(str_replace('_', ' ', $freq)),
+            };
+        };
+
+        $all = [];
+        $sno = 1;
+        foreach ($calc['breakdown'] ?? [] as $item) {
+            $freq = strtolower(str_replace(' ', '_', (string) ($item['frequency'] ?? 'one_time')));
+            $base = (float) ($item['amount'] ?? 0);
+            $name = (string) ($item['fee_head_name'] ?? 'Fee');
+            $headKey = (string) (int) ($item['fee_head_id'] ?? 0);
+            if ($base <= 0 || $headKey === '0') {
+                continue;
+            }
+
+            $push = function (string $monthKey, float $charge) use (&$all, &$sno, $name, $freq, $freqLabel, $sessionLabel, $paidByMonth, $discountByMonth, $paidTotals, $paidDiscounts, $headKey) {
+                $isPeriodic = in_array($freq, ['monthly', 'quarterly', 'half_yearly'], true);
+                $mPaid = $isPeriodic
+                    ? (float) ($paidByMonth[$headKey][$monthKey] ?? 0)
+                    : (float) ($paidTotals[$headKey] ?? 0);
+                $mDisc = $isPeriodic
+                    ? (float) ($discountByMonth[$headKey][$monthKey] ?? 0)
+                    : (float) ($paidDiscounts[$headKey] ?? 0);
+                $covered = min($charge, $mPaid + $mDisc);
+                $balanceAmt = round(max(0, $charge - $covered), 2);
+                $dt = Carbon::createFromFormat('Y-m', $monthKey);
+                $all[] = [
+                    'sno' => $sno++,
+                    'fee_name' => $name,
+                    'fee_type' => $freqLabel($freq),
+                    'session' => $sessionLabel,
+                    'payment_month' => $dt->format('F'),
+                    'payment_year' => $dt->format('Y'),
+                    'fee_amount' => round($charge, 2),
+                    'balance' => $balanceAmt,
+                    'month_key' => $monthKey,
+                ];
+            };
+
+            if ($freq === 'monthly' || $freq === 'quarterly' || $freq === 'half_yearly') {
+                $keys = $scope === 'current_month'
+                    ? (count($monthKeys) ? [end($monthKeys)] : [])
+                    : $monthKeys;
+                foreach ($keys as $key) {
+                    if (! $balance->isFeeMonth($student, $key) || ! FeeSchedule::chargesInMonth($item, $key)) {
+                        continue;
+                    }
+                    $push($key, $base);
+                }
+            } else {
+                if ($monthKeys === [] || ! $firstBillableMonth || ! in_array($firstBillableMonth, $monthKeys, true)) {
+                    continue;
+                }
+                $push($firstBillableMonth, $base);
+            }
+        }
+
+        if ($transportFare > 0 && $transportHeadId) {
+            $headKey = (string) $transportHeadId;
+            $keys = $scope === 'current_month'
+                ? (count($monthKeys) ? [end($monthKeys)] : [])
+                : $monthKeys;
+            foreach ($keys as $key) {
+                if (! $balance->transportAppliesInMonth($student, $key, $transportFeeStart)) {
+                    continue;
+                }
+                $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
+                $mDisc = (float) ($discountByMonth[$headKey][$key] ?? 0);
+                $covered = min($transportFare, $mPaid + $mDisc);
+                $balanceAmt = round(max(0, $transportFare - $covered), 2);
+                $dt = Carbon::createFromFormat('Y-m', $key);
+                $all[] = [
+                    'sno' => $sno++,
+                    'fee_name' => 'Transport',
+                    'fee_type' => 'Monthly',
+                    'session' => $sessionLabel,
+                    'payment_month' => $dt->format('F'),
+                    'payment_year' => $dt->format('Y'),
+                    'fee_amount' => round($transportFare, 2),
+                    'balance' => $balanceAmt,
+                    'month_key' => $key,
+                ];
+            }
+        }
+
+        return array_values(array_filter($all, fn (array $row) => ($row['balance'] ?? 0) > 0.0001));
     }
 
     /** Create manual fee due lines for one or more students. */
@@ -975,6 +1102,24 @@ class FeeDueController extends Controller
         return $keys;
     }
 
+    /** Father name with phone on a second line (export / print cells). */
+    private function fatherWithPhone(?string $name, ?string $phone): string
+    {
+        $name = trim((string) $name);
+        $phone = trim((string) $phone);
+        if ($name === '' && $phone === '') {
+            return '';
+        }
+        if ($phone === '') {
+            return $name;
+        }
+        if ($name === '') {
+            return $phone;
+        }
+
+        return $name."\n".$phone;
+    }
+
     private function scopeLabel(AcademicSession $session, string $scope): string
     {
         if (! $session->start_date || ! $session->end_date) {
@@ -1089,7 +1234,7 @@ class FeeDueController extends Controller
             foreach ($rows as $row) {
                 $tbody .= '<tr>';
                 foreach ($row as $cell) {
-                    $tbody .= '<td>'.$escape($cell).'</td>';
+                    $tbody .= '<td>'.nl2br($escape($cell), false).'</td>';
                 }
                 $tbody .= '</tr>';
             }

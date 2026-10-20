@@ -292,7 +292,7 @@
                 <!-- TEACHER WISE EDIT: assign class + subject per teacher per period -->
                 <div v-else class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
                     <p class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-                        Pick a class (and subject) for each teacher in each period. Free periods stay empty. Changing class moves that teacher onto that class for this period.
+                        Pick a class (and subject) for each teacher in each period. Free periods stay empty. Use Delete to clear a teacher from this whole routine (all days).
                     </p>
                     <table class="min-w-full border-collapse text-left text-xs">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
@@ -300,13 +300,16 @@
                                 <th class="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 font-semibold text-slate-500 dark:bg-slate-800">Teacher</th>
                                 <th v-for="p in periodsRange" :key="p" class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">P{{ p }}</th>
                                 <th class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">Periods</th>
+                                <th class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">Action</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-if="!teachers.length">
-                                <td :colspan="periodsRange.length + 2" class="px-3 py-6 text-center text-slate-400">No teachers found — add them under People → Teachers first.</td>
+                            <tr v-if="!teacherWiseTeachers.length">
+                                <td :colspan="periodsRange.length + 3" class="px-3 py-6 text-center text-slate-400">
+                                    {{ teachers.length ? 'All teachers were removed from this routine. Assign one under Class wise to bring them back.' : 'No teachers found — add them under People → Teachers first.' }}
+                                </td>
                             </tr>
-                            <tr v-for="t in teachers" :key="t.id">
+                            <tr v-for="t in teacherWiseTeachers" :key="t.id">
                                 <td class="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2 align-top font-medium text-slate-700 dark:bg-slate-900 dark:text-slate-200">
                                     <span
                                         class="inline-block max-w-[140px] truncate rounded px-1.5 py-0.5 text-[11px] font-semibold"
@@ -343,6 +346,16 @@
                                     </div>
                                 </td>
                                 <td class="px-2 py-2 text-center align-top text-sm font-semibold text-slate-600 dark:text-slate-300">{{ teacherPeriodCount(t.id) }}</td>
+                                <td class="px-2 py-2 text-center align-top">
+                                    <button
+                                        type="button"
+                                        class="rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-600 ring-1 ring-rose-200 transition hover:bg-rose-50 dark:text-rose-400 dark:ring-rose-500/30 dark:hover:bg-rose-500/10"
+                                        title="Remove this teacher from the whole routine (all days)"
+                                        @click="removeTeacherFromRoutine(t)"
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -463,6 +476,12 @@ const copyTargetDay = ref(null);
 const mode = ref('edit');
 // Within edit mode: class-centric grid vs teacher-centric assign grid (same underlying data).
 const editLayout = ref('class');
+/** Teachers hidden from Teacher-wise after "Delete" (still assignable via Class wise). */
+const removedFromRoutineTeacherIds = ref(new Set());
+
+const teacherWiseTeachers = computed(() =>
+    teachers.value.filter((t) => !removedFromRoutineTeacherIds.value.has(t.id))
+);
 
 function periodsForDay(dow) {
     const n = Number(dayPeriods[dow]);
@@ -564,6 +583,12 @@ function onTeacherPick(classId, period) {
     if (c.teacher_id) {
         const t = teachers.value.find((x) => x.id === c.teacher_id);
         if (t?.color && !c.color) c.color = t.color;
+        // Re-show on Teacher wise if they were deleted earlier.
+        if (removedFromRoutineTeacherIds.value.has(c.teacher_id)) {
+            const next = new Set(removedFromRoutineTeacherIds.value);
+            next.delete(c.teacher_id);
+            removedFromRoutineTeacherIds.value = next;
+        }
     }
 }
 
@@ -653,6 +678,38 @@ function clearTeacherFromPeriod(teacherId, period) {
             cellData.color = null;
         }
     });
+}
+
+/** Remove teacher from every day/period in this routine and hide them on Teacher wise. */
+function removeTeacherFromRoutine(teacher) {
+    if (!teacher?.id) return;
+    if (!window.confirm(`Remove ${teacher.name} from this routine? Their assignments on all days will be cleared.`)) {
+        return;
+    }
+    const teacherId = teacher.id;
+    DAYS.forEach((d) => {
+        ensureDay(d.dow);
+        const maxP = periodsForDay(d.dow);
+        classes.value.forEach((c) => {
+            for (let p = 1; p <= maxP; p++) {
+                const cellData = grid[d.dow]?.[c.id]?.[p];
+                if (!cellData) continue;
+                if (cellData.teacher_id === teacherId) {
+                    cellData.teacher_id = null;
+                    cellData.teacher_label = null;
+                    if (!cellData.subject_id && !cellData.subject_label) {
+                        cellData.color = null;
+                    }
+                } else if (cellData.teacher_label && String(cellData.teacher_label).toLowerCase() === String(teacher.name || '').toLowerCase()) {
+                    cellData.teacher_label = null;
+                }
+            }
+        });
+    });
+    const next = new Set(removedFromRoutineTeacherIds.value);
+    next.add(teacherId);
+    removedFromRoutineTeacherIds.value = next;
+    pushToast(`${teacher.name} removed from this routine.`, 'success');
 }
 
 function onTeacherWiseClassChange(teacherId, period, classIdRaw) {
@@ -855,6 +912,7 @@ function daysFromServer(daysData, periodsByDayMap = null) {
 async function openSheet(sheet, openMode = 'edit') {
     editingSheet.value = sheet;
     mode.value = openMode;
+    removedFromRoutineTeacherIds.value = new Set();
     sheetsLoading.value = true;
     try {
         await loadLookups();
@@ -878,6 +936,7 @@ function closeEdit() {
     view.value = 'list';
     editingSheet.value = null;
     importWarnings.value = null;
+    removedFromRoutineTeacherIds.value = new Set();
     loadSheets();
 }
 

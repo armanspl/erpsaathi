@@ -554,6 +554,7 @@ class DocumentDataBuilder
             'receipt_date' => $duePayload['printed_at'] ?? now()->format('j M Y'),
             'student_name' => $student['name'] ?? '',
             'father_name' => $student['father'] ?? '',
+            'father_phone' => trim((string) ($student['father_phone'] ?? '')),
             'mother_name' => $student['mother'] ?? '',
             'roll_number' => $student['roll_no'] ?? '',
             'admission_id' => $student['admission_no'] ?? '',

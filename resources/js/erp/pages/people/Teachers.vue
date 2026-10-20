@@ -14,7 +14,7 @@
                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
                     Export
                 </button>
-                <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="exportingProfiles" title="SALARY DETAILS + STAFF DETAILS workbook, re-importable from Salary Sheet" @click="exportProfiles">
+                <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="exportingProfiles" title="STAFF DETAILS workbook, re-importable from Employee Master Import" @click="exportProfiles">
                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
                     {{ exportingProfiles ? 'Exporting...' : 'Export profiles (Excel)' }}
                 </button>
@@ -78,7 +78,6 @@
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('name')">Name {{ sortArrow('name') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('phone')">Phone {{ sortArrow('phone') }}</th>
                             <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('email')">Email {{ sortArrow('email') }}</th>
-                            <th class="cursor-pointer whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" @click="toggleSort('salary')">Salary {{ sortArrow('salary') }}</th>
                             <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Assigned</th>
                             <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Class head</th>
                             <th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Assistance teacher</th>
@@ -98,7 +97,6 @@
                             </td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ t.phone || '—' }}</td>
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ t.email || '—' }}</td>
-                            <td class="px-4 py-3 text-slate-700 dark:text-slate-200">{{ t.salary != null ? Number(t.salary).toLocaleString('en-IN') : '—' }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ (t.class_assignments || []).length }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ assignmentLabel(t, 'head') }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ assignmentLabel(t, 'assistant') }}</td>
@@ -146,7 +144,6 @@
                             <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset" :class="statusBadgeClass(t.status)">{{ t.status }}</span>
                         </div>
                         <p class="mt-2 text-xs text-slate-500">{{ t.phone || '—' }} · {{ t.email || '—' }}</p>
-                        <p class="text-xs text-slate-400">Salary: {{ t.salary != null ? Number(t.salary).toLocaleString('en-IN') : '—' }}</p>
                         <button type="button" class="btn-outline mt-3 !py-1 !text-xs" @click="openView(t)">View details</button>
                     </div>
                 </div>
@@ -205,10 +202,6 @@
                     <div>
                         <label class="form-label">Email (Gmail)</label>
                         <input v-model="form.email" type="email" class="form-input" placeholder="name@gmail.com" />
-                    </div>
-                    <div>
-                        <label class="form-label">Basic salary (present)</label>
-                        <input v-model="form.salary" type="number" min="0" step="0.01" class="form-input" placeholder="₹" />
                     </div>
                     <div>
                         <label class="form-label">Status</label>
@@ -385,7 +378,7 @@ const sortDir = ref('asc');
 
 const formOpen = ref(false);
 const editing = ref(null);
-const form = reactive({ employee_id: '', name: '', phone: '', email: '', salary: '', status: 'active', school_class_id: null });
+const form = reactive({ employee_id: '', name: '', phone: '', email: '', status: 'active', school_class_id: null });
 const profile = reactive(emptyProfile());
 const signatureInput = ref(null);
 const signatureFile = ref(null);
@@ -419,7 +412,7 @@ async function exportProfiles() {
     try {
         await downloadStaffProfiles({ type: 'teacher' });
     } catch (err) {
-        pushToast(err?.response?.status === 403 ? 'You do not have permission to export profiles (Salary Sheet → Export).' : 'Could not export profiles.', 'error');
+        pushToast(err?.response?.status === 403 ? 'You do not have permission to export profiles.' : 'Could not export profiles.', 'error');
     } finally {
         exportingProfiles.value = false;
     }
@@ -550,7 +543,7 @@ async function syncSignature(teacherId) {
 
 function openAdd() {
     editing.value = null;
-    Object.assign(form, { employee_id: '', name: '', phone: '', email: '', salary: '', status: 'active', school_class_id: null });
+    Object.assign(form, { employee_id: '', name: '', phone: '', email: '', status: 'active', school_class_id: null });
     Object.assign(profile, emptyProfile());
     resetSignatureState();
     formOpen.value = true;
@@ -563,7 +556,6 @@ function openEdit(teacher) {
         name: teacher.name,
         phone: teacher.phone || '',
         email: teacher.email || '',
-        salary: teacher.salary ?? '',
         status: teacher.status,
         school_class_id: teacher.school_class_id,
     });
@@ -579,7 +571,7 @@ async function save() {
     }
     saving.value = true;
     try {
-        const payload = { ...form, salary: form.salary === '' ? null : form.salary, profile: { ...profile } };
+        const payload = { ...form, profile: { ...profile } };
         let response;
         if (editing.value) {
             response = await client.put(`/people/teachers/${editing.value.id}`, payload);
@@ -683,13 +675,12 @@ async function saveFields() {
 }
 
 function exportCsv() {
-    const lines = [['Name', 'Phone', 'Email', 'Salary', 'Assigned', 'Class head', 'Assistance teacher', 'Custom fields', 'Status']];
+    const lines = [['Name', 'Phone', 'Email', 'Assigned', 'Class head', 'Assistance teacher', 'Custom fields', 'Status']];
     filtered.value.forEach((t) => {
         lines.push([
             t.name,
             t.phone || '',
             t.email || '',
-            t.salary ?? '',
             (t.class_assignments || []).length,
             assignmentLabel(t, 'head'),
             assignmentLabel(t, 'assistant'),

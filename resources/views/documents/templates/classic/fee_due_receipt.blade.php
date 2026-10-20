@@ -69,7 +69,12 @@
             <td style="width: 37%;"><span class="doc-label">Receipt No.</span> <span class="doc-value">{{ $receipt_no }}</span></td>
         </tr>
         <tr>
-            <td><span class="doc-label">Father:</span> <span class="doc-value">{{ $father_name }}</span></td>
+            <td>
+                <span class="doc-label">Father:</span> <span class="doc-value">{{ $father_name }}</span>
+                @if(!empty($father_phone))
+                    <br><span class="doc-value">{{ $father_phone }}</span>
+                @endif
+            </td>
             <td><span class="doc-label">Date:</span> <span class="doc-value">{{ $receipt_date }}</span></td>
         </tr>
         <tr>

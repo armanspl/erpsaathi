@@ -2,7 +2,10 @@
     <!-- Same columns as the SALARY DETAILS / STAFF DETAILS Excel sheets; saved as profile fields. -->
     <div class="space-y-4">
         <section>
-            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Job details <span class="normal-case tracking-normal text-slate-300 dark:text-slate-500">(SALARY DETAILS)</span></h3>
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Job details
+                <span v-if="type !== 'teacher'" class="normal-case tracking-normal text-slate-300 dark:text-slate-500">(SALARY DETAILS)</span>
+            </h3>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                     <label class="form-label">Post / Designation</label>
@@ -31,7 +34,7 @@
                         </datalist>
                     </div>
                 </template>
-                <div>
+                <div v-if="type !== 'teacher'">
                     <label class="form-label">Basic salary at the time of joining</label>
                     <input v-model="profile.joining_salary" type="number" min="0" step="1" class="form-input" placeholder="₹" />
                 </div>

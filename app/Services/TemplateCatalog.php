@@ -302,6 +302,7 @@ class TemplateCatalog
             ['receipt_date', 'Receipt date', false],
             ['student_name', 'Student name', true],
             ['father_name', 'Father name', false],
+            ['father_phone', 'Father phone', false],
             ['mother_name', 'Mother name', false],
             ['roll_number', 'Roll number', false],
             ['admission_id', 'Admission ID', false],
@@ -571,7 +572,7 @@ class TemplateCatalog
         'fee_due_receipt' => [
             'school_name' => 'Springfield Public School', 'receipt_title' => 'Fee Due Receipt',
             'receipt_no' => 'DUE-ADM20260142-20260731', 'receipt_date' => '',
-            'student_name' => 'Aarav Sharma', 'father_name' => 'Rajesh Sharma', 'mother_name' => 'Sunita Sharma',
+            'student_name' => 'Aarav Sharma', 'father_name' => 'Rajesh Sharma', 'father_phone' => '9876543210', 'mother_name' => 'Sunita Sharma',
             'roll_number' => '23', 'admission_id' => 'ADM/2026/0142', 'class' => '8', 'section' => 'A',
             'due_table' => '<div class="dues-flow">'
                 .'<div class="dues-group"><span class="dues-month">APR 2026</span><span class="dues-fees"><span class="dues-chip"><span class="dues-name">Admission</span> <span class="dues-amt">₹3,500</span></span><span class="dues-sep">|</span><span class="dues-chip"><span class="dues-name">Session</span> <span class="dues-amt">₹4,500</span></span></span></div>'

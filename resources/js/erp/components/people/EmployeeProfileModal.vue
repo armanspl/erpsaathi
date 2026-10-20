@@ -181,10 +181,12 @@ const sections = computed(() => {
             { label: 'Vehicle No', value: p.vehicle_no },
         );
     }
-    job.push(
-        { label: 'Basic salary (present)', value: money(p.salary) },
-        { label: 'Basic salary at joining', value: money(f['basic salary at joining']) },
-    );
+    if (props.type !== 'teacher') {
+        job.push(
+            { label: 'Basic salary (present)', value: money(p.salary) },
+            { label: 'Basic salary at joining', value: money(f['basic salary at joining']) },
+        );
+    }
 
     const list = [
         {

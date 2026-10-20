@@ -132,27 +132,77 @@
                             <tr v-if="!autoRows.length">
                                 <td colspan="10" class="px-4 py-12 text-center text-slate-400">No automatic dues match these filters.</td>
                             </tr>
-                            <tr v-for="r in pagedAutoRows" :key="r.student_id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                <td class="px-3 py-3 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
-                                <td class="px-3 py-3">
-                                    <p class="font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</p>
-                                    <p class="text-xs text-slate-400">{{ [r.branch, r.school_class, r.section].filter(Boolean).join(' · ') }}</p>
-                                    <p v-if="r.scope_label" class="text-[11px] text-slate-400">{{ r.scope_label }}</p>
-                                </td>
-                                <td class="px-3 py-3 text-slate-500">{{ r.roll_no || '—' }}</td>
-                                <td class="px-3 py-3 text-slate-500">{{ r.father || '—' }}</td>
-                                <td class="px-3 py-3 text-slate-500">{{ r.mother || '—' }}</td>
-                                <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_fee) }}</td>
-                                <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_paid) }}</td>
-                                <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_discount) }}</td>
-                                <td class="px-3 py-3 font-semibold text-teal-600">₹{{ money(r.due) }}</td>
-                                <td class="px-3 py-3 text-right">
-                                    <div class="flex justify-end gap-1.5">
-                                        <button type="button" class="btn-outline !py-1 !text-xs" @click="openAutoDetail(r.student_id)">Details</button>
-                                        <button type="button" class="btn-primary !py-1 !text-xs" @click="openDueReceipt(r.student_id, 'automatic')">Receipt</button>
-                                    </div>
-                                </td>
-                            </tr>
+                            <template v-for="r in pagedAutoRows" :key="r.student_id">
+                                <tr
+                                    class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                                    :class="expandedAutoId === r.student_id ? 'bg-slate-50/80 dark:bg-slate-800/30' : ''"
+                                    @click="toggleAutoExpand(r.student_id)"
+                                >
+                                    <td class="px-3 py-3 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
+                                    <td class="px-3 py-3">
+                                        <p class="font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</p>
+                                        <p class="text-xs text-slate-400">{{ [r.branch, r.school_class, r.section].filter(Boolean).join(' · ') }}</p>
+                                        <p v-if="r.scope_label" class="text-[11px] text-slate-400">{{ r.scope_label }}</p>
+                                    </td>
+                                    <td class="px-3 py-3 text-slate-500">{{ r.roll_no || '—' }}</td>
+                                    <td class="px-3 py-3 text-slate-500">
+                                        <p>{{ r.father || '—' }}</p>
+                                        <p v-if="r.father_phone" class="mt-0.5 text-xs tabular-nums text-slate-400">{{ r.father_phone }}</p>
+                                    </td>
+                                    <td class="px-3 py-3 text-slate-500">{{ r.mother || '—' }}</td>
+                                    <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_fee) }}</td>
+                                    <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_paid) }}</td>
+                                    <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_discount) }}</td>
+                                    <td class="px-3 py-3 font-semibold text-teal-600">₹{{ money(r.due) }}</td>
+                                    <td class="px-3 py-3 text-right" @click.stop>
+                                        <div class="flex justify-end gap-1.5">
+                                            <button type="button" class="btn-outline !py-1 !text-xs" @click="toggleAutoExpand(r.student_id)">
+                                                {{ expandedAutoId === r.student_id ? 'Hide' : 'Details' }}
+                                            </button>
+                                            <button type="button" class="btn-primary !py-1 !text-xs" @click="openDueReceipt(r.student_id, 'automatic')">Receipt</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr v-if="expandedAutoId === r.student_id">
+                                    <td colspan="10" class="bg-white px-4 py-4 dark:bg-slate-900">
+                                        <div class="overflow-x-auto rounded-xl border border-slate-100 px-2 py-1 dark:border-slate-800">
+                                            <p class="px-2 pt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">Fee Due Details</p>
+                                            <div v-if="autoDetailLoadingId === r.student_id" class="px-2 py-8 text-center text-sm text-slate-400">Loading...</div>
+                                            <table v-else class="w-full min-w-[720px] text-left text-sm">
+                                                <thead>
+                                                    <tr class="text-slate-700 dark:text-slate-200">
+                                                        <th class="px-3 py-2.5 text-xs font-semibold">#</th>
+                                                        <th class="px-3 py-2.5 text-xs font-semibold">Fee Name</th>
+                                                        <th class="px-3 py-2.5 text-xs font-semibold">Fee Type</th>
+                                                        <th class="px-3 py-2.5 text-xs font-semibold">Session</th>
+                                                        <th class="px-3 py-2.5 text-xs font-semibold">Payment Month</th>
+                                                        <th class="px-3 py-2.5 text-xs font-semibold">Payment Year</th>
+                                                        <th class="px-3 py-2.5 text-right text-xs font-semibold">Fee Amount</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-if="!(autoDetailCache[r.student_id]?.due_details || []).length">
+                                                        <td colspan="7" class="px-3 py-6 text-center text-slate-400">No outstanding due lines.</td>
+                                                    </tr>
+                                                    <tr
+                                                        v-for="line in (autoDetailCache[r.student_id]?.due_details || [])"
+                                                        :key="`${line.sno}-${line.month_key}-${line.fee_name}`"
+                                                        class="text-slate-600 dark:text-slate-300"
+                                                    >
+                                                        <td class="px-3 py-2.5">{{ line.sno }}</td>
+                                                        <td class="px-3 py-2.5">{{ line.fee_name }}</td>
+                                                        <td class="px-3 py-2.5">{{ line.fee_type }}</td>
+                                                        <td class="px-3 py-2.5">{{ line.session }}</td>
+                                                        <td class="px-3 py-2.5">{{ line.payment_month }}</td>
+                                                        <td class="px-3 py-2.5">{{ line.payment_year }}</td>
+                                                        <td class="px-3 py-2.5 text-right tabular-nums">{{ money(line.fee_amount) }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
                         </tbody>
                     </table>
                 </div>
@@ -459,168 +509,6 @@
             </div>
         </div>
 
-        <!-- AUTOMATIC DUE DETAIL MODAL -->
-        <div v-if="autoDetailOpen" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 pt-8">
-            <div class="w-full max-w-5xl rounded-2xl bg-white shadow-xl dark:bg-slate-900">
-                <div class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-                    <div>
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Automatic Due Detail</h2>
-                        <p v-if="autoDetail" class="mt-0.5 text-sm text-slate-500">
-                            {{ autoDetail.student.name }} · {{ autoDetail.student.admission_no }} · {{ autoDetail.student.school_class || '—' }} · {{ autoDetail.student.section || '—' }}
-                        </p>
-                    </div>
-                    <button type="button" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="closeAutoDetail">×</button>
-                </div>
-
-                <div v-if="autoDetailLoading" class="px-5 py-16 text-center text-sm text-slate-400">Loading...</div>
-                <div v-else-if="autoDetail" class="max-h-[75vh] space-y-4 overflow-y-auto px-5 py-4">
-                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total Charge</p>
-                            <p class="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">₹{{ money(autoDetail.summary.total_charge) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Paid</p>
-                            <p class="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">₹{{ money(autoDetail.summary.paid) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Concession</p>
-                            <p class="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">₹{{ money(autoDetail.summary.concession) }}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Remaining Due</p>
-                            <p class="mt-1 text-xl font-bold text-teal-600">₹{{ money(autoDetail.summary.remaining_due) }}</p>
-                        </div>
-                    </div>
-
-                    <div class="rounded-lg bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 dark:bg-teal-500/10 dark:text-teal-300">
-                        {{ autoDetail.banner }}
-                    </div>
-
-                    <div class="grid gap-4 lg:grid-cols-2">
-                        <div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                            <div class="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-                                <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Month-wise Due vs Paid</h3>
-                                <p class="text-xs text-slate-400">Current session month summaries.</p>
-                            </div>
-                            <div class="max-h-72 overflow-auto">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800">
-                                        <tr>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Month</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Charge</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Paid</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Concession</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Due</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Status</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Categories</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                                        <tr v-for="m in autoDetail.months" :key="m.month_key">
-                                            <td class="px-2 py-2 font-medium text-slate-700 dark:text-slate-200">{{ m.month }}</td>
-                                            <td class="px-2 py-2">₹{{ money(m.charge) }}</td>
-                                            <td class="px-2 py-2">₹{{ money(m.paid) }}</td>
-                                            <td class="px-2 py-2">₹{{ money(m.concession) }}</td>
-                                            <td class="px-2 py-2 font-semibold text-teal-600">₹{{ money(m.due) }}</td>
-                                            <td class="px-2 py-2">
-                                                <span
-                                                    class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                                                    :class="{
-                                                        'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300': m.status === 'Paid',
-                                                        'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300': m.status === 'Waived',
-                                                        'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300': m.status === 'Partial',
-                                                        'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300': m.status === 'Due' || !m.status,
-                                                    }"
-                                                >{{ m.status || (m.due > 0 ? 'Due' : 'Paid') }}</span>
-                                            </td>
-                                            <td class="px-2 py-2 text-slate-500">{{ m.categories }}</td>
-                                        </tr>
-                                        <tr v-if="!autoDetail.months.length">
-                                            <td colspan="7" class="px-2 py-6 text-center text-slate-400">No month rows for this scope.</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                            <div class="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-                                <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Category-wise Breakdown</h3>
-                                <p class="text-xs text-slate-400">Fee head due, paid, and concession totals.</p>
-                            </div>
-                            <div class="max-h-72 overflow-auto">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800">
-                                        <tr>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Fee Head</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Charge</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Paid</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Concession</th>
-                                            <th class="px-2 py-2 font-semibold uppercase text-slate-500">Due</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                                        <tr v-for="c in autoDetail.categories" :key="c.fee_head">
-                                            <td class="px-2 py-2 font-medium text-slate-700 dark:text-slate-200">{{ c.fee_head }}</td>
-                                            <td class="px-2 py-2">₹{{ money(c.charge) }}</td>
-                                            <td class="px-2 py-2">₹{{ money(c.paid) }}</td>
-                                            <td class="px-2 py-2">₹{{ money(c.concession) }}</td>
-                                            <td class="px-2 py-2 font-semibold text-teal-600">₹{{ money(c.due) }}</td>
-                                        </tr>
-                                        <tr v-if="!autoDetail.categories.length">
-                                            <td colspan="5" class="px-2 py-6 text-center text-slate-400">No fee heads for this student.</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                        <div class="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-                            <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Per Payment History</h3>
-                            <p class="text-xs text-slate-400">Approved payments counted in automatic due computation.</p>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left text-xs">
-                                <thead class="bg-slate-50 dark:bg-slate-800">
-                                    <tr>
-                                        <th class="px-3 py-2 font-semibold uppercase text-slate-500">Date</th>
-                                        <th class="px-3 py-2 font-semibold uppercase text-slate-500">Source</th>
-                                        <th class="px-3 py-2 font-semibold uppercase text-slate-500">Label</th>
-                                        <th class="px-3 py-2 font-semibold uppercase text-slate-500">Months</th>
-                                        <th class="px-3 py-2 font-semibold uppercase text-slate-500">Mode</th>
-                                        <th class="px-3 py-2 font-semibold uppercase text-slate-500">Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                                    <tr v-if="!autoDetail.payments.length">
-                                        <td colspan="6" class="px-3 py-8 text-center text-slate-400">No records.</td>
-                                    </tr>
-                                    <tr v-for="(p, i) in autoDetail.payments" :key="i">
-                                        <td class="px-3 py-2">{{ p.date }}</td>
-                                        <td class="px-3 py-2">{{ p.source }}</td>
-                                        <td class="px-3 py-2">{{ p.label }}</td>
-                                        <td class="px-3 py-2">{{ p.months }}</td>
-                                        <td class="px-3 py-2">{{ p.mode }}</td>
-                                        <td class="px-3 py-2 font-medium">₹{{ money(p.amount) }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
-                    <button type="button" class="btn-outline inline-flex items-center gap-1.5" :disabled="!autoDetailStudentId" @click="openDueReceipt(autoDetailStudentId, 'automatic')">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        Receipt
-                    </button>
-                    <button type="button" class="btn-primary" @click="closeAutoDetail">Close</button>
-                </div>
-            </div>
-        </div>
     </div>
 </template>
 
@@ -774,10 +662,9 @@ const collecting = ref(false);
 const createOpen = ref(false);
 const saving = ref(false);
 const feeTypes = ref([]);
-const autoDetailOpen = ref(false);
-const autoDetailLoading = ref(false);
-const autoDetail = ref(null);
-const autoDetailStudentId = ref(null);
+const expandedAutoId = ref(null);
+const autoDetailLoadingId = ref(null);
+const autoDetailCache = reactive({});
 const form = reactive({
     branch_id: null,
     school_class_id: null,
@@ -862,11 +749,14 @@ function frequencyBadge(ft) {
 function switchTab(id) {
     activeTab.value = id;
     expandedId.value = null;
+    expandedAutoId.value = null;
     scheduleReload(0);
 }
 
 function setScope(value) {
     scope.value = value;
+    expandedAutoId.value = null;
+    Object.keys(autoDetailCache).forEach((k) => delete autoDetailCache[k]);
     if (activeTab.value === 'automatic') reload();
 }
 
@@ -923,27 +813,28 @@ function openDueReceipt(studentId, type = 'manual') {
     downloadPdf(path, `fee-due-${studentId}.pdf`, params).catch(() => pushToast('Could not open due receipt PDF.', 'error'));
 }
 
-async function openAutoDetail(studentId) {
-    autoDetailStudentId.value = studentId;
-    autoDetailOpen.value = true;
-    autoDetailLoading.value = true;
-    autoDetail.value = null;
+async function toggleAutoExpand(studentId) {
+    if (expandedAutoId.value === studentId) {
+        expandedAutoId.value = null;
+        return;
+    }
+    expandedAutoId.value = studentId;
+    if (autoDetailCache[studentId]?.scope === scope.value) {
+        return;
+    }
+    autoDetailLoadingId.value = studentId;
     try {
         const { data } = await client.get(`/fee-management/due/automatic/${studentId}/detail`, {
             params: { scope: scope.value },
         });
-        autoDetail.value = data;
+        autoDetailCache[studentId] = { ...data, scope: scope.value };
     } catch {
-        autoDetailOpen.value = false;
+        delete autoDetailCache[studentId];
+        expandedAutoId.value = null;
+        pushToast('Could not load due details.', 'error');
     } finally {
-        autoDetailLoading.value = false;
+        autoDetailLoadingId.value = null;
     }
-}
-
-function closeAutoDetail() {
-    autoDetailOpen.value = false;
-    autoDetail.value = null;
-    autoDetailStudentId.value = null;
 }
 
 async function recordPayment(row) {
@@ -1231,7 +1122,7 @@ function printDues(kind) {
         head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Mother</th><th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th class="num">Due</th></tr>';
         body = rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
             <td>${esc([r.school_class, r.section].filter(Boolean).join(' / '))}</td><td>${esc(r.roll_no || '—')}</td>
-            <td>${esc(r.father || '—')}</td><td>${esc(r.mother || '—')}</td>
+            <td>${esc(r.father || '—')}${r.father_phone ? `<br><span style="font-size:9px;color:#555">${esc(r.father_phone)}</span>` : ''}</td><td>${esc(r.mother || '—')}</td>
             ${amt(r.total_fee)}${amt(r.total_paid)}${amt(r.total_discount)}<td class="num due">${money(r.due)}</td></tr>`).join('');
         foot = `<tr><td></td><td colspan="6">TOTAL (${rows.length} students)</td>${amt(sum(rows, 'total_fee'))}${amt(sum(rows, 'total_paid'))}${amt(sum(rows, 'total_discount'))}<td class="num due">${money(sum(rows, 'due'))}</td></tr>`;
     } else {

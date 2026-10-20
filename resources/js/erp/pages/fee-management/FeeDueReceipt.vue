@@ -44,7 +44,13 @@
                 <div class="mt-4 grid gap-4 border-b border-slate-200 pb-4 text-sm sm:grid-cols-2">
                     <div class="space-y-1">
                         <p><span class="text-slate-500">Student Name :</span> <strong class="uppercase">{{ receipt.student.name }}</strong></p>
-                        <p><span class="text-slate-500">Father Name :</span> <strong class="uppercase">{{ receipt.student.father || '—' }}</strong></p>
+                        <p>
+                            <span class="text-slate-500">Father Name :</span>
+                            <strong class="uppercase">{{ receipt.student.father || '—' }}</strong>
+                            <template v-if="receipt.student.father_phone">
+                                <br><strong class="tabular-nums">{{ receipt.student.father_phone }}</strong>
+                            </template>
+                        </p>
                         <p><span class="text-slate-500">Mother Name :</span> <strong class="uppercase">{{ receipt.student.mother || '—' }}</strong></p>
                     </div>
                     <div class="space-y-1 sm:text-right">

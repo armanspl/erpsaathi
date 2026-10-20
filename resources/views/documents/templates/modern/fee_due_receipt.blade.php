@@ -15,7 +15,13 @@
             <td class="doc-cell"><span class="doc-label">Class / Section</span> <span class="doc-value">{{ $class }} {{ $section }}</span></td>
         </tr>
         <tr class="doc-row">
-            <td class="doc-cell"><span class="doc-label">Father</span> <span class="doc-value">{{ $father_name }}</span></td>
+            <td class="doc-cell">
+                <span class="doc-label">Father</span>
+                <span class="doc-value">{{ $father_name }}</span>
+                @if(!empty($father_phone))
+                    <br><span class="doc-value">{{ $father_phone }}</span>
+                @endif
+            </td>
             <td class="doc-cell" colspan="2"><span class="doc-label">Mother</span> <span class="doc-value">{{ $mother_name }}</span></td>
         </tr>
     </table>
