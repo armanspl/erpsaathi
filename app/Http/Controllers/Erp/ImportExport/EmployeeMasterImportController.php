@@ -193,9 +193,8 @@ class EmployeeMasterImportController extends Controller
                     $action = 'created';
                     $created++;
                 } else {
-                    // Update the record in the table it already lives in, even if POST now
-                    // resolves elsewhere — moving people between tables would orphan attendance/pay.
-                    $type = $row['employee_type'];
+                    // Update only inside the POST-resolved table (Teacher / Staff / Driver).
+                    $type = $row['employee_type'] ?? $row['type'];
                     $model = $this->modelClass($type)::find($row['employee_id']);
                     if (! $model) {
                         $failed++;
@@ -375,9 +374,9 @@ class EmployeeMasterImportController extends Controller
     private function previewRow(array $row): array
     {
         $bio = $row['bio'] ?? null;
-        $category = $row['outcome'] === 'update'
-            ? ($row['employee_type'] ?? $row['type'] ?? null)
-            : ($row['type'] ?? null);
+        // Category always from STAFF DETAILS POST (resolveType) — never from STAFF PROFILE.
+        $categoryFromPost = $row['type'] ?? null;
+        $existingType = $row['outcome'] === 'update' ? ($row['employee_type'] ?? null) : null;
 
         return [
             'row_number' => $row['row_number'],
@@ -385,8 +384,10 @@ class EmployeeMasterImportController extends Controller
             'name' => $row['name'],
             'post' => $row['post'],
             'grade' => $row['grade'],
-            'category' => $category,
-            'type' => $category,
+            'category' => $categoryFromPost,
+            'type' => $categoryFromPost,
+            'existing_type' => $existingType,
+            'wrong_table' => $row['wrong_table'] ?? null,
             'status' => $row['status'] ?? 'active',
             'salary' => $row['salary'],
             'phone' => $row['phone'],
@@ -732,22 +733,31 @@ class EmployeeMasterImportController extends Controller
             return ['outcome' => 'failed', 'type' => $type, 'reason' => "EMP_CODE {$emplCode} is used by more than one row in this sheet — fix the duplicate and re-import."];
         }
 
-        $codeMatches = [];
+        // POST decides the table (ASST. TEACHER → Teacher, not Staff). Match only inside that
+        // table — never update a Staff row when STAFF DETAILS says Teacher.
+        if (isset($employeeLookup[$type][$emplCode])) {
+            return [
+                'outcome' => 'update',
+                'type' => $type,
+                'employee_type' => $type,
+                'employee_id' => $employeeLookup[$type][$emplCode],
+                'matched_by' => 'code',
+            ];
+        }
+
+        $wrongTables = [];
         foreach (self::EMPLOYEE_TYPES as $t) {
-            if (isset($employeeLookup[$t][$emplCode])) {
-                $codeMatches[] = [$t, $employeeLookup[$t][$emplCode]];
+            if ($t !== $type && isset($employeeLookup[$t][$emplCode])) {
+                $wrongTables[] = $t;
             }
         }
-
-        if (count($codeMatches) > 1) {
-            $types = implode(', ', array_column($codeMatches, 0));
-
-            return ['outcome' => 'failed', 'type' => $type, 'reason' => "EMP_CODE {$emplCode} matches more than one existing employee ({$types}) — resolve manually."];
-        }
-
-        if (count($codeMatches) === 1) {
-            // Keep the person in the table they already live in; POST still recorded as Designation.
-            return ['outcome' => 'update', 'type' => $type, 'employee_type' => $codeMatches[0][0], 'employee_id' => $codeMatches[0][1], 'matched_by' => 'code'];
+        // Same EMP_CODE already in Teacher and Staff (etc.) — leave for manual cleanup.
+        if (count($wrongTables) > 1) {
+            return [
+                'outcome' => 'failed',
+                'type' => $type,
+                'reason' => "EMP_CODE {$emplCode} exists in more than one people list (".implode(', ', $wrongTables).') — resolve manually.',
+            ];
         }
 
         // Same person saved earlier under the short code (12008 vs 121008) — only within the
@@ -771,7 +781,13 @@ class EmployeeMasterImportController extends Controller
             return ['outcome' => 'update', 'type' => $type, 'employee_type' => $type, 'employee_id' => $nameMatches[0]['id'], 'matched_by' => 'name'];
         }
 
-        return ['outcome' => 'create', 'type' => $type];
+        // No row in the correct table yet → create Teacher/Staff/Driver from POST.
+        // (A wrong-table record with the same EMP_CODE is left alone — e.g. old Staff copy.)
+        return [
+            'outcome' => 'create',
+            'type' => $type,
+            'wrong_table' => $wrongTables[0] ?? null,
+        ];
     }
 
     /**

@@ -3,8 +3,8 @@
         <div>
             <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Employee Master Import</h1>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF DETAILS</strong> sets Teacher / Staff / Driver from POST.
-                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF PROFILE</strong> supplies bio (matched by EMP_CODE).
+                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF DETAILS</strong> is required — every row is created or updated from POST (Teacher / Staff / Driver).
+                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF PROFILE</strong> is optional bio only: if not matched, the person is still created/updated (bio left blank).
                 <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF year</strong> supplies current basic salary.
                 Does not touch attendance or monthly pay.
             </p>
@@ -88,12 +88,19 @@
                                 <td class="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300">{{ r.empl_code }}</td>
                                 <td class="px-2 py-1.5 text-slate-800 dark:text-slate-100">{{ r.name }}</td>
                                 <td class="px-2 py-1.5 text-slate-600 dark:text-slate-300">{{ r.post }}</td>
-                                <td class="px-2 py-1.5 capitalize text-slate-700 dark:text-slate-200">{{ r.category || r.type || '—' }}</td>
+                                <td class="px-2 py-1.5 capitalize text-slate-700 dark:text-slate-200">
+                                    {{ r.category || r.type || '—' }}
+                                    <span v-if="r.wrong_table" class="block text-[10px] normal-case text-amber-600 dark:text-amber-400">
+                                        was in {{ r.wrong_table }} — creating under {{ r.category || r.type }}
+                                    </span>
+                                </td>
                                 <td class="px-2 py-1.5">
                                     <span v-if="r.profile_matched" class="text-emerald-700 dark:text-emerald-400">
                                         Matched{{ r.profile_code ? ` (${r.profile_code})` : '' }}
                                     </span>
-                                    <span v-else class="text-amber-700 dark:text-amber-400">No match</span>
+                                    <span v-else class="text-amber-700 dark:text-amber-400" title="Still created/updated from STAFF DETAILS; bio left blank">
+                                        No match — still import
+                                    </span>
                                 </td>
                                 <td class="px-2 py-1.5 text-slate-600 dark:text-slate-300">{{ r.salary ?? '—' }}</td>
                                 <td class="px-2 py-1.5">
