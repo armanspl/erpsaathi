@@ -221,10 +221,7 @@ class FeeCalculator
             ? (self::$discountCache[$student->id] ?? collect())
             : FeeDiscount::where('student_id', $student->id)->get();
 
-        $totalDiscount = (float) collect($discounts)->sum(
-            fn (FeeDiscount $d) => $d->type === 'percentage' ? round($totalFee * ((float) $d->value / 100), 2) : (float) $d->value
-        );
-        $totalDiscount = min($totalDiscount, $totalFee);
+        $totalDiscount = self::sumDiscountsAgainstBreakdown($discounts, $breakdown, $totalFee);
 
         $totalPaid = self::paidTowardBreakdown($student, $session, $breakdown);
 
@@ -375,6 +372,85 @@ class FeeCalculator
         self::$admissionTypeCache[$student->id] = $type;
 
         return $type;
+    }
+
+    /**
+     * Sum FeeDiscount rows against the fee breakdown: head-scoped discounts are capped at that
+     * head's charge; blank fee_head_id discounts apply to the whole total (legacy behaviour).
+     *
+     * @param  \Illuminate\Support\Collection<int, FeeDiscount>|iterable<FeeDiscount>  $discounts
+     * @param  list<array{fee_head_id?: int, amount?: float|int}>  $breakdown
+     */
+    public static function sumDiscountsAgainstBreakdown(iterable $discounts, array $breakdown, ?float $totalFee = null): float
+    {
+        $headAmounts = [];
+        foreach ($breakdown as $row) {
+            $hid = (int) ($row['fee_head_id'] ?? 0);
+            if ($hid) {
+                $headAmounts[$hid] = ($headAmounts[$hid] ?? 0.0) + (float) ($row['amount'] ?? 0);
+            }
+        }
+        $totalFee ??= (float) array_sum($headAmounts);
+
+        $total = 0.0;
+        foreach ($discounts as $d) {
+            $value = (float) $d->value;
+            $headId = $d->fee_head_id !== null ? (int) $d->fee_head_id : null;
+            if ($d->type === 'percentage') {
+                $base = $headId !== null ? (float) ($headAmounts[$headId] ?? 0) : $totalFee;
+                $amount = round($base * ($value / 100), 2);
+            } else {
+                $amount = $value;
+            }
+            if ($headId !== null) {
+                $amount = min($amount, (float) ($headAmounts[$headId] ?? 0));
+            }
+            $total += max(0.0, $amount);
+        }
+
+        return min($total, $totalFee);
+    }
+
+    /**
+     * Remaining structure-discount pools keyed by fee_head_id (0 = applies to any head).
+     * Used by FeeBalanceService so Pay Fee / Fee Due honour fee_discounts the same way
+     * FeeCalculator::forStudent does.
+     *
+     * @param  \Illuminate\Support\Collection<int, FeeDiscount>|iterable<FeeDiscount>  $discounts
+     * @param  list<array{fee_head_id?: int, amount?: float|int}>  $breakdown
+     * @return array<int, float>
+     */
+    public static function structureDiscountPools(iterable $discounts, array $breakdown): array
+    {
+        $headAmounts = [];
+        foreach ($breakdown as $row) {
+            $hid = (int) ($row['fee_head_id'] ?? 0);
+            if ($hid) {
+                $headAmounts[$hid] = ($headAmounts[$hid] ?? 0.0) + (float) ($row['amount'] ?? 0);
+            }
+        }
+        $totalFee = (float) array_sum($headAmounts);
+        $pools = [];
+
+        foreach ($discounts as $d) {
+            $value = (float) $d->value;
+            $headId = $d->fee_head_id !== null ? (int) $d->fee_head_id : 0;
+            if ($d->type === 'percentage') {
+                $base = $headId > 0 ? (float) ($headAmounts[$headId] ?? 0) : $totalFee;
+                $amount = round($base * ($value / 100), 2);
+            } else {
+                $amount = $value;
+            }
+            if ($headId > 0) {
+                $amount = min($amount, (float) ($headAmounts[$headId] ?? 0));
+            }
+            if ($amount <= 0) {
+                continue;
+            }
+            $pools[$headId] = ($pools[$headId] ?? 0.0) + $amount;
+        }
+
+        return $pools;
     }
 
     /**

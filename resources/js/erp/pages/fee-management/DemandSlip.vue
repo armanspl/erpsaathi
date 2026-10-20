@@ -21,7 +21,7 @@
                         </button>
                         <button type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="printSlips">
                             <span class="font-medium text-slate-800 dark:text-slate-100">Print demand slips</span>
-                            <span class="block text-xs text-slate-400">One slip per student, 3 per page</span>
+                            <span class="block text-xs text-slate-400">One slip per student, 6 per page</span>
                         </button>
                     </div>
                 </div>
@@ -436,7 +436,7 @@ function printList() {
 /** One demand slip per student: what was expected, paid and is still due for each fee head. */
 function printSlips() {
     const due = (v) => Math.max(0, -(Number(v) || 0));
-    const slips = sortedRows.value.map((r) => {
+    const slipHtml = sortedRows.value.map((r) => {
         const lines = [
             ['Annual / Session fee', Number(r.ann_pmnt) - Number(r.ann_dues), r.ann_pmnt, r.ann_dues],
             ['Tuition fee', r.tui_calc, r.tui_pmnt, r.tui_dues],
@@ -445,16 +445,18 @@ function printSlips() {
         const totalDueAmount = due(r.dues);
         return `<div class="slip">
             ${schoolHeader()}
-            <div class="title">FEE DEMAND SLIP${sessionName.value ? ` — Session ${esc(sessionName.value)}` : ''}${r.left_note ? ` <span style="font-size:9pt;color:#b45309">(${esc(r.left_note)})</span>` : ''}${periodLabel.value ? `<div style="font-size:9pt;font-weight:normal">${esc(periodLabel.value)}</div>` : ''}</div>
+            <div class="title">FEE DEMAND SLIP${sessionName.value ? ` — ${esc(sessionName.value)}` : ''}${r.left_note ? ` <span class="left">${esc(r.left_note)}</span>` : ''}${periodLabel.value ? `<div class="period">${esc(periodLabel.value)}</div>` : ''}</div>
             <table class="info">
-                <tr><td>Adm No: <b>${esc(r.admission_no)}</b></td><td>Name: <b>${esc(r.name)}</b></td><td>Class: <b>${esc(r.class)}${r.section ? ` - ${esc(r.section)}` : ''}</b></td></tr>
-                <tr><td>Father: <b>${esc(r.father_name)}</b></td><td>Mobile: <b>${esc(r.mobile)}</b></td><td>Vehicle: <b>${esc(r.vehicle)}</b></td></tr>
+                <tr><td>Adm No: <b>${esc(r.admission_no)}</b></td><td>Class: <b>${esc(r.class)}${r.section ? ` - ${esc(r.section)}` : ''}</b></td></tr>
+                <tr><td colspan="2">Name: <b>${esc(r.name)}</b></td></tr>
+                <tr><td>Father: <b>${esc(r.father_name)}</b></td><td>Mobile: <b>${esc(r.mobile)}</b></td></tr>
+                <tr><td colspan="2">Vehicle: <b>${esc(r.vehicle)}</b></td></tr>
             </table>
             <table class="fees">
                 <thead><tr><th>Fee head</th><th class="num">Expected</th><th class="num">Paid</th><th class="num">Due</th></tr></thead>
                 <tbody>${lines.map(([label, expected, paid, dues]) => `<tr><td>${label}</td><td class="num">${money(expected)}</td><td class="num">${money(paid)}</td><td class="num${due(dues) ? ' neg' : ''}">${money(due(dues))}</td></tr>`).join('')
                     || '<tr><td colspan="4">No fee set for this session.</td></tr>'}</tbody>
-                <tfoot><tr><td colspan="3">Total paid this session (incl. REG ${money(r.reg)}, ADM ${money(r.adm)}): ${money(r.tot_pmnt)}</td>
+                <tfoot><tr><td colspan="3">Paid (REG ${money(r.reg)} + ADM ${money(r.adm)} + fees): ${money(r.tot_pmnt)}</td>
                     <td class="num${totalDueAmount ? ' neg' : ''}">${money(totalDueAmount)}</td></tr></tfoot>
             </table>
             <div class="foot">
@@ -462,21 +464,30 @@ function printSlips() {
                 <span class="sign">Accountant / Principal</span>
             </div>
         </div>`;
-    }).join('');
+    });
+
+    // 6 slips per A4 page: 2 columns × 3 rows.
+    const pages = [];
+    for (let i = 0; i < slipHtml.length; i += 6) {
+        pages.push(`<div class="page">${slipHtml.slice(i, i + 6).join('')}</div>`);
+    }
 
     openPrint('Fee Demand Slips', `
-        @page { size: A4 portrait; margin: 8mm; }
-        .slip { border: 1px solid #333; padding: 8px 10px; height: 91mm; margin-bottom: 3mm; page-break-inside: avoid; font-size: 11px; display: flex; flex-direction: column; }
-        .slip:nth-of-type(3n) { page-break-after: always; }
-        .school { text-align: center; font-size: 10px; } .school .name { font-size: 14px; font-weight: bold; }
-        .title { text-align: center; font-weight: bold; letter-spacing: 1px; border-top: 1px solid #333; border-bottom: 1px solid #333; margin: 4px 0; padding: 2px 0; }
+        @page { size: A4 portrait; margin: 6mm; }
+        .page { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 2.5mm; height: 285mm; page-break-after: always; }
+        .page:last-child { page-break-after: auto; }
+        .slip { border: 1px solid #333; padding: 4px 6px; overflow: hidden; page-break-inside: avoid; font-size: 9.5px; display: flex; flex-direction: column; min-height: 0; }
+        .school { text-align: center; font-size: 8px; line-height: 1.2; } .school .name { font-size: 11px; font-weight: bold; }
+        .title { text-align: center; font-weight: bold; letter-spacing: 0.5px; border-top: 1px solid #333; border-bottom: 1px solid #333; margin: 2px 0; padding: 1px 0; font-size: 10px; }
+        .title .left { font-size: 8px; color: #b45309; font-weight: normal; }
+        .title .period { font-size: 8px; font-weight: normal; }
         table { width: 100%; border-collapse: collapse; }
-        .info td { padding: 1px 2px; }
-        .fees { margin-top: 4px; } .fees th, .fees td { border: 1px solid #999; padding: 2px 5px; } .fees th { background: #eee; }
-        .fees tfoot td { font-weight: bold; }
-        .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; padding-top: 6px; }
-        .sign { border-top: 1px solid #555; padding-top: 2px; min-width: 140px; text-align: center; }
-    `, slips);
+        .info td { padding: 0 2px; font-size: 9px; vertical-align: top; }
+        .fees { margin-top: 2px; } .fees th, .fees td { border: 1px solid #999; padding: 1px 3px; } .fees th { background: #eee; font-size: 8.5px; }
+        .fees tfoot td { font-weight: bold; font-size: 8.5px; }
+        .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; padding-top: 3px; font-size: 8.5px; gap: 6px; }
+        .sign { border-top: 1px solid #555; padding-top: 1px; min-width: 100px; text-align: center; flex-shrink: 0; }
+    `, pages.join(''));
 }
 
 function closePrintMenu(e) {

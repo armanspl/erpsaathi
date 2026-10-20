@@ -182,12 +182,45 @@
                                 title="e.g. 5 for half day, 7 for full day — applies only to this weekday"
                             />
                         </label>
-                        <span class="text-slate-400">Copy {{ dayLabel(activeDay) }} to:</span>
-                        <select v-model="copyTargetDay" class="form-input !py-1 !text-xs">
-                            <option :value="null">Select day</option>
-                            <option v-for="d in DAYS.filter((x) => x.dow !== activeDay)" :key="d.dow" :value="d.dow">{{ d.label }}</option>
-                        </select>
-                        <button type="button" class="btn-outline !py-1 !text-xs" :disabled="!copyTargetDay" @click="copyDay">Copy</button>
+                        <button
+                            type="button"
+                            class="btn-outline !py-1 !text-xs"
+                            :title="`Copy ${dayLabel(activeDay)} routine`"
+                            @click="copyActiveDay"
+                        >
+                            Copy {{ dayLabel(activeDay) }}
+                        </button>
+                        <template v-if="dayClipboard">
+                            <span class="rounded-md bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                                Copied: {{ dayLabel(dayClipboard.fromDow) }}
+                            </span>
+                            <button
+                                type="button"
+                                class="btn-outline !py-1 !text-xs"
+                                :disabled="activeDay === dayClipboard.fromDow"
+                                :title="activeDay === dayClipboard.fromDow ? 'Switch to another day to paste' : `Paste onto ${dayLabel(activeDay)}`"
+                                @click="pasteOntoDay(activeDay)"
+                            >
+                                Paste here
+                            </button>
+                            <span class="text-slate-400">or to:</span>
+                            <label
+                                v-for="d in DAYS.filter((x) => x.dow !== dayClipboard.fromDow)"
+                                :key="'paste-' + d.dow"
+                                class="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                                <input v-model="pasteTargetDays" type="checkbox" class="rounded border-slate-300" :value="d.dow" />
+                                {{ d.short || d.label.slice(0, 3) }}
+                            </label>
+                            <button
+                                type="button"
+                                class="btn-primary !py-1 !text-xs"
+                                :disabled="!pasteTargetDays.length"
+                                @click="pasteOntoSelectedDays"
+                            >
+                                Paste
+                            </button>
+                        </template>
                     </div>
                 </div>
 
@@ -444,12 +477,12 @@ const route = useRoute();
 const router = useRouter();
 
 const DAYS = [
-    { dow: 1, label: 'Monday' },
-    { dow: 2, label: 'Tuesday' },
-    { dow: 3, label: 'Wednesday' },
-    { dow: 4, label: 'Thursday' },
-    { dow: 5, label: 'Friday' },
-    { dow: 6, label: 'Saturday' },
+    { dow: 1, label: 'Monday', short: 'Mon' },
+    { dow: 2, label: 'Tuesday', short: 'Tue' },
+    { dow: 3, label: 'Wednesday', short: 'Wed' },
+    { dow: 4, label: 'Thursday', short: 'Thu' },
+    { dow: 5, label: 'Friday', short: 'Fri' },
+    { dow: 6, label: 'Saturday', short: 'Sat' },
 ];
 
 const view = ref('list');
@@ -471,7 +504,9 @@ const dayPeriods = reactive({});
 const grid = reactive({});
 const classRemarks = reactive({});
 const activeDay = ref(1);
-const copyTargetDay = ref(null);
+/** Snapshot of a day's grid for copy/paste across weekdays. */
+const dayClipboard = ref(null);
+const pasteTargetDays = ref([]);
 // Inside an open routine: 'edit' = the editable grid, 'view' = Excel-style class/teacher-wise view.
 const mode = ref('edit');
 // Within edit mode: class-centric grid vs teacher-centric assign grid (same underlying data).
@@ -769,14 +804,39 @@ function onPeriodsChange() {
     ensureAllDays();
 }
 
-function copyDay() {
-    if (!copyTargetDay.value) return;
+function copyActiveDay() {
     ensureDay(activeDay.value);
-    dayPeriods[copyTargetDay.value] = periodsForDay(activeDay.value);
-    ensureDay(copyTargetDay.value);
-    grid[copyTargetDay.value] = JSON.parse(JSON.stringify(grid[activeDay.value]));
-    pushToast(`Copied ${dayLabel(activeDay.value)} to ${dayLabel(copyTargetDay.value)}.`, 'success');
-    copyTargetDay.value = null;
+    dayClipboard.value = {
+        fromDow: activeDay.value,
+        periods: periodsForDay(activeDay.value),
+        grid: JSON.parse(JSON.stringify(grid[activeDay.value] || {})),
+    };
+    pasteTargetDays.value = [];
+    pushToast(`${dayLabel(activeDay.value)} copied. Select other days and Paste.`, 'success');
+}
+
+function applyClipboardToDay(targetDow) {
+    if (!dayClipboard.value || targetDow === dayClipboard.value.fromDow) return false;
+    dayPeriods[targetDow] = dayClipboard.value.periods;
+    ensureDay(targetDow);
+    grid[targetDow] = JSON.parse(JSON.stringify(dayClipboard.value.grid));
+    return true;
+}
+
+function pasteOntoDay(targetDow) {
+    if (!applyClipboardToDay(targetDow)) return;
+    pushToast(`Pasted ${dayLabel(dayClipboard.value.fromDow)} onto ${dayLabel(targetDow)}.`, 'success');
+}
+
+function pasteOntoSelectedDays() {
+    if (!dayClipboard.value || !pasteTargetDays.value.length) return;
+    const applied = [];
+    pasteTargetDays.value.forEach((dow) => {
+        if (applyClipboardToDay(dow)) applied.push(dayLabel(dow));
+    });
+    if (!applied.length) return;
+    pushToast(`Pasted ${dayLabel(dayClipboard.value.fromDow)} onto ${applied.join(', ')}.`, 'success');
+    pasteTargetDays.value = [];
 }
 
 function periodsByDayPayload() {
@@ -862,6 +922,8 @@ function resetForm() {
     Object.keys(dayPeriods).forEach((k) => delete dayPeriods[k]);
     Object.keys(grid).forEach((k) => delete grid[k]);
     Object.keys(classRemarks).forEach((k) => delete classRemarks[k]);
+    dayClipboard.value = null;
+    pasteTargetDays.value = [];
     ensureAllDays();
 }
 

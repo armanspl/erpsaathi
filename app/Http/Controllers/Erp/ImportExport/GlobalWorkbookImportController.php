@@ -9,6 +9,7 @@ use App\Models\BankTransaction;
 use App\Models\Branch;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
+use App\Models\FeeDiscount;
 use App\Models\FeeHead;
 use App\Models\FeePayment;
 use App\Models\FeePaymentAudit;
@@ -24,6 +25,7 @@ use App\Services\SalaryBankWorkbookService;
 use App\Services\SpreadsheetImportReader;
 use App\Services\StudentMasterImportService;
 use App\Support\DashboardCache;
+use App\Support\FeeCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -31,12 +33,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * Imports legacy school Excel workbooks (multi-sheet). INCOME, EXPENSES, any sheet whose name
  * starts with TRANSPORT (e.g. "TRANSPORT-26", "TRANSPORT-27" next year), any sheet whose
- * name starts with "Student Master" (e.g. "Student Master 22-26"), any sheet whose name starts
- * with "BANK" and isn't a pivot (e.g. "BANK IDBI 11662 26-27" — a real statement ledger, not
- * "BANK GAS PIVOT"), and the yearly "SALARY … Bank" sheet (auto-creates Teachers/Staff/Drivers
- * + monthly salary slips) are processed; pivots, fuel, CHQ, and summary dashboards are ignored.
- * TRANSPORT runs before Student Master so stoppage routes exist when bus numbers are
- * attached — see the note at that block in store().
+ * name starts with "Student Master" (e.g. "Student Master 22-26"), the "FEES DISCOUNT" sheet
+ * (ADM-DISC / ANN-DISC / TUI DISC / TRA DISC → per-student FeeDiscount rows), any sheet whose
+ * name starts with "BANK" and isn't a pivot (e.g. "BANK IDBI 11662 26-27" — a real statement
+ * ledger, not "BANK GAS PIVOT"), and the yearly "SALARY … Bank" sheet (auto-creates
+ * Teachers/Staff/Drivers + monthly salary slips) are processed; pivots, fuel, CHQ, and summary
+ * dashboards are ignored. TRANSPORT runs before Student Master so stoppage routes exist when
+ * bus numbers are attached — see the note at that block in store(). FEES DISCOUNT runs after
+ * Student Master so admission numbers resolve to students just imported.
  *
  * The Student Master sheet is processed by {@see StudentMasterImportService} — the exact same
  * pipeline erp/dashboard/import-export?type=student-import uses on its own, so the two never
@@ -58,6 +62,22 @@ class GlobalWorkbookImportController extends Controller
 
     /** Sheets we never import — listed in the response for transparency. */
     private const IGNORED_SHEET_HINT = 'SUMMARY, STUD_REC*, pivots (incl. BANK*PIVOT), CHQ*, FUEL*, WORKING DAYS';
+
+    /** Reason stamped on FeeDiscount rows created from the FEES DISCOUNT sheet (idempotent re-import). */
+    private const FEES_DISCOUNT_REASON = 'Imported from FEES DISCOUNT';
+
+    /**
+     * FEES DISCOUNT columns → fee-head codes resolved via INCOME_HEAD_CANONICAL_MAP / AnnualFeeHead.
+     * Sheet headers vary slightly (ADM-DISC / ADM DISC / TUI DISC / TUI_DISC).
+     *
+     * @var array<string, string>
+     */
+    private const FEES_DISCOUNT_HEAD_MAP = [
+        'adm disc' => 'adm',
+        'ann disc' => 'ann',
+        'tui disc' => 'tui',
+        'tra disc' => 'tra',
+    ];
 
     private const MSG_BROKEN_FORMULA = 'Skipped — column contains a broken formula reference (#REF!/#N/A), not usable data.';
 
@@ -197,6 +217,7 @@ class GlobalWorkbookImportController extends Controller
         $expenseTitle = null;
         $transportTitle = null;
         $studentMasterTitle = null;
+        $feesDiscountTitle = null;
         $salaryBankTitle = null;
         $bankTitles = [];
         $toLoad = [];
@@ -223,6 +244,11 @@ class GlobalWorkbookImportController extends Controller
                 $studentMasterTitle = $title;
                 $toLoad[] = $title;
             }
+            // "FEES DISCOUNT" — ADM-DISC / ANN-DISC / TUI DISC / TRA DISC per student.
+            if (! $feesDiscountTitle && $this->isFeesDiscountSheetTitle($title)) {
+                $feesDiscountTitle = $title;
+                $toLoad[] = $title;
+            }
             // "SALARY 26-27 Bank" — yearly payroll bank with NAME/DESIG/BASIC + APR–MAR.
             if (! $salaryBankTitle && $salaryBank->isSalaryBankSheetTitle($title)) {
                 $salaryBankTitle = $title;
@@ -239,7 +265,7 @@ class GlobalWorkbookImportController extends Controller
 
         if ($toLoad === []) {
             return response()->json([
-                'message' => 'No INCOME, EXPENSES, TRANSPORT-*, Student Master*, BANK*, or SALARY … Bank sheet found. Present sheets: '.implode(', ', $sheetNames)
+                'message' => 'No INCOME, EXPENSES, TRANSPORT-*, Student Master*, FEES DISCOUNT, BANK*, or SALARY … Bank sheet found. Present sheets: '.implode(', ', $sheetNames)
                     .' — Only those are imported ('.self::IGNORED_SHEET_HINT.' are skipped).',
             ], 422);
         }
@@ -250,6 +276,7 @@ class GlobalWorkbookImportController extends Controller
         $expenseSheet = null;
         $transportSheet = null;
         $studentMasterSheet = null;
+        $feesDiscountSheet = null;
         $salaryBankSheet = null;
         $bankSheets = [];
 
@@ -268,6 +295,14 @@ class GlobalWorkbookImportController extends Controller
                 $parsed = SpreadsheetImportReader::fromWorksheet($sheet);
                 $parsed['title'] = $title;
                 $expenseSheet = $parsed;
+            }
+            if ($feesDiscountTitle && strtolower($feesDiscountTitle) === $lower) {
+                // Some workbooks put a blank/title row above the real ADM NO. / ADM-DISC header.
+                $headerRow = $this->feesDiscountHeaderRow($sheet);
+                $parsed = SpreadsheetImportReader::fromWorksheet($sheet, $headerRow);
+                $parsed['header_row'] = $headerRow;
+                $parsed['title'] = $title;
+                $feesDiscountSheet = $parsed;
             }
             if ($transportTitle && strtolower($transportTitle) === $lower) {
                 // Columns beyond STOPPAGE/FARE (D = FARE×multiplier formula, E = unused, F/G =
@@ -323,6 +358,7 @@ class GlobalWorkbookImportController extends Controller
             $lower = strtolower($name);
             if (in_array($lower, self::INCOME_SHEETS, true) || in_array($lower, self::EXPENSE_SHEETS, true)
                 || str_starts_with($lower, 'transport') || str_starts_with($lower, 'student master')
+                || $this->isFeesDiscountSheetTitle($name)
                 || $salaryBank->isSalaryBankSheetTitle($name)
                 || (str_starts_with($lower, 'bank') && ! str_contains($lower, 'pivot'))) {
                 continue;
@@ -593,6 +629,26 @@ class GlobalWorkbookImportController extends Controller
             $cache['first_sessions'] = $this->firstEnrolledSessions();
         }
 
+        // FEES DISCOUNT after Student Master — ADM-DISC / ANN-DISC / TUI DISC / TRA DISC become
+        // FeeDiscount rows (Admission / Annual / Tuition / Transport) that reduce Fee Due.
+        $feesDiscountStats = [
+            'fees_discount_applied' => 0,
+            'fees_discount_cleared' => 0,
+            'fees_discount_unchanged' => 0,
+            'fees_discount_students' => 0,
+            'fees_discount_missing_students' => 0,
+            'fees_discount_rows_skipped' => 0,
+        ];
+        if ($feesDiscountSheet) {
+            $feesDiscountStats = $this->importFeesDiscountSheet($feesDiscountSheet, $cache);
+            if (! $preview && (
+                $feesDiscountStats['fees_discount_applied'] > 0
+                || $feesDiscountStats['fees_discount_cleared'] > 0
+            )) {
+                FeeCache::forget();
+            }
+        }
+
         if ($incomeSheet) {
             [$mapped, $junk] = $this->mapRows($incomeSheet, self::INCOME_HEADER_MAP, 'INCOME');
             $ignoredColumns = array_merge($ignoredColumns, $junk);
@@ -694,7 +750,7 @@ class GlobalWorkbookImportController extends Controller
             $bankStats['bank_sheets'][] = $bankSheet['title'];
         }
 
-        $stats = array_merge($stats, $transportStats);
+        $stats = array_merge($stats, $transportStats, $feesDiscountStats);
 
         $breakdown['total_rows'] = $total;
 
@@ -729,6 +785,17 @@ class GlobalWorkbookImportController extends Controller
                 .($vehiclesCreated > 0 ? ', '.$vehiclesCreated.' vehicle(s) auto-created' : '')
                 .($studentMasterResult['header_warnings'] !== [] ? ', '.count($studentMasterResult['header_warnings']).' header warning(s)' : '')
                 .'. See Import Log for details.';
+        }
+        if ($feesDiscountSheet) {
+            $stats['fees_discount'] = $feesDiscountStats;
+            $message .= ' | Fees Discount ('.$feesDiscountSheet['title'].'): '
+                .$feesDiscountStats['fees_discount_applied'].' discount(s) applied, '
+                .$feesDiscountStats['fees_discount_cleared'].' cleared, '
+                .$feesDiscountStats['fees_discount_students'].' student(s)'
+                .($feesDiscountStats['fees_discount_missing_students'] > 0
+                    ? ', '.$feesDiscountStats['fees_discount_missing_students'].' admission no.(s) not found'
+                    : '')
+                .'.';
         }
         if ($salaryBankTitle && $salaryBankResult) {
             $stats['salary_bank'] = $salaryBankResult;
@@ -784,6 +851,14 @@ class GlobalWorkbookImportController extends Controller
                 'stops_created' => $transportStats['transport_stops_created'],
                 'rows_skipped' => $transportStats['transport_rows_skipped'],
             ] : null,
+            'fees_discount' => $feesDiscountSheet ? [
+                'applied' => $feesDiscountStats['fees_discount_applied'],
+                'cleared' => $feesDiscountStats['fees_discount_cleared'],
+                'unchanged' => $feesDiscountStats['fees_discount_unchanged'],
+                'students' => $feesDiscountStats['fees_discount_students'],
+                'missing_students' => $feesDiscountStats['fees_discount_missing_students'],
+                'rows_skipped' => $feesDiscountStats['fees_discount_rows_skipped'],
+            ] : null,
             'bank' => $bankSheets !== [] ? [
                 'inserted' => $bankStats['bank_transactions_imported'],
                 'rows_skipped' => $bankStats['bank_rows_skipped'],
@@ -806,6 +881,261 @@ class GlobalWorkbookImportController extends Controller
             'breakdown' => $breakdown,
             'message' => ($preview ? 'PREVIEW — nothing was saved. ' : '').$message,
         ]);
+    }
+
+    private function isFeesDiscountSheetTitle(string $title): bool
+    {
+        $lower = strtolower(trim($title));
+
+        return $lower === 'fees discount' || str_starts_with($lower, 'fees discount');
+    }
+
+    /**
+     * Locate the FEES DISCOUNT header row (ADM NO. + at least one *-DISC column). School files
+     * sometimes leave row 1 blank or put a title there.
+     */
+    private function feesDiscountHeaderRow(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): int
+    {
+        $highest = min(8, max(1, (int) $sheet->getHighestDataRow()));
+        for ($r = 1; $r <= $highest; $r++) {
+            $blob = '';
+            for ($c = 1; $c <= 30; $c++) {
+                $coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c).$r;
+                $blob .= ' '.strtolower(trim((string) $sheet->getCell($coord)->getValue()));
+            }
+            $norm = preg_replace('/[\s_\-]+/', ' ', $blob) ?? $blob;
+            if ((str_contains($norm, 'adm no') || str_contains($norm, 'admno'))
+                && (str_contains($norm, 'adm disc') || str_contains($norm, 'ann disc')
+                    || str_contains($norm, 'tui disc') || str_contains($norm, 'tra disc'))) {
+                return $r;
+            }
+        }
+
+        return 1;
+    }
+
+    /**
+     * FEES DISCOUNT sheet → FeeDiscount rows.
+     * ADM-DISC → Admission Fee, ANN-DISC → Annual/Session Fee, TUI DISC → Tution Fee,
+     * TRA DISC → Transport. Only positive amounts are saved; a later re-import with 0/blank
+     * clears a previously imported discount for that head (manual discounts with other reasons
+     * are left alone).
+     *
+     * @param  array{header: array<int,string>, rows: array<int, array<int, mixed>>, title?: string}  $sheet
+     * @param  array<string, mixed>  $cache
+     * @return array{fees_discount_applied: int, fees_discount_cleared: int, fees_discount_unchanged: int, fees_discount_students: int, fees_discount_missing_students: int, fees_discount_rows_skipped: int}
+     */
+    private function importFeesDiscountSheet(array $sheet, array &$cache): array
+    {
+        $stats = [
+            'fees_discount_applied' => 0,
+            'fees_discount_cleared' => 0,
+            'fees_discount_unchanged' => 0,
+            'fees_discount_students' => 0,
+            'fees_discount_missing_students' => 0,
+            'fees_discount_rows_skipped' => 0,
+        ];
+
+        $admIdx = null;
+        /** @var array<string, int> code => column index */
+        $discCols = [];
+        foreach ($sheet['header'] as $index => $raw) {
+            $norm = $this->normalizeFeesDiscountHeader((string) $raw);
+            if (in_array($norm, ['adm no', 'adm no.', 'adm. no.', 'admno', 'admission no', 'admission no.'], true)) {
+                $admIdx = $index;
+            }
+            if (isset(self::FEES_DISCOUNT_HEAD_MAP[$norm])) {
+                $discCols[self::FEES_DISCOUNT_HEAD_MAP[$norm]] = $index;
+            }
+        }
+
+        if ($admIdx === null || $discCols === []) {
+            $stats['fees_discount_rows_skipped'] = count($sheet['rows']);
+
+            return $stats;
+        }
+
+        $currentSession = AcademicSession::query()->where('is_current', true)->first()
+            ?? AcademicSession::query()->orderByDesc('start_date')->first();
+        $sessionId = $currentSession ? (int) $currentSession->id : null;
+
+        /** @var array<string, int> code => fee_head_id */
+        $headIds = [];
+        foreach (array_keys($discCols) as $code) {
+            $headIds[$code] = $this->resolveFeesDiscountHeadId($code, $sessionId, $cache);
+        }
+
+        $touchedStudents = [];
+        foreach ($sheet['rows'] as $line) {
+            $admissionNo = $this->normalizeAdmissionNoCell($line[$admIdx] ?? null);
+            if ($admissionNo === '') {
+                $stats['fees_discount_rows_skipped']++;
+
+                continue;
+            }
+
+            $studentId = $cache['students'][$admissionNo] ?? null;
+            if (! $studentId && is_numeric($admissionNo)) {
+                // Excel sometimes stores adm nos as floats ("16696.0") — try the integer form.
+                $studentId = $cache['students'][(string) (int) $admissionNo] ?? null;
+            }
+            if (! $studentId) {
+                $stats['fees_discount_missing_students']++;
+
+                continue;
+            }
+
+            $hadAny = false;
+            foreach ($discCols as $code => $colIdx) {
+                $amount = $this->positiveMoney($line[$colIdx] ?? null);
+                $headId = $headIds[$code] ?? null;
+                if (! $headId) {
+                    continue;
+                }
+
+                $existing = FeeDiscount::query()
+                    ->where('student_id', $studentId)
+                    ->where('fee_head_id', $headId)
+                    ->where('reason', self::FEES_DISCOUNT_REASON)
+                    ->first();
+
+                if ($amount === null) {
+                    if ($existing) {
+                        $existing->delete();
+                        $stats['fees_discount_cleared']++;
+                        $hadAny = true;
+                    }
+
+                    continue;
+                }
+
+                $hadAny = true;
+                if ($existing) {
+                    if ($existing->type === 'fixed' && abs((float) $existing->value - $amount) < 0.005) {
+                        $stats['fees_discount_unchanged']++;
+
+                        continue;
+                    }
+                    $existing->update(['type' => 'fixed', 'value' => $amount]);
+                    $stats['fees_discount_applied']++;
+
+                    continue;
+                }
+
+                FeeDiscount::create([
+                    'student_id' => $studentId,
+                    'fee_head_id' => $headId,
+                    'type' => 'fixed',
+                    'value' => $amount,
+                    'reason' => self::FEES_DISCOUNT_REASON,
+                ]);
+                $stats['fees_discount_applied']++;
+            }
+
+            if ($hadAny) {
+                $touchedStudents[$studentId] = true;
+            }
+        }
+
+        $stats['fees_discount_students'] = count($touchedStudents);
+
+        return $stats;
+    }
+
+    private function normalizeFeesDiscountHeader(string $raw): string
+    {
+        $raw = strtolower(trim($raw));
+        $raw = str_replace(['_', '-'], ' ', $raw);
+        $raw = preg_replace('/\s+/', ' ', $raw) ?? $raw;
+
+        return trim($raw);
+    }
+
+    /** @return non-empty-string|null Positive ₹ amount, or null when blank/zero/non-numeric. */
+    private function positiveMoney(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_string($value)) {
+            $value = str_replace([',', '₹', ' '], '', trim($value));
+        }
+        if (! is_numeric($value)) {
+            return null;
+        }
+        $amount = round((float) $value, 2);
+
+        return $amount > 0 ? $amount : null;
+    }
+
+    private function normalizeAdmissionNoCell(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+        if (is_numeric($value)) {
+            // Avoid "16696.0" from Excel numeric cells.
+            $asFloat = (float) $value;
+            if (floor($asFloat) == $asFloat) {
+                return (string) (int) $asFloat;
+            }
+        }
+
+        return trim((string) $value);
+    }
+
+    /**
+     * Resolve (find-or-create) the FeeHead for a FEES DISCOUNT column code.
+     *
+     * @param  array<string, mixed>  $cache
+     */
+    private function resolveFeesDiscountHeadId(string $code, ?int $sessionId, array &$cache): int
+    {
+        $headName = self::INCOME_HEAD_CANONICAL_MAP[$code] ?? strtoupper($code);
+        if ($code === 'ann') {
+            $headName = AnnualFeeHead::nameFor($sessionId);
+        }
+
+        if (! isset($cache['fee_heads'][$headName])) {
+            // Prefer an existing head with a close label (e.g. "Annual Fee" vs "Session Fee")
+            // before creating a new one — Fee Due matches payments/charges by fee_head_id.
+            $existing = FeeHead::query()
+                ->whereRaw('LOWER(name) = ?', [strtolower($headName)])
+                ->first();
+            if (! $existing && $code === 'ann') {
+                $existing = FeeHead::query()
+                    ->where(function ($q) {
+                        $q->where('name', 'like', '%Annual%')
+                            ->orWhere('name', 'like', '%Session%');
+                    })
+                    ->orderBy('id')
+                    ->first();
+            }
+            if (! $existing && $code === 'tui') {
+                $existing = FeeHead::query()
+                    ->where(function ($q) {
+                        $q->where('name', 'like', '%Tution%')
+                            ->orWhere('name', 'like', '%Tuition%');
+                    })
+                    ->orderBy('id')
+                    ->first();
+            }
+            if (! $existing && $code === 'tra') {
+                $existing = FeeHead::query()
+                    ->where('name', 'like', '%Transport%')
+                    ->orderBy('id')
+                    ->first();
+            }
+            if ($existing) {
+                $cache['fee_heads'][$headName] = (int) $existing->id;
+                $cache['fee_heads'][$existing->name] = (int) $existing->id;
+            } else {
+                $head = FeeHead::create(['name' => $headName, 'description' => 'Imported fee head']);
+                $cache['fee_heads'][$headName] = (int) $head->id;
+            }
+        }
+
+        return (int) $cache['fee_heads'][$headName];
     }
 
     /**

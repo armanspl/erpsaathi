@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AcademicSession;
+use App\Models\FeeDiscount;
 use App\Models\FeeHead;
 use App\Models\FeePayment;
 use App\Models\ManualFeeDue;
@@ -11,6 +12,7 @@ use App\Models\StudentFeeDiscountMonth;
 use App\Models\StudentFeeMonth;
 use App\Models\StudentTransport;
 use App\Support\FeeSchedule;
+use Illuminate\Support\Collection;
 
 /**
  * Shared fee balance math used by Fee Receipt, Pay Fee, and Fee Due.
@@ -39,6 +41,11 @@ class FeeBalanceService
     /** @var list<array{id: int, keys: array<string, true>}>|null */
     private static ?array $sessionMonthIndex = null;
 
+    /** @var array<int, Collection<int, FeeDiscount>> studentId => FeeDiscount rows */
+    private static array $structureDiscountsByStudent = [];
+
+    private static bool $structureDiscountsWarmed = false;
+
     public static function flushRuntimeCache(): void
     {
         self::$transportByStudent = [];
@@ -49,6 +56,8 @@ class FeeBalanceService
         self::$feeMonthsByKey = [];
         self::$sessionIdByMonthKey = [];
         self::$sessionMonthIndex = null;
+        self::$structureDiscountsByStudent = [];
+        self::$structureDiscountsWarmed = false;
     }
 
     // ── Fee Months / Transport Fee Months (People > Students, saved per student + session) ─────
@@ -288,6 +297,41 @@ class FeeBalanceService
             ->all();
         $this->warmWaiverMonths($studentIds, $sessionIds);
         $this->warmFeeMonths($studentIds, $sessionIds);
+        $this->warmStructureDiscounts($studentIds);
+    }
+
+    /**
+     * Prefetch fee_discounts for a cohort (Fee Discounts / FEES DISCOUNT import).
+     *
+     * @param  list<int>  $studentIds
+     */
+    public function warmStructureDiscounts(array $studentIds): void
+    {
+        self::$structureDiscountsByStudent = [];
+        foreach ($studentIds as $id) {
+            self::$structureDiscountsByStudent[(int) $id] = collect();
+        }
+        if ($studentIds === []) {
+            self::$structureDiscountsWarmed = true;
+
+            return;
+        }
+
+        foreach (FeeDiscount::query()->whereIn('student_id', $studentIds)->get()->groupBy('student_id') as $sid => $rows) {
+            self::$structureDiscountsByStudent[(int) $sid] = $rows->values();
+        }
+        self::$structureDiscountsWarmed = true;
+    }
+
+    /** @return Collection<int, FeeDiscount> */
+    private function structureDiscountsFor(Student $student): Collection
+    {
+        $id = (int) $student->id;
+        if (self::$structureDiscountsWarmed) {
+            return self::$structureDiscountsByStudent[$id] ?? collect();
+        }
+
+        return FeeDiscount::query()->where('student_id', $id)->get();
     }
 
     /**
@@ -619,17 +663,45 @@ class FeeBalanceService
             }
         }
 
-        $coveredToward = static function (string $headKey, float $charge, ?string $monthKey = null) use ($paidTotals, $paidDiscounts, $paidByMonth, $discountByMonth): float {
+        $structurePools = FeeCalculator::structureDiscountPools(
+            $this->structureDiscountsFor($student),
+            $breakdown->all()
+        );
+
+        $coveredToward = static function (string $headKey, float $charge, ?string $monthKey = null) use (
+            &$structurePools,
+            $paidTotals,
+            $paidDiscounts,
+            $paidByMonth,
+            $discountByMonth
+        ): float {
             if ($monthKey !== null) {
                 $monthPaid = (float) ($paidByMonth[$headKey][$monthKey] ?? 0.0)
                     + (float) ($discountByMonth[$headKey][$monthKey] ?? 0.0);
-
-                return min($charge, $monthPaid);
+            } else {
+                $monthPaid = (float) ($paidTotals[$headKey] ?? 0.0) + (float) ($paidDiscounts[$headKey] ?? 0.0);
             }
 
-            $paid = (float) ($paidTotals[$headKey] ?? 0.0) + (float) ($paidDiscounts[$headKey] ?? 0.0);
+            $got = min($charge, $monthPaid);
+            $still = max(0.0, $charge - $got);
+            if ($still > 0) {
+                $headId = (int) $headKey;
+                foreach ([$headId, 0] as $poolKey) {
+                    if ($still <= 0) {
+                        break;
+                    }
+                    $available = (float) ($structurePools[$poolKey] ?? 0);
+                    if ($available <= 0) {
+                        continue;
+                    }
+                    $take = min($still, $available);
+                    $structurePools[$poolKey] = $available - $take;
+                    $got += $take;
+                    $still -= $take;
+                }
+            }
 
-            return min($charge, $paid);
+            return min($charge, $got);
         };
 
         [$transportFare, $transportHeadId, $transportFeeStart] = $this->transportFareAndHead($student);
@@ -763,6 +835,13 @@ class FeeBalanceService
         $paidByMonth = $paidInfo['by_month'];
         $discountByMonth = $paidInfo['discount_by_month'];
 
+        // fee_discounts (Fee Discounts screen / FEES DISCOUNT workbook import) — consume as a
+        // per-head pool so monthly heads share a session-level concession across months.
+        $structurePools = FeeCalculator::structureDiscountPools(
+            $this->structureDiscountsFor($student),
+            $breakdown->all()
+        );
+
         $normalizeFreq = static function ($row): string {
             return strtolower(str_replace(' ', '_', (string) ($row['frequency'] ?? 'monthly')));
         };
@@ -779,6 +858,7 @@ class FeeBalanceService
             &$charge,
             &$paid,
             &$discount,
+            &$structurePools,
             $paidTotals,
             $paidDiscounts,
             $paidByMonth,
@@ -808,6 +888,26 @@ class FeeBalanceService
             $covered = min($unit, $mPaid + $mDisc);
             $fromPaid = min($mPaid, $covered);
             $fromDisc = max(0.0, $covered - $fromPaid);
+
+            // Apply remaining structure discount (FeeDiscount) against what payments didn't cover.
+            $stillOwed = max(0.0, $unit - $fromPaid - $fromDisc);
+            if ($stillOwed > 0) {
+                $headId = (int) $headKey;
+                foreach ([$headId, 0] as $poolKey) {
+                    if ($stillOwed <= 0) {
+                        break;
+                    }
+                    $available = (float) ($structurePools[$poolKey] ?? 0);
+                    if ($available <= 0) {
+                        continue;
+                    }
+                    $take = min($stillOwed, $available);
+                    $structurePools[$poolKey] = $available - $take;
+                    $fromDisc += $take;
+                    $stillOwed -= $take;
+                }
+            }
+
             $paid += $fromPaid;
             $discount += $fromDisc;
         };
@@ -880,9 +980,33 @@ class FeeBalanceService
         $discountByMonth = $paidInfo['discount_by_month'];
         $paidTotals = $paidInfo['totals'];
         $paidDiscounts = $paidInfo['discounts'];
+        $structurePools = FeeCalculator::structureDiscountPools(
+            $this->structureDiscountsFor($student),
+            $breakdown->all()
+        );
 
         $normalizeFreq = static function ($row): string {
             return strtolower(str_replace(' ', '_', (string) ($row['frequency'] ?? 'monthly')));
+        };
+
+        $takeStructure = static function (string $headKey, float $stillOwed) use (&$structurePools): float {
+            $taken = 0.0;
+            $headId = (int) $headKey;
+            foreach ([$headId, 0] as $poolKey) {
+                if ($stillOwed <= 0) {
+                    break;
+                }
+                $available = (float) ($structurePools[$poolKey] ?? 0);
+                if ($available <= 0) {
+                    continue;
+                }
+                $take = min($stillOwed, $available);
+                $structurePools[$poolKey] = $available - $take;
+                $taken += $take;
+                $stillOwed -= $take;
+            }
+
+            return $taken;
         };
 
         $firstBillableMonth = $this->firstBillableMonth($student, $session);
@@ -930,6 +1054,7 @@ class FeeBalanceService
                     $covered = min($unit, $mPaid + $mDisc);
                     $fromPaid = min($mPaid, $covered);
                     $fromDisc = max(0.0, $covered - $fromPaid);
+                    $fromDisc += $takeStructure($headKey, max(0.0, $unit - $fromPaid - $fromDisc));
                 }
 
                 $cats[$name] = ($cats[$name] ?? 0) + $unit;
@@ -953,6 +1078,7 @@ class FeeBalanceService
                     $covered = min($transportFare, $mPaid + $mDisc);
                     $fromPaid = min($mPaid, $covered);
                     $fromDisc = max(0.0, $covered - $fromPaid);
+                    $fromDisc += $takeStructure($headKey, max(0.0, $transportFare - $fromPaid - $fromDisc));
                 }
                 $cats['Transport'] = ($cats['Transport'] ?? 0) + $transportFare;
                 $charge += $transportFare;
