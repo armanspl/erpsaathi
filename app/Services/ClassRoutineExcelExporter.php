@@ -351,43 +351,71 @@ class ClassRoutineExcelExporter
         }
         $legendBottom = $legendTotalRow ?? max(2, $legendLastRow);
 
-        // --- LEISURE on its own row BELOW teacher legend AND class grid (E+ only) ---
-        $leisureRow = null;
-        $maxFree = 0;
+        // --- LEISURE block BELOW legend + class grid: one name per cell (not a messy newline dump) ---
+        $leisureFirstRow = null;
+        $leisureLastRow = null;
         if ($hasClassGrid) {
-            $leisureRow = max($gridLastRow, $legendBottom) + 1;
-            $ws->setCellValue('E'.$leisureRow, 'LEISURE');
-            $ws->setCellValue('F'.$leisureRow, 'FREE');
-            $ws->getStyle('E'.$leisureRow.':F'.$leisureRow)->getFont()->setBold(true);
-            $this->fillCell($ws, 'E'.$leisureRow, 'D1FAE5');
-            $this->fillCell($ws, 'F'.$leisureRow, 'D1FAE5');
-
-            foreach ($periodCols as $p => $col) {
-                $this->fillCell($ws, $col.$leisureRow, 'ECFDF5');
-                $ws->getStyle($col.$leisureRow)->getAlignment()
-                    ->setHorizontal(Alignment::HORIZONTAL_CENTER)
-                    ->setVertical(Alignment::VERTICAL_TOP)
-                    ->setWrapText(true);
-
-                // No teaching this period (FREE for every class / empty) → leave blank.
+            $freeByPeriod = [];
+            $maxFree = 0;
+            foreach ($periodCols as $p => $_col) {
+                $freeByPeriod[$p] = [];
                 if (! ($periodHasTeaching[$p] ?? false)) {
                     continue;
                 }
-
-                $freeNames = [];
                 foreach ($teachers as $teacher) {
                     if (isset($busyByPeriod[$p][(int) $teacher->id])) {
                         continue;
                     }
-                    $freeNames[] = $this->shortTeacherName((string) $teacher->name);
+                    $freeByPeriod[$p][] = $this->shortTeacherName((string) $teacher->name);
                 }
-                $maxFree = max($maxFree, count($freeNames));
-                if ($freeNames !== []) {
-                    $ws->setCellValue($col.$leisureRow, implode("\n", $freeNames));
-                    $ws->getStyle($col.$leisureRow)->getFont()->setBold(true)->getColor()->setARGB('FF065F46');
-                }
+                $maxFree = max($maxFree, count($freeByPeriod[$p]));
             }
-            $this->fillCell($ws, $remarksCol.$leisureRow, 'ECFDF5');
+
+            // At least one label row even when every period is school-wide FREE (columns stay blank).
+            $leisureRows = max(1, $maxFree);
+            $leisureFirstRow = max($gridLastRow, $legendBottom) + 1;
+            $leisureLastRow = $leisureFirstRow + $leisureRows - 1;
+
+            for ($i = 0; $i < $leisureRows; $i++) {
+                $r = $leisureFirstRow + $i;
+                foreach ($periodCols as $p => $col) {
+                    $this->fillCell($ws, $col.$r, 'ECFDF5');
+                    $ws->getStyle($col.$r)->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_CENTER)
+                        ->setVertical(Alignment::VERTICAL_CENTER);
+                    $name = $freeByPeriod[$p][$i] ?? null;
+                    if ($name !== null) {
+                        $ws->setCellValue($col.$r, $name);
+                        $ws->getStyle($col.$r)->getFont()
+                            ->setName(self::FONT)
+                            ->setSize(7)
+                            ->setBold(false)
+                            ->getColor()->setARGB('FF065F46');
+                    }
+                }
+                $this->fillCell($ws, $remarksCol.$r, 'ECFDF5');
+                $ws->getRowDimension($r)->setRowHeight(12);
+            }
+
+            // Labels on the left of the block (merged when multiple name rows).
+            $ws->setCellValue('E'.$leisureFirstRow, 'LEISURE');
+            $ws->setCellValue('F'.$leisureFirstRow, 'FREE');
+            if ($leisureLastRow > $leisureFirstRow) {
+                $ws->mergeCells('E'.$leisureFirstRow.':E'.$leisureLastRow);
+                $ws->mergeCells('F'.$leisureFirstRow.':F'.$leisureLastRow);
+            }
+            $ws->getStyle('E'.$leisureFirstRow.':F'.$leisureLastRow)->getFont()->setName(self::FONT)->setBold(true)->setSize(self::FONT_SIZE);
+            $ws->getStyle('E'.$leisureFirstRow.':F'.$leisureLastRow)->getAlignment()
+                ->setHorizontal(Alignment::HORIZONTAL_CENTER)
+                ->setVertical(Alignment::VERTICAL_CENTER)
+                ->setWrapText(true);
+            $this->fillCell($ws, 'E'.$leisureFirstRow, 'D1FAE5');
+            $this->fillCell($ws, 'F'.$leisureFirstRow, 'D1FAE5');
+            // Re-fill merge range background (merge keeps first cell style; paint siblings too).
+            for ($r = $leisureFirstRow; $r <= $leisureLastRow; $r++) {
+                $this->fillCell($ws, 'E'.$r, 'D1FAE5');
+                $this->fillCell($ws, 'F'.$r, 'D1FAE5');
+            }
         }
 
         // --- Borders: teacher legend (A–C) and class grid / LEISURE (E–…) stay separate ---
@@ -405,12 +433,11 @@ class ClassRoutineExcelExporter
         } else {
             $ws->getStyle('E2:'.$remarksCol.'2')->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
         }
-        // LEISURE gets its own bordered row (never merged with legend or class pairs).
-        if ($leisureRow !== null) {
-            $ws->getStyle('E'.$leisureRow.':'.$remarksCol.$leisureRow)->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
+        if ($leisureFirstRow !== null && $leisureLastRow !== null) {
+            $ws->getStyle('E'.$leisureFirstRow.':'.$remarksCol.$leisureLastRow)->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
         }
 
-        $fontBottom = max($legendBottom, $gridLastRow, $leisureRow ?? 2);
+        $fontBottom = max($legendBottom, $gridLastRow, $leisureLastRow ?? 2);
         $ws->getStyle('A1:'.$remarksCol.$fontBottom)->getFont()->setName(self::FONT)->setSize(self::FONT_SIZE);
         $ws->getStyle('A1')->getFont()->setName(self::FONT)->setBold(true)->setSize(10);
         if ($hasClassGrid) {
@@ -420,16 +447,12 @@ class ClassRoutineExcelExporter
             $ws->getStyle('B3:B'.$legendLastRow)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
         }
 
-        // Lock every non-LEISURE row to the normal timetable height (13). LEISURE may be taller
-        // for wrapped free-teacher names — but that row no longer coincides with any teacher.
+        // Normal row height everywhere; LEISURE name rows already set to 12 above.
         foreach (range(2, $fontBottom) as $r) {
-            if ($leisureRow !== null && $r === $leisureRow) {
+            if ($leisureFirstRow !== null && $r >= $leisureFirstRow && $r <= $leisureLastRow) {
                 continue;
             }
             $ws->getRowDimension($r)->setRowHeight(13);
-        }
-        if ($leisureRow !== null) {
-            $ws->getRowDimension($leisureRow)->setRowHeight(max(22, min(140, 14 * max(1, $maxFree))));
         }
     }
 

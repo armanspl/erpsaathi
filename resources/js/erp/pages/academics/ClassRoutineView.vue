@@ -272,9 +272,17 @@ function classWiseHtml(group) {
     }).join('');
     const grid = `<table class="grid"><thead><tr><th>CLASS</th><th>PERIOD</th>${ps.map((p) => `<th>${p}</th>`).join('')}<th>REMARKS</th></tr></thead><tbody>${rows}</tbody></table>`;
 
-    const leisure = `<table class="grid leisure"><thead><tr><th>LEISURE</th>${ps.map((p) => `<th>${p}</th>`).join('')}</tr></thead><tbody><tr><td class="lbl">FREE</td>${
-        ps.map((p) => `<td class="c">${freeTeachers(group, p).map((t) => esc(t.name)).join('<br>') || '&mdash;'}</td>`).join('')
-    }</tr></tbody></table>`;
+    // One name per cell (stacked rows) — same shape as the Excel LEISURE block.
+    const freeByPeriod = ps.map((p) => freeTeachers(group, p).map((t) => t.name));
+    const maxFree = Math.max(1, ...freeByPeriod.map((list) => list.length));
+    const leisureBody = Array.from({ length: maxFree }, (_, i) => {
+        const cells = freeByPeriod.map((list) => `<td class="c">${list[i] ? esc(list[i]) : ''}</td>`).join('');
+        if (i === 0) {
+            return `<tr><td class="lbl" rowspan="${maxFree}">LEISURE<br><span class="free-lbl">FREE</span></td>${cells}</tr>`;
+        }
+        return `<tr>${cells}</tr>`;
+    }).join('');
+    const leisure = `<table class="grid leisure"><thead><tr><th>LEISURE / FREE</th>${ps.map((p) => `<th>${p}</th>`).join('')}</tr></thead><tbody>${leisureBody}</tbody></table>`;
 
     return `<section>${header(`CLASS WISE — ${group.label}`)}<div class="cols"><div class="left">${teachers}</div><div class="right">${grid}${leisure}</div></div></section>`;
 }
@@ -319,7 +327,10 @@ function printRoutine(mode) {
         .c { text-align: center; } .sub { font-weight: bold; text-transform: uppercase; } .teach { font-weight: bold; text-transform: uppercase; font-size: 8px; }
         .cls { font-weight: bold; text-align: center; text-transform: uppercase; } .lbl { font-size: 7px; color: #555; font-weight: bold; text-align: center; }
         tr.sep td { border-bottom: 1.5px solid #333; }
-        .leisure { margin-top: 6px; } .leisure th { background: #d1fae5; } .leisure td { vertical-align: top; font-weight: bold; color: #065f46; }
+        .leisure { margin-top: 6px; } .leisure th { background: #d1fae5; }
+        .leisure td { vertical-align: middle; font-weight: normal; color: #065f46; font-size: 8px; }
+        .leisure .lbl { font-weight: bold; font-size: 8px; background: #d1fae5; }
+        .leisure .free-lbl { font-size: 7px; color: #047857; }
         .free { color: #9ca3af; font-weight: normal; } .clash { background: #fee2e2; color: #b91c1c; }
         tfoot td { font-weight: bold; background: #f3f4f6; }
         .bar { position: sticky; top: 0; background: #fff; padding: 8px; text-align: right; border-bottom: 1px solid #ddd; }
