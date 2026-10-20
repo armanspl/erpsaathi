@@ -67,8 +67,9 @@ class GlobalWorkbookImportController extends Controller
     private const FEES_DISCOUNT_REASON = 'Imported from FEES DISCOUNT';
 
     /**
-     * FEES DISCOUNT columns → fee-head codes resolved via INCOME_HEAD_CANONICAL_MAP / AnnualFeeHead.
-     * Sheet headers vary slightly (ADM-DISC / ADM DISC / TUI DISC / TUI_DISC).
+     * FEES DISCOUNT columns → fee-head codes resolved via INCOME_HEAD_CANONICAL_MAP.
+     * ANN-DISC uses AnnualFeeHead (Annual Fee and Session Fee are the same charge — whichever
+     * label this session's fee structure uses). Sheet headers vary slightly (ADM-DISC / TUI DISC).
      *
      * @var array<string, string>
      */
@@ -630,7 +631,7 @@ class GlobalWorkbookImportController extends Controller
         }
 
         // FEES DISCOUNT after Student Master — ADM-DISC / ANN-DISC / TUI DISC / TRA DISC become
-        // FeeDiscount rows (Admission / Annual / Tuition / Transport) that reduce Fee Due.
+        // FeeDiscount rows (Admission / Annual≡Session / Tuition / Transport) that reduce Fee Due.
         $feesDiscountStats = [
             'fees_discount_applied' => 0,
             'fees_discount_cleared' => 0,
@@ -916,7 +917,7 @@ class GlobalWorkbookImportController extends Controller
 
     /**
      * FEES DISCOUNT sheet → FeeDiscount rows.
-     * ADM-DISC → Admission Fee, ANN-DISC → Annual/Session Fee, TUI DISC → Tution Fee,
+     * ADM-DISC → Admission Fee, ANN-DISC → Annual/Session Fee (same charge), TUI DISC → Tution Fee,
      * TRA DISC → Transport. Only positive amounts are saved; a later re-import with 0/blank
      * clears a previously imported discount for that head (manual discounts with other reasons
      * are left alone).
@@ -1086,6 +1087,8 @@ class GlobalWorkbookImportController extends Controller
 
     /**
      * Resolve (find-or-create) the FeeHead for a FEES DISCOUNT column code.
+     * ANN-DISC uses AnnualFeeHead — Annual Fee and Session Fee are the same yearly charge;
+     * whichever label this session's structure uses is where the discount lands (same as INCOME ANN).
      *
      * @param  array<string, mixed>  $cache
      */
@@ -1097,17 +1100,19 @@ class GlobalWorkbookImportController extends Controller
         }
 
         if (! isset($cache['fee_heads'][$headName])) {
-            // Prefer an existing head with a close label (e.g. "Annual Fee" vs "Session Fee")
-            // before creating a new one — Fee Due matches payments/charges by fee_head_id.
+            // Prefer an existing head with a close label before creating a new one —
+            // Fee Due matches payments/charges by fee_head_id.
             $existing = FeeHead::query()
                 ->whereRaw('LOWER(name) = ?', [strtolower($headName)])
                 ->first();
             if (! $existing && $code === 'ann') {
+                // Annual Fee ≡ Session Fee — accept either label if the exact name is missing.
                 $existing = FeeHead::query()
                     ->where(function ($q) {
                         $q->where('name', 'like', '%Annual%')
                             ->orWhere('name', 'like', '%Session%');
                     })
+                    ->orderByRaw("CASE WHEN name LIKE '%Session%' THEN 0 WHEN name LIKE '%Annual%' THEN 1 ELSE 2 END")
                     ->orderBy('id')
                     ->first();
             }
