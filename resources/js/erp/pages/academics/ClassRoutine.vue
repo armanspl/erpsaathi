@@ -596,8 +596,15 @@ function busyTeachersForPeriod(period, classId) {
         .map((t) => ({ ...t, busyIn: (busy.get(t.id) || []).join(', ') }));
 }
 
-/** Free teachers for the LEISURE row (no class excluded — pure free list). */
+/** Free teachers for the LEISURE row — blank when every class is FREE this period. */
 function leisureTeachers(period) {
+    const dayGrid = grid[activeDay.value] || {};
+    const anyTeaching = classes.value.some((c) => {
+        const cellData = dayGrid[c.id]?.[period];
+        return cellData && !cellData.is_free && String(cellData.subject_label || '').toUpperCase() !== 'FREE'
+            && (cellData.teacher_id || cellData.subject_id || cellData.subject_label);
+    });
+    if (!anyTeaching) return [];
     const busy = busyMapForPeriod(period, null);
     return teachers.value.filter((t) => !busy.has(t.id));
 }

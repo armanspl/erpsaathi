@@ -57,8 +57,9 @@ trait ReadsStaffSheets
     ];
 
     /**
-     * Parses STAFF DETAILS bio-data. Stops at a repeated header row — the start of the
-     * mismatched second block further down the sheet. Rows without code+name are skipped.
+     * Parses STAFF PROFILE / STAFF DETAILS bio-data. School files often repeat the same
+     * header mid-sheet for a second block — those header rows are skipped and parsing
+     * continues. Rows without code+name are skipped.
      *
      * @return list<array<string, mixed>>
      */
@@ -72,8 +73,9 @@ trait ReadsStaffSheets
         $rows = [];
         foreach ($dataRows as $i => $rowRaw) {
             $normalized = array_map(fn ($c) => $this->normalizeHeader($c), array_slice($rowRaw, 0, count($header)));
+            // Repeated header for a second block — skip it and keep reading.
             if ($normalized === $header) {
-                break;
+                continue;
             }
 
             $row = $this->mapRow($header, $rowRaw, self::STAFF_HEADER_MAP);

@@ -3,8 +3,10 @@
         <div>
             <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Employee Master Import</h1>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Upload a "SALARY DETAILS" + "STAFF DETAILS" workbook to create or update Teacher, Staff and Driver profiles.
-                This only sets designation, status, subject/section, and bio-data — it does not touch attendance or pay.
+                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF DETAILS</strong> sets Teacher / Staff / Driver from POST.
+                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF PROFILE</strong> supplies bio (matched by EMP_CODE).
+                <strong class="font-medium text-slate-700 dark:text-slate-300">STAFF year</strong> supplies current basic salary.
+                Does not touch attendance or monthly pay.
             </p>
         </div>
 
@@ -20,6 +22,9 @@
                     </button>
                 </div>
             </div>
+            <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                Preview first, then click Import only when the category and Create/Update actions look correct.
+            </p>
             <div class="flex flex-wrap items-end gap-3">
                 <div class="flex-1 min-w-[260px]">
                     <label class="form-label">Excel file</label>
@@ -32,8 +37,16 @@
 
             <!-- Preview -->
             <div v-if="preview" class="mt-5 space-y-3">
+                <p class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                    Master: <span class="font-medium">{{ preview.master_sheet_name || '—' }}</span>
+                    · Profile: <span class="font-medium">{{ preview.profile_sheet_name || '—' }}</span>
+                    · Salary: <span class="font-medium">{{ preview.current_sheet || '—' }}</span>
+                    · Profile matched {{ preview.bio_matched_count }}/{{ preview.bio_row_count }}
+                    · Salary matched {{ preview.current_matched_count }}/{{ preview.current_row_count }}
+                </p>
+
                 <p v-if="!preview.staff_sheet_found" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-                    No "STAFF DETAILS" sheet found — designation/status will still be applied, but bio-data (DOB, phone, address, etc.) will be left blank for every new profile.
+                    No STAFF PROFILE sheet found — designation still comes from STAFF DETAILS, but bio (DOB, phone, address) will be blank for new profiles.
                 </p>
 
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -53,6 +66,44 @@
                         <p class="text-xl font-bold" :class="preview.failed_count ? 'text-rose-700 dark:text-rose-400' : 'text-slate-800 dark:text-slate-100'">{{ preview.failed_count }}</p>
                         <p class="text-xs" :class="preview.failed_count ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'">Need review</p>
                     </div>
+                </div>
+
+                <div v-if="preview.rows?.length" class="max-h-[28rem] overflow-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                    <table class="w-full min-w-[720px] text-left text-xs">
+                        <thead class="sticky top-0 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            <tr>
+                                <th class="px-2 py-2 font-semibold">#</th>
+                                <th class="px-2 py-2 font-semibold">EMP_CODE</th>
+                                <th class="px-2 py-2 font-semibold">Name</th>
+                                <th class="px-2 py-2 font-semibold">POST (STAFF DETAILS)</th>
+                                <th class="px-2 py-2 font-semibold">Category</th>
+                                <th class="px-2 py-2 font-semibold">Profile</th>
+                                <th class="px-2 py-2 font-semibold">Basic</th>
+                                <th class="px-2 py-2 font-semibold">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-for="r in preview.rows" :key="r.row_number" :class="r.outcome === 'failed' ? 'bg-rose-50/60 dark:bg-rose-500/5' : ''">
+                                <td class="px-2 py-1.5 text-slate-400">{{ r.row_number }}</td>
+                                <td class="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300">{{ r.empl_code }}</td>
+                                <td class="px-2 py-1.5 text-slate-800 dark:text-slate-100">{{ r.name }}</td>
+                                <td class="px-2 py-1.5 text-slate-600 dark:text-slate-300">{{ r.post }}</td>
+                                <td class="px-2 py-1.5 capitalize text-slate-700 dark:text-slate-200">{{ r.category || r.type || '—' }}</td>
+                                <td class="px-2 py-1.5">
+                                    <span v-if="r.profile_matched" class="text-emerald-700 dark:text-emerald-400">
+                                        Matched{{ r.profile_code ? ` (${r.profile_code})` : '' }}
+                                    </span>
+                                    <span v-else class="text-amber-700 dark:text-amber-400">No match</span>
+                                </td>
+                                <td class="px-2 py-1.5 text-slate-600 dark:text-slate-300">{{ r.salary ?? '—' }}</td>
+                                <td class="px-2 py-1.5">
+                                    <span v-if="r.outcome === 'create'" class="font-medium text-emerald-700 dark:text-emerald-400">Create</span>
+                                    <span v-else-if="r.outcome === 'update'" class="font-medium text-sky-700 dark:text-sky-400">Update</span>
+                                    <span v-else class="font-medium text-rose-700 dark:text-rose-400" :title="r.reason">Review</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
                 <div v-if="preview.failed_rows.length" class="max-h-56 overflow-y-auto rounded-lg border border-rose-100 dark:border-rose-500/20">
@@ -78,7 +129,8 @@
 
                 <div class="flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800">
                     <p class="text-xs text-slate-500 dark:text-slate-400">
-                        {{ preview.create_count + preview.update_count }} row{{ preview.create_count + preview.update_count === 1 ? '' : 's' }} will be written; {{ preview.failed_count }} skipped for review.
+                        {{ preview.create_count + preview.update_count }} row{{ preview.create_count + preview.update_count === 1 ? '' : 's' }} ready to write; {{ preview.failed_count }} skipped for review.
+                        Attendance and monthly payroll are never changed.
                     </p>
                 </div>
             </div>
@@ -104,7 +156,7 @@
                     <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">
                         {{ importResults.new_employees.filter((e) => e.incomplete).length }} new profile{{ importResults.new_employees.filter((e) => e.incomplete).length === 1 ? '' : 's' }} created without bio-data — please complete from People.
                     </p>
-                    <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">No matching row was found for these in "STAFF DETAILS", so DOB/phone/address etc. are still blank.</p>
+                    <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">No matching row was found for these in STAFF PROFILE, so DOB/phone/address etc. are still blank.</p>
                     <ul class="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-300">
                         <li v-for="e in importResults.new_employees.filter((e) => e.incomplete)" :key="`${e.type}-${e.id}`">
                             {{ e.name }} — {{ e.employee_id }} <span class="capitalize">({{ e.type }})</span>

@@ -18,28 +18,21 @@ use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Staff Profile import — "SALARY DETAILS 2026-27.xlsx"-shaped workbooks (also the file produced by
- * StaffProfileExportController, so an export can be edited and re-imported). Creates/updates
- * Teacher, Staff and Driver profiles; it never touches attendance or monthly pay.
+ * Employee Master import — school "SALARY DETAILS 2026-27.xlsx"-shaped workbooks (also the file
+ * produced by StaffProfileExportController). Creates/updates Teacher, Staff and Driver profiles;
+ * never touches attendance or monthly payroll payments.
  *
- *  - `SALARY DETAILS` (header row 1: EMP_CODE/NAME/POST/SUBJECT/SECTION/STATUS/BASIC SALARY AT
- *    THE TIME OF JOINING/BASIC SALARY PRESENT, optional PHONE/EMAIL) drives every create/update.
- *    POST resolves the table (Teacher/Staff/Driver). Group label rows (GRADE I/III/IV/TRANSPORT)
- *    only have column A filled — they are remembered as the employee's Grade, never imported.
- *  - `STAFF DETAILS` (header auto-detected, row 3 in the school file) — bio-data (DOB, category,
- *    exam years, phone, join date, address, basic salary, remarks, optional email). A second block
- *    further down repeats the header with unrelated data; reading stops there.
- *  - `STAFF 2026` (any "STAFF <year>" sheet: EMP CODE/NAME/BASIC) — current basic salary.
+ * Sheet roles (name + headers; school files often swap labels):
+ *  - Master = `STAFF DETAILS` (or `SALARY DETAILS`): EMP_CODE + NAME + POST/STATUS. POST alone
+ *    decides Teacher / Staff / Driver. Group label rows (GRADE I/III/IV/TRANSPORT) fill column A
+ *    and become Grade — they never override a clear POST.
+ *  - Profile = `STAFF PROFILE` (bio: DOB / phone / address / CATEG=social category). Matched by
+ *    EMP_CODE (with name confirmation). Never used to pick Teacher/Staff/Driver.
+ *  - `STAFF <year>` (e.g. STAFF 2026): EMP CODE / NAME / BASIC — current basic salary.
  *
- * Matching the side sheets to SALARY DETAILS: their codes are written differently for the same
- * person (12008 in STAFF DETAILS vs 121008 in SALARY DETAILS — the 3rd digit is dropped), and
- * the dropped-digit code can collide with someone else (STAFF 2026 "25018 FILZA RIZWAN" vs SALARY
- * DETAILS "252018 SHAHZAD ANSARI"). So a code match only counts when the names are also similar;
- * otherwise an exact, then a similar, name match is used, and only when it is unique.
- *
- * Matching rows to existing employees: exact EMP_CODE across all three tables, then the
- * dropped-digit code / name within the POST-resolved table. Ambiguity is never guessed — the row
- * goes to the review list instead.
+ * Side-sheet codes often drop a digit (12008 vs 121008); a code match must also have a similar
+ * name. Existing employees are matched by EMP_CODE then unique name within the POST-resolved
+ * table. Unclear POST → review list (no guessing).
  */
 class EmployeeMasterImportController extends Controller
 {
@@ -48,6 +41,8 @@ class EmployeeMasterImportController extends Controller
     private const SALARY_SHEET_NAME = 'salary details';
 
     private const STAFF_SHEET_NAME = 'staff details';
+
+    private const PROFILE_SHEET_NAME = 'staff profile';
 
     /** Normalized SALARY DETAILS header -> field key. */
     private const SALARY_HEADER_MAP = [
@@ -109,7 +104,7 @@ class EmployeeMasterImportController extends Controller
 
         $plan = $this->buildPlan($request->file('file'));
         if (! $plan['salary_sheet_found']) {
-            return response()->json(['message' => 'A "SALARY DETAILS" sheet was not found in this file.'], 422);
+            return response()->json(['message' => $this->missingMasterSheetMessage()], 422);
         }
 
         $failedRows = [];
@@ -121,7 +116,7 @@ class EmployeeMasterImportController extends Controller
 
         return response()->json($this->summary($plan) + [
             'failed_rows' => array_slice($failedRows, 0, 200),
-            'rows' => array_map(fn ($r) => $this->previewRow($r), array_slice($plan['rows'], 0, 500)),
+            'rows' => array_map(fn ($r) => $this->previewRow($r), $plan['rows']),
         ]);
     }
 
@@ -137,7 +132,7 @@ class EmployeeMasterImportController extends Controller
         $plan = $this->buildPlan($file);
 
         if (! $plan['salary_sheet_found']) {
-            return response()->json(['message' => 'A "SALARY DETAILS" sheet was not found in this file.'], 422);
+            return response()->json(['message' => $this->missingMasterSheetMessage()], 422);
         }
 
         $now = now()->toDateTimeString();
@@ -288,7 +283,7 @@ class EmployeeMasterImportController extends Controller
         $book = $this->readWorkbook($file);
         $rows = $book['salary_rows'];
 
-        [$bioMatches, $bioUnmatched] = $this->matchSideRows($book['bio_rows'], $rows);
+        [$profileMatches, $profileUnmatched] = $this->matchSideRows($book['bio_rows'], $rows);
         [$currentMatches, $currentUnmatched] = $this->matchSideRows($book['current_rows'], $rows);
 
         $employeeLookup = $this->loadEmployeeLookup();
@@ -296,23 +291,20 @@ class EmployeeMasterImportController extends Controller
         $codeCounts = array_count_values(array_filter(array_column($rows, 'empl_code'), fn ($c) => $c !== ''));
 
         foreach ($rows as $i => &$row) {
-            $bio = isset($bioMatches[$i]) ? $book['bio_rows'][$bioMatches[$i]] : null;
+            $bio = isset($profileMatches[$i]) ? $book['bio_rows'][$profileMatches[$i]] : null;
             $current = isset($currentMatches[$i]) ? $book['current_rows'][$currentMatches[$i]] : null;
             $row['bio'] = $bio;
-            // SALARY DETAILS' STATUS decides; STAFF DETAILS' STATUS is used when that one is blank.
+            // Master STATUS wins; profile STATUS only fills when master left it blank.
             if ($row['status'] === null && $bio !== null && ($bio['status'] ?? '') !== '') {
                 $row['status'] = $this->parseStatus($bio['status']);
             }
 
-            // Present salary: SALARY DETAILS "present" > STAFF <year> basic > STAFF DETAILS basic > joining.
+            // Current basic: master "present" > STAFF <year> > joining. Profile BASIC is joining-era only.
             $row['salary'] = $row['basic_salary_present']
-                ?? $current['basic']
-                ?? $bio['basic_salary']
+                ?? ($current['basic'] ?? null)
                 ?? $row['basic_salary_joining'];
-            // Joining salary: its own column; otherwise the older STAFF DETAILS figure when a
-            // newer one exists (in the school file STAFF DETAILS holds the earlier basic).
             $joining = $row['basic_salary_joining'];
-            if ($joining === null && $bio !== null && $bio['basic_salary'] !== null && $row['salary'] !== $bio['basic_salary']) {
+            if ($joining === null && $bio !== null && $bio['basic_salary'] !== null) {
                 $joining = $bio['basic_salary'];
             }
 
@@ -325,16 +317,20 @@ class EmployeeMasterImportController extends Controller
         }
         unset($row);
 
+        $profileSheetLabel = $book['staff_sheet_name'] ?? 'STAFF PROFILE';
+
         return [
             'salary_sheet_found' => $book['salary_sheet_found'],
             'staff_sheet_found' => $book['staff_sheet_found'],
+            'master_sheet_name' => $book['salary_sheet_name'],
+            'profile_sheet_name' => $book['staff_sheet_name'],
             'current_sheet' => $book['current_sheet'],
             'bio_row_count' => count($book['bio_rows']),
-            'bio_matched_count' => count($bioMatches),
+            'bio_matched_count' => count($profileMatches),
             'current_row_count' => count($book['current_rows']),
             'current_matched_count' => count($currentMatches),
             'unmatched_side_rows' => array_merge(
-                array_map(fn ($r) => ['sheet' => 'STAFF DETAILS'] + $r, $bioUnmatched),
+                array_map(fn ($r) => ['sheet' => (string) $profileSheetLabel] + $r, $profileUnmatched),
                 array_map(fn ($r) => ['sheet' => (string) $book['current_sheet']] + $r, $currentUnmatched),
             ),
             'rows' => $rows,
@@ -359,6 +355,8 @@ class EmployeeMasterImportController extends Controller
         return [
             'salary_sheet_found' => $plan['salary_sheet_found'],
             'staff_sheet_found' => $plan['staff_sheet_found'],
+            'master_sheet_name' => $plan['master_sheet_name'] ?? null,
+            'profile_sheet_name' => $plan['profile_sheet_name'] ?? null,
             'current_sheet' => $plan['current_sheet'],
             'bio_row_count' => $plan['bio_row_count'],
             'bio_matched_count' => $plan['bio_matched_count'],
@@ -376,18 +374,27 @@ class EmployeeMasterImportController extends Controller
     /** @param  array<string, mixed>  $row */
     private function previewRow(array $row): array
     {
+        $bio = $row['bio'] ?? null;
+        $category = $row['outcome'] === 'update'
+            ? ($row['employee_type'] ?? $row['type'] ?? null)
+            : ($row['type'] ?? null);
+
         return [
             'row_number' => $row['row_number'],
             'empl_code' => $row['empl_code'],
             'name' => $row['name'],
             'post' => $row['post'],
             'grade' => $row['grade'],
-            'type' => $row['outcome'] === 'update' ? $row['employee_type'] : ($row['type'] ?? null),
+            'category' => $category,
+            'type' => $category,
             'status' => $row['status'] ?? 'active',
             'salary' => $row['salary'],
             'phone' => $row['phone'],
             'email' => $row['email'],
-            'has_bio' => $row['bio'] !== null,
+            'has_bio' => $bio !== null,
+            'profile_matched' => $bio !== null,
+            'profile_code' => $bio['code'] ?? null,
+            'profile_name' => $bio['name'] ?? null,
             'outcome' => $row['outcome'],
             'reason' => $row['reason'] ?? null,
         ];
@@ -399,40 +406,31 @@ class EmployeeMasterImportController extends Controller
         $path = $file->getRealPath();
         $names = SpreadsheetImportReader::listSheetNames($path);
 
-        $salaryName = null;
-        $staffName = null;
-        $currentName = null;
-        $currentYear = 0;
-        foreach ($names as $n) {
-            $lower = strtolower(trim($n));
-            if ($lower === self::SALARY_SHEET_NAME) {
-                $salaryName = $n;
-            } elseif ($lower === self::STAFF_SHEET_NAME) {
-                $staffName = $n;
-            } elseif (preg_match('/^staff\s*-?\s*(20\d{2})\b/', $lower, $m) && (int) $m[1] > $currentYear) {
-                // "STAFF 2026" — the latest such sheet carries the current basic salary.
-                $currentName = $n;
-                $currentYear = (int) $m[1];
-            }
-        }
+        // Master = STAFF DETAILS (POST); profile = STAFF PROFILE (bio); current = STAFF <year>.
+        $roles = $this->classifyWorkbookSheets($path, $names);
+        $masterName = $roles['salary'];
+        $profileName = $roles['bio'];
+        $currentName = $roles['current'];
 
         $result = [
-            'salary_sheet_found' => $salaryName !== null,
-            'staff_sheet_found' => $staffName !== null,
+            'salary_sheet_found' => $masterName !== null,
+            'staff_sheet_found' => $profileName !== null,
             'current_sheet' => $currentName,
+            'salary_sheet_name' => $masterName,
+            'staff_sheet_name' => $profileName,
             'salary_rows' => [],
             'bio_rows' => [],
             'current_rows' => [],
         ];
-        if ($salaryName === null) {
+        if ($masterName === null) {
             return $result;
         }
 
-        $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, array_values(array_filter([$salaryName, $staffName, $currentName])));
+        $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, array_values(array_filter([$masterName, $profileName, $currentName])));
 
-        $result['salary_rows'] = $this->parseSalaryRows($spreadsheet->getSheetByName($salaryName));
-        if ($staffName !== null) {
-            $result['bio_rows'] = $this->parseBioRows($spreadsheet->getSheetByName($staffName));
+        $result['salary_rows'] = $this->parseSalaryRows($spreadsheet->getSheetByName($masterName));
+        if ($profileName !== null) {
+            $result['bio_rows'] = $this->parseBioRows($spreadsheet->getSheetByName($profileName));
         }
         if ($currentName !== null) {
             $result['current_rows'] = $this->parseCurrentRows($spreadsheet->getSheetByName($currentName));
@@ -445,9 +443,137 @@ class EmployeeMasterImportController extends Controller
     }
 
     /**
-     * Parses SALARY DETAILS. A row whose only content is column A text (GRADE I, GRADE III,
-     * TRANSPORT, ...) is a group label — remembered as the Grade of the rows below it. Other rows
-     * with a blank NAME or POST are skipped silently.
+     * Pick master (POST), profile/bio (DOB), and STAFF <year> sheets from names + headers.
+     * Prefers `STAFF DETAILS` as master and `STAFF PROFILE` as bio for school workbooks.
+     *
+     * @param  list<string>  $names
+     * @return array{salary:?string, bio:?string, current:?string}
+     */
+    private function classifyWorkbookSheets(string $path, array $names): array
+    {
+        $currentName = null;
+        $currentYear = 0;
+        $masterCandidates = []; // [score, name]
+        $bioCandidates = [];
+
+        $spreadsheet = SpreadsheetImportReader::loadSheetsOnly($path, $names);
+
+        foreach ($names as $n) {
+            $lower = strtolower(trim($n));
+            if (preg_match('/^staff\s*-?\s*(20\d{2})\b/', $lower, $m) && (int) $m[1] > $currentYear) {
+                $currentName = $n;
+                $currentYear = (int) $m[1];
+            }
+
+            $sheet = $spreadsheet->getSheetByName($n);
+            if (! $sheet) {
+                continue;
+            }
+
+            $kind = $this->detectSheetKind($sheet);
+            if ($kind === 'salary') {
+                $score = 10;
+                // Prefer STAFF DETAILS as the master category sheet.
+                if ($lower === self::STAFF_SHEET_NAME) {
+                    $score += 60;
+                } elseif ($lower === self::SALARY_SHEET_NAME) {
+                    $score += 40;
+                } elseif (str_contains($lower, 'salary')) {
+                    $score += 20;
+                }
+                // Never treat STAFF PROFILE as master even if a POST column somehow exists.
+                if ($lower === self::PROFILE_SHEET_NAME || str_contains($lower, 'profile')) {
+                    $score -= 100;
+                }
+                $masterCandidates[] = [$score, $n];
+            } elseif ($kind === 'bio') {
+                $score = 10;
+                if ($lower === self::PROFILE_SHEET_NAME || str_contains($lower, 'profile')) {
+                    $score += 60;
+                } elseif (str_contains($lower, 'bio')) {
+                    $score += 40;
+                } elseif ($lower === self::STAFF_SHEET_NAME) {
+                    // Only if STAFF DETAILS is the bio sheet (template layout), not master.
+                    $score += 20;
+                }
+                $bioCandidates[] = [$score, $n];
+            }
+        }
+
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
+        usort($masterCandidates, fn ($a, $b) => $b[0] <=> $a[0]);
+        usort($bioCandidates, fn ($a, $b) => $b[0] <=> $a[0]);
+
+        $masterName = $masterCandidates[0][1] ?? null;
+        $bioName = null;
+        foreach ($bioCandidates as [, $candidate]) {
+            if ($candidate !== $masterName) {
+                $bioName = $candidate;
+                break;
+            }
+        }
+
+        return [
+            'salary' => $masterName,
+            'bio' => $bioName,
+            'current' => $currentName,
+        ];
+    }
+
+    /**
+     * Classify a sheet from its header row: master has POST/DESIGNATION; profile/bio has DOB.
+     * CATEG on the profile sheet is social category (GEN/OBC) — never treated as job role.
+     */
+    private function detectSheetKind(Worksheet $sheet): ?string
+    {
+        $all = $sheet->toArray(null, false, false, false);
+        foreach (array_slice($all, 0, 10) as $cells) {
+            $normalized = array_map(fn ($c) => $this->normalizeHeader($c), $cells);
+            $keys = [];
+            foreach ($normalized as $h) {
+                if ($h === '') {
+                    continue;
+                }
+                if (isset(self::SALARY_HEADER_MAP[$h])) {
+                    $keys[self::SALARY_HEADER_MAP[$h]] = true;
+                }
+                if (isset(self::STAFF_HEADER_MAP[$h])) {
+                    $keys[self::STAFF_HEADER_MAP[$h]] = true;
+                }
+            }
+
+            $hasName = isset($keys['name']);
+            $hasCode = isset($keys['emp_code']);
+            if (! $hasName || ! $hasCode) {
+                continue;
+            }
+
+            // Master designation sheet — POST/DESIGNATION is the only job-category column.
+            if (isset($keys['post'])) {
+                return 'salary';
+            }
+            // Profile / bio sheet — DOB (or address + phone without POST).
+            if (isset($keys['dob']) || (isset($keys['address']) && isset($keys['phone']))) {
+                return 'bio';
+            }
+        }
+
+        return null;
+    }
+
+    private function missingMasterSheetMessage(): string
+    {
+        return 'No employee master sheet found. Need a sheet with EMP_CODE, NAME and POST '
+            .'(usually titled "STAFF DETAILS", or "SALARY DETAILS" in some files). '
+            .'Category (Teacher / Staff / Driver) comes only from that sheet — not from STAFF PROFILE.';
+    }
+
+    /**
+     * Parses the master sheet (STAFF DETAILS / SALARY DETAILS). A row whose only content is
+     * column A text (GRADE I, GRADE III, TRANSPORT, ...) is a group label — remembered as the
+     * Grade of the rows below it. Other rows with a blank NAME or POST are skipped silently.
      *
      * @return list<array<string, mixed>>
      */
@@ -577,7 +703,8 @@ class EmployeeMasterImportController extends Controller
     }
 
     /**
-     * Resolves one SALARY DETAILS row to create/update/failed, without writing anything.
+     * Resolves one master-sheet row to create/update/failed, without writing anything.
+     * Category comes only from POST on STAFF DETAILS — never from STAFF PROFILE.
      *
      * @param  array<string, mixed>  $row
      * @param  array<string, int>  $codeCounts
@@ -588,6 +715,13 @@ class EmployeeMasterImportController extends Controller
     private function classifyRow(array $row, array $codeCounts, array $employeeLookup, array $nameLookup): array
     {
         $type = $this->resolveType($row['post'], $row['grade']);
+        if ($type === null) {
+            return [
+                'outcome' => 'failed',
+                'type' => null,
+                'reason' => 'POST "'.$row['post'].'" on STAFF DETAILS does not clearly map to Teacher, Staff or Driver — review manually.',
+            ];
+        }
 
         $emplCode = $row['empl_code'];
         if ($emplCode === '') {
@@ -612,17 +746,16 @@ class EmployeeMasterImportController extends Controller
         }
 
         if (count($codeMatches) === 1) {
+            // Keep the person in the table they already live in; POST still recorded as Designation.
             return ['outcome' => 'update', 'type' => $type, 'employee_type' => $codeMatches[0][0], 'employee_id' => $codeMatches[0][1], 'matched_by' => 'code'];
         }
 
-        // Same person saved earlier under the short code (12008 vs 121008) or under a code typed
-        // differently — only within the POST-resolved table, and only with a similar name.
+        // Same person saved earlier under the short code (12008 vs 121008) — only within the
+        // POST-resolved table, and only with a similar name.
         $variantMatches = array_values(array_filter(
             $nameLookup[$type],
             fn ($e) => EmployeeMatcher::codesMatch($e['code'], $emplCode) && EmployeeMatcher::similarNames($e['name'], $row['name'])
         ));
-        // The file's EMP_CODE is free in every table (no exact match above), so re-coding the
-        // matched record to it cannot hit the unique index.
         if (count($variantMatches) === 1) {
             return ['outcome' => 'update', 'type' => $type, 'employee_type' => $type, 'employee_id' => $variantMatches[0]['id'], 'matched_by' => 'name'];
         }
@@ -678,10 +811,16 @@ class EmployeeMasterImportController extends Controller
         return $fields;
     }
 
-    /** POST -> table: known designations, then keywords, then Staff (so every row gets a profile). */
-    private function resolveType(string $post, string $group): string
+    /**
+     * POST on STAFF DETAILS → Teacher / Staff / Driver. Returns null when unclear (manual review).
+     * $group (GRADE I / TRANSPORT) is grade context only — never overrides a mapped POST.
+     */
+    private function resolveType(string $post, string $group): ?string
     {
         $normalized = $this->normalizePost($post);
+        if ($normalized === '') {
+            return null;
+        }
         if (isset(self::DESIGNATION_TYPE_MAP[$normalized])) {
             return self::DESIGNATION_TYPE_MAP[$normalized];
         }
@@ -692,7 +831,7 @@ class EmployeeMasterImportController extends Controller
             return 'driver';
         }
 
-        return 'staff';
+        return null;
     }
 
     /** @return array<string, array<string, int>> employee_type -> [employee_id => model id] */

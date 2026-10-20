@@ -105,10 +105,13 @@ const activeGroup = computed(() => groups.value.find((g) => g.id === activeTab.v
 const teacherGroup = computed(() => groups.value.find((g) => g.id === teacherGroupId.value) || groups.value[0]);
 const activeTabLabel = computed(() => (activeTab.value === 'teacher' ? `Teacher wise — ${teacherGroup.value?.label || ''}` : `Class wise — ${activeGroup.value?.label || ''}`));
 
-// Classes that appear anywhere in this routine, in the school's class order.
+// Classes with at least one real (non-FREE) lesson — all-FREE classes are omitted from print/export.
 const routineClasses = computed(() => {
     const used = new Set();
-    Object.values(byDay.value).forEach((day) => Object.values(day).forEach((e) => used.add(e.school_class_id)));
+    Object.values(byDay.value).forEach((day) => Object.values(day).forEach((e) => {
+        if (e.is_free || String(e.subject_label || '').toUpperCase() === 'FREE') return;
+        used.add(e.school_class_id);
+    }));
     const known = props.classes.filter((c) => used.has(c.id));
     const extra = [...used].filter((id) => !props.classes.some((c) => c.id === id)).map((id) => ({ id, name: findClassName(id) }));
     return [...known, ...extra];
@@ -208,7 +211,14 @@ const teachingKeys = computed(() => {
 function rosterFor() {
     return includeIdle.value ? fullRoster.value : fullRoster.value.filter((t) => teachingKeys.value.has(t.key));
 }
+/** True when at least one class has a real (non-FREE) lesson this period. */
+function periodHasTeaching(group, period) {
+    return routineClasses.value.some((c) => teacherKeyOf(slot(group, c.id, period)));
+}
+
+/** Free teachers for LEISURE — empty when the whole period is FREE for every class. */
 function freeTeachers(group, period) {
+    if (!periodHasTeaching(group, period)) return [];
     const slots = slotsFor(group);
     return rosterFor().filter((t) => !slots[t.key]?.[period]?.length);
 }

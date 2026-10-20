@@ -27,7 +27,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ClassRoutineExcelExporter
 {
-    private const FONT = 'Verdana';
+    private const FONT = 'Arial';
+
+    private const FONT_SIZE = 8;
 
     /** Short labels for sheet titles / headers — matches ClassRoutineView / import. */
     private const DAY_SHORT = [
@@ -41,6 +43,15 @@ class ClassRoutineExcelExporter
 
     /** Preferred half-week groups (school workbook prints Mon–Wed and Thu–Sat together). */
     private const DAY_GROUPS = [[1, 2, 3], [4, 5, 6]];
+
+    /** Display labels for pre-primary class names in the export grid. */
+    private const CLASS_SHORT = [
+        'nursery' => 'NUR',
+        'nur' => 'NUR',
+        'nurs' => 'NUR',
+        'lkg' => 'LKG',
+        'ukg' => 'UKG',
+    ];
 
     public function stream(ClassRoutineSheet $sheet): StreamedResponse
     {
@@ -58,10 +69,13 @@ class ClassRoutineExcelExporter
     public function build(ClassRoutineSheet $sheet): Spreadsheet
     {
         $spreadsheet = new Spreadsheet();
-        $spreadsheet->getDefaultStyle()->getFont()->setName(self::FONT)->setSize(10);
+        $spreadsheet->getDefaultStyle()->getFont()->setName(self::FONT)->setSize(self::FONT_SIZE);
         $spreadsheet->removeSheetByIndex(0);
 
-        $classes = SchoolClass::orderBy('sort_order')->get(['id', 'name']);
+        // Pre-primary first (NUR / LKG / UKG), then 1, 2, 3… — not raw DB id order.
+        $classes = SchoolClass::query()->get(['id', 'name', 'sort_order'])
+            ->sort(fn ($a, $b) => $this->classSortKey($a) <=> $this->classSortKey($b))
+            ->values();
         // Inactive teachers are omitted from legend, LEISURE, and teacher-wise sheets.
         $teachers = Teacher::where('status', 'active')->orderBy('name')->get(['id', 'name', 'color']);
         $entriesByDay = $sheet->entries->groupBy('day_of_week');
@@ -78,7 +92,9 @@ class ClassRoutineExcelExporter
             ]];
         }
 
-        $classNameById = $classes->pluck('name', 'id')->all();
+        $classNameById = $classes->mapWithKeys(
+            fn ($c) => [$c->id => $this->classExportLabel((string) $c->name)]
+        )->all();
 
         foreach ($groups as $group) {
             $ws = $spreadsheet->createSheet();
@@ -203,7 +219,7 @@ class ClassRoutineExcelExporter
         // Title — e.g. "MON / TUE / WED — CLASS ROUTINE"
         $ws->setCellValue('A1', mb_strtoupper($dayLabel).' — CLASS ROUTINE');
         $ws->mergeCells('A1:'.$remarksCol.'1');
-        $ws->getStyle('A1')->getFont()->setBold(true)->setSize(12);
+        $ws->getStyle('A1')->getFont()->setName(self::FONT)->setBold(true)->setSize(10);
         $ws->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         // Header row 2
@@ -218,12 +234,35 @@ class ClassRoutineExcelExporter
         $ws->getStyle('A2:'.$remarksCol.'2')->getFont()->setBold(true);
         $ws->getStyle('A2:'.$remarksCol.'2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
 
-        // --- Teacher legend (A-C) — same short labels as TEACH / LEISURE so COUNTIF matches ---
+        // Prefer teacher_id; fall back to unambiguous name match (handles "IQBALUR R." ↔ "IQBALUR RAHMAN").
+        $teacherById = $teachers->keyBy('id');
+        $busyByPeriod = [];
+        $periodHasTeaching = [];
+        foreach ($periodCols as $p => $_col) {
+            $busyByPeriod[$p] = [];
+            $periodHasTeaching[$p] = false;
+        }
+        // Scan ALL day entries so a FREE-for-every-class period stays blank in LEISURE.
+        foreach ($dayEntries as $entry) {
+            $p = (int) $entry->period_number;
+            if ($p < 1 || $p > $periods || $this->entryIsFree($entry)) {
+                continue;
+            }
+            $periodHasTeaching[$p] = true;
+            $tid = $this->resolveEntryTeacherId($entry, $teachers);
+            if ($tid !== null && $teacherById->has($tid)) {
+                $busyByPeriod[$p][$tid] = true;
+            }
+        }
+        $periodCounts = $this->teacherPeriodCounts($dayEntries, $teachers, $periods);
+
+        // --- Teacher legend (A-C) — period counts computed in PHP (not Excel COUNTIF on short labels) ---
         $row = 3;
         $serial = 1;
         foreach ($teachers as $teacher) {
             $ws->setCellValue('A'.$row, $serial);
-            $ws->setCellValue('B'.$row, $this->shortLabel((string) $teacher->name, 14));
+            $ws->setCellValue('B'.$row, $this->shortTeacherName((string) $teacher->name));
+            $ws->setCellValue('C'.$row, $periodCounts[(int) $teacher->id] ?? 0);
             if ($teacher->color) {
                 $this->fillCell($ws, 'B'.$row, $teacher->color);
                 $ws->getStyle('B'.$row)->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($this->contrastingFontArgb($teacher->color)));
@@ -234,35 +273,33 @@ class ClassRoutineExcelExporter
         }
         $legendLastRow = $row - 1;
 
-        // Busy teachers per period (matched id or unmatched label) for LEISURE.
-        $busyByPeriod = [];
-        foreach ($periodCols as $p => $_col) {
-            $busyByPeriod[$p] = ['ids' => [], 'labels' => []];
-        }
-
-        // --- Class grid (E-…) ---
+        // --- Class grid (E-…) — skip classes that are FREE in every period ---
         $gridRow = 3;
         foreach ($classes as $class) {
+            $entriesForClass = $dayEntries->where('school_class_id', $class->id)->keyBy('period_number');
+            if (! $this->classHasTeachingEntry($entriesForClass, $periods)) {
+                continue;
+            }
+
             $subRow = $gridRow;
             $teachRow = $gridRow + 1;
 
-            $ws->setCellValue('E'.$subRow, $this->shortLabel((string) $class->name, 10));
+            $ws->setCellValue('E'.$subRow, $this->classExportLabel((string) $class->name));
             $ws->mergeCells('E'.$subRow.':E'.$teachRow);
-            $ws->getStyle('E'.$subRow)->getFont()->setBold(true);
+            $ws->getStyle('E'.$subRow)->getFont()->setName(self::FONT)->setBold(true)->setSize(self::FONT_SIZE);
             $ws->getStyle('E'.$subRow.':E'.$teachRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
 
             $ws->setCellValue('F'.$subRow, 'SUB');
             $ws->setCellValue('F'.$teachRow, 'TEACH');
-            $ws->getStyle('F'.$subRow.':F'.$teachRow)->getFont()->setBold(true);
+            $ws->getStyle('F'.$subRow.':F'.$teachRow)->getFont()->setName(self::FONT)->setBold(true)->setSize(self::FONT_SIZE);
 
-            $entriesForClass = $dayEntries->where('school_class_id', $class->id)->keyBy('period_number');
             $remarksText = null;
             foreach ($periodCols as $p => $col) {
                 $entry = $entriesForClass->get($p);
                 if (! $entry) {
                     continue;
                 }
-                if ($entry->is_free || mb_strtoupper(trim((string) ($entry->subject_label ?? ''))) === 'FREE') {
+                if ($this->entryIsFree($entry)) {
                     $ws->setCellValue($col.$subRow, 'FREE');
                     $ws->setCellValue($col.$teachRow, '');
                     $this->fillCell($ws, $col.$subRow, 'ECFDF5');
@@ -274,27 +311,22 @@ class ClassRoutineExcelExporter
                 }
 
                 $subjectText = $entry->subject?->name ?? $entry->subject_label;
-                $teacherText = $entry->teacher?->name ?? $entry->teacher_label;
+                $tid = $this->resolveEntryTeacherId($entry, $teachers);
+                $teacherModel = $tid !== null ? $teacherById->get($tid) : null;
+                $teacherText = $teacherModel?->name
+                    ?? $entry->teacher?->name
+                    ?? $entry->teacher_label;
                 if ($subjectText) {
                     $ws->setCellValue($col.$subRow, $this->shortLabel((string) $subjectText, 12));
                 }
                 if ($teacherText) {
-                    $ws->setCellValue($col.$teachRow, $this->shortLabel((string) $teacherText, 12));
-                    $color = $entry->color ?? $entry->teacher?->color;
+                    $ws->setCellValue($col.$teachRow, $this->shortTeacherName((string) $teacherText));
+                    $color = $entry->color ?? $teacherModel?->color ?? $entry->teacher?->color;
                     if ($color) {
                         $this->fillCell($ws, $col.$teachRow, $color);
                         $ws->getStyle($col.$teachRow)->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($this->contrastingFontArgb($color)));
                     }
-                    $ws->getStyle($col.$teachRow)->getFont()->setBold(true);
-
-                    if ($entry->teacher_id) {
-                        $busyByPeriod[$p]['ids'][(int) $entry->teacher_id] = true;
-                    } else {
-                        $labelKey = mb_strtoupper(trim((string) $entry->teacher_label));
-                        if ($labelKey !== '') {
-                            $busyByPeriod[$p]['labels'][$labelKey] = true;
-                        }
-                    }
+                    $ws->getStyle($col.$teachRow)->getFont()->setName(self::FONT)->setBold(true)->setSize(self::FONT_SIZE);
                 }
                 $remarksText ??= $entry->remarks;
             }
@@ -305,73 +337,238 @@ class ClassRoutineExcelExporter
             $gridRow += 2;
         }
         $gridLastRow = $gridRow - 1;
+        $hasClassGrid = $gridLastRow >= 3;
 
-        // --- LEISURE row: free teachers listed under each period ---
-        $leisureRow = $gridLastRow + 1;
-        $ws->setCellValue('E'.$leisureRow, 'LEISURE');
-        $ws->setCellValue('F'.$leisureRow, 'FREE');
-        $ws->getStyle('E'.$leisureRow.':F'.$leisureRow)->getFont()->setBold(true);
-        $this->fillCell($ws, 'E'.$leisureRow, 'D1FAE5');
-        $this->fillCell($ws, 'F'.$leisureRow, 'D1FAE5');
-
-        $maxFree = 0;
-        foreach ($periodCols as $p => $col) {
-            $freeNames = [];
-            foreach ($teachers as $teacher) {
-                if (isset($busyByPeriod[$p]['ids'][(int) $teacher->id])) {
-                    continue;
-                }
-                $nameKey = mb_strtoupper(trim((string) $teacher->name));
-                if (isset($busyByPeriod[$p]['labels'][$nameKey])) {
-                    continue;
-                }
-                $freeNames[] = $this->shortLabel((string) $teacher->name, 12);
-            }
-            $maxFree = max($maxFree, count($freeNames));
-            if ($freeNames !== []) {
-                $ws->setCellValue($col.$leisureRow, implode("\n", $freeNames));
-            }
-            $this->fillCell($ws, $col.$leisureRow, 'ECFDF5');
-            $ws->getStyle($col.$leisureRow)->getFont()->setBold(true)->getColor()->setARGB('FF065F46');
-            $ws->getStyle($col.$leisureRow)->getAlignment()
-                ->setHorizontal(Alignment::HORIZONTAL_CENTER)
-                ->setVertical(Alignment::VERTICAL_TOP)
-                ->setWrapText(true);
-        }
-        $this->fillCell($ws, $remarksCol.$leisureRow, 'ECFDF5');
-        $ws->getRowDimension($leisureRow)->setRowHeight(max(30, min(140, 14 * max(1, $maxFree))));
-
-        // COUNTIF over the class grid only (not the LEISURE row — free names would inflate counts).
-        $row = 3;
-        foreach ($teachers as $teacher) {
-            if ($gridLastRow >= 3) {
-                $ws->setCellValue('C'.$row, '=COUNTIF(G3:'.$lastPeriodCol.$gridLastRow.',B'.$row.')');
-            } else {
-                $ws->setCellValue('C'.$row, 0);
-            }
-            $row++;
-        }
+        // Legend total must be placed before LEISURE so we can park LEISURE below BOTH blocks.
+        // Excel rows are shared left↔right: putting LEISURE at gridLastRow+1 while the teacher
+        // legend still occupies that row (e.g. UZMA S.) made the tall LEISURE height stretch
+        // that teacher row.
+        $legendTotalRow = null;
         if ($legendLastRow >= 3) {
-            $ws->setCellValue('C'.($legendLastRow + 1), '=SUM(C3:C'.$legendLastRow.')');
+            $legendTotalRow = $legendLastRow + 1;
+            $ws->setCellValue('C'.$legendTotalRow, array_sum($periodCounts));
+            $ws->getStyle('C'.$legendTotalRow)->getFont()->setBold(true);
+        }
+        $legendBottom = $legendTotalRow ?? max(2, $legendLastRow);
+
+        // --- LEISURE on its own row BELOW teacher legend AND class grid (E+ only) ---
+        $leisureRow = null;
+        $maxFree = 0;
+        if ($hasClassGrid) {
+            $leisureRow = max($gridLastRow, $legendBottom) + 1;
+            $ws->setCellValue('E'.$leisureRow, 'LEISURE');
+            $ws->setCellValue('F'.$leisureRow, 'FREE');
+            $ws->getStyle('E'.$leisureRow.':F'.$leisureRow)->getFont()->setBold(true);
+            $this->fillCell($ws, 'E'.$leisureRow, 'D1FAE5');
+            $this->fillCell($ws, 'F'.$leisureRow, 'D1FAE5');
+
+            foreach ($periodCols as $p => $col) {
+                $this->fillCell($ws, $col.$leisureRow, 'ECFDF5');
+                $ws->getStyle($col.$leisureRow)->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_CENTER)
+                    ->setVertical(Alignment::VERTICAL_TOP)
+                    ->setWrapText(true);
+
+                // No teaching this period (FREE for every class / empty) → leave blank.
+                if (! ($periodHasTeaching[$p] ?? false)) {
+                    continue;
+                }
+
+                $freeNames = [];
+                foreach ($teachers as $teacher) {
+                    if (isset($busyByPeriod[$p][(int) $teacher->id])) {
+                        continue;
+                    }
+                    $freeNames[] = $this->shortTeacherName((string) $teacher->name);
+                }
+                $maxFree = max($maxFree, count($freeNames));
+                if ($freeNames !== []) {
+                    $ws->setCellValue($col.$leisureRow, implode("\n", $freeNames));
+                    $ws->getStyle($col.$leisureRow)->getFont()->setBold(true)->getColor()->setARGB('FF065F46');
+                }
+            }
+            $this->fillCell($ws, $remarksCol.$leisureRow, 'ECFDF5');
         }
 
-        // --- Borders + alignment ---
-        $lastRow = max($legendLastRow, $leisureRow);
-        $usedRange = 'A2:'.$remarksCol.$lastRow;
-        $ws->getStyle($usedRange)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setARGB('FF000000');
-        if ($gridLastRow >= 3) {
+        // --- Borders: teacher legend (A–C) and class grid / LEISURE (E–…) stay separate ---
+        $thin = Border::BORDER_THIN;
+        $black = 'FF000000';
+        if ($legendLastRow >= 3) {
+            $ws->getStyle('A2:C'.$legendBottom)->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
+        } else {
+            $ws->getStyle('A2:C2')->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
+        }
+
+        // Class grid borders stop at the last class pair — not extended through empty spacer rows.
+        if ($hasClassGrid) {
+            $ws->getStyle('E2:'.$remarksCol.$gridLastRow)->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
+        } else {
+            $ws->getStyle('E2:'.$remarksCol.'2')->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
+        }
+        // LEISURE gets its own bordered row (never merged with legend or class pairs).
+        if ($leisureRow !== null) {
+            $ws->getStyle('E'.$leisureRow.':'.$remarksCol.$leisureRow)->getBorders()->getAllBorders()->setBorderStyle($thin)->getColor()->setARGB($black);
+        }
+
+        $fontBottom = max($legendBottom, $gridLastRow, $leisureRow ?? 2);
+        $ws->getStyle('A1:'.$remarksCol.$fontBottom)->getFont()->setName(self::FONT)->setSize(self::FONT_SIZE);
+        $ws->getStyle('A1')->getFont()->setName(self::FONT)->setBold(true)->setSize(10);
+        if ($hasClassGrid) {
             $ws->getStyle('G3:'.$lastPeriodCol.$gridLastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
         }
         if ($legendLastRow >= 3) {
             $ws->getStyle('B3:B'.$legendLastRow)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
         }
 
-        foreach (range(2, $lastRow) as $r) {
-            if ($r === $leisureRow) {
+        // Lock every non-LEISURE row to the normal timetable height (13). LEISURE may be taller
+        // for wrapped free-teacher names — but that row no longer coincides with any teacher.
+        foreach (range(2, $fontBottom) as $r) {
+            if ($leisureRow !== null && $r === $leisureRow) {
                 continue;
             }
-            $ws->getRowDimension($r)->setRowHeight(15);
+            $ws->getRowDimension($r)->setRowHeight(13);
         }
+        if ($leisureRow !== null) {
+            $ws->getRowDimension($leisureRow)->setRowHeight(max(22, min(140, 14 * max(1, $maxFree))));
+        }
+    }
+
+    /** @param  Collection<int, ClassRoutineEntry>  $entriesByPeriod */
+    private function classHasTeachingEntry(Collection $entriesByPeriod, int $periods): bool
+    {
+        for ($p = 1; $p <= $periods; $p++) {
+            $entry = $entriesByPeriod->get($p);
+            if ($entry && ! $this->entryIsFree($entry)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function entryIsFree(ClassRoutineEntry $entry): bool
+    {
+        return $entry->is_free
+            || mb_strtoupper(trim((string) ($entry->subject_label ?? ''))) === 'FREE';
+    }
+
+    /**
+     * Unique teaching periods per active teacher for this day group.
+     * FREE / empty slots excluded; same teacher in two classes in one period counts once.
+     *
+     * @param  Collection<int, ClassRoutineEntry>  $dayEntries
+     * @param  Collection<int, Teacher>  $teachers
+     * @return array<int, int> teacher_id => period count
+     */
+    private function teacherPeriodCounts(Collection $dayEntries, Collection $teachers, int $periods): array
+    {
+        $activeIds = $teachers->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $activeSet = array_fill_keys($activeIds, true);
+        $seen = [];
+        $counts = array_fill_keys($activeIds, 0);
+
+        foreach ($dayEntries as $entry) {
+            if ($this->entryIsFree($entry)) {
+                continue;
+            }
+            $p = (int) $entry->period_number;
+            if ($p < 1 || $p > $periods) {
+                continue;
+            }
+            $tid = $this->resolveEntryTeacherId($entry, $teachers);
+            if ($tid === null || ! isset($activeSet[$tid])) {
+                continue;
+            }
+            if (isset($seen[$tid][$p])) {
+                continue;
+            }
+            $seen[$tid][$p] = true;
+            $counts[$tid]++;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Prefer teacher_id; otherwise match teacher_label to exactly one active teacher.
+     *
+     * @param  Collection<int, Teacher>  $teachers
+     */
+    private function resolveEntryTeacherId(ClassRoutineEntry $entry, Collection $teachers): ?int
+    {
+        if ($entry->teacher_id) {
+            return (int) $entry->teacher_id;
+        }
+        $label = trim((string) ($entry->teacher_label ?? ''));
+        if ($label === '') {
+            return null;
+        }
+
+        return $this->matchTeacherIdByName($label, $teachers);
+    }
+
+    /**
+     * Unambiguous name match only (exact / similar / short-form abbreviation).
+     *
+     * @param  Collection<int, Teacher>  $teachers
+     */
+    private function matchTeacherIdByName(string $label, Collection $teachers): ?int
+    {
+        $candidates = [];
+        foreach ($teachers as $teacher) {
+            if ($this->teacherNamesMatch($label, (string) $teacher->name)) {
+                $candidates[] = (int) $teacher->id;
+            }
+        }
+        $candidates = array_values(array_unique($candidates));
+
+        return count($candidates) === 1 ? $candidates[0] : null;
+    }
+
+    /** IQBALUR R. ↔ IQBALUR RAHMAN; SANA ↔ SANA HASAN when unique. */
+    private function teacherNamesMatch(string $a, string $b): bool
+    {
+        $na = $this->normalizeTeacherName($a);
+        $nb = $this->normalizeTeacherName($b);
+        if ($na === '' || $nb === '') {
+            return false;
+        }
+        if ($na === $nb) {
+            return true;
+        }
+        if (\App\Services\Payroll\EmployeeMatcher::similarNames($a, $b)) {
+            return true;
+        }
+        $sa = $this->shortTeacherName($a);
+        $sb = $this->shortTeacherName($b);
+        if ($sa !== '' && $sa === $sb) {
+            return true;
+        }
+        // Label already abbreviated like "IQBALUR R" vs short "IQBALUR R."
+        $sa2 = $this->normalizeTeacherName($sa);
+        $sb2 = $this->normalizeTeacherName($sb);
+        if ($sa2 !== '' && $sa2 === $sb2) {
+            return true;
+        }
+
+        // Single-token label ("SANA", "VIJAY") ↔ master's first name (uniqueness checked by caller).
+        $aTokens = explode(' ', $na);
+        $bTokens = explode(' ', $nb);
+        if (count($aTokens) === 1 && ($bTokens[0] ?? '') === $aTokens[0]) {
+            return true;
+        }
+        if (count($bTokens) === 1 && ($aTokens[0] ?? '') === $bTokens[0]) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function normalizeTeacherName(string $name): string
+    {
+        $clean = mb_strtoupper(str_replace('.', ' ', $name));
+
+        return preg_replace('/\s+/', ' ', trim($clean)) ?? '';
     }
 
     /**
@@ -407,7 +604,7 @@ class ClassRoutineExcelExporter
 
         $ws->setCellValue('A1', 'TEACHER WISE — '.mb_strtoupper($dayLabel));
         $ws->mergeCells('A1:'.$countCol.'1');
-        $ws->getStyle('A1')->getFont()->setBold(true)->setSize(12);
+        $ws->getStyle('A1')->getFont()->setName(self::FONT)->setBold(true)->setSize(10);
         $ws->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         $ws->setCellValue('A2', 'TEACHER');
@@ -419,30 +616,28 @@ class ClassRoutineExcelExporter
         $ws->getStyle('A2:'.$countCol.'2')->getFont()->setBold(true);
         $ws->getStyle('A2:'.$countCol.'2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
 
-        // teacher_id / label-key -> period -> list of entries
+        // Resolve entries to teacher ids (id first, else unambiguous name match).
         $byTeacherPeriod = [];
         foreach ($dayEntries as $entry) {
-            if ($entry->teacher_id) {
-                $key = 't'.$entry->teacher_id;
-            } else {
-                $label = mb_strtoupper(trim((string) ($entry->teacher_label ?? '')));
-                if ($label === '') {
-                    continue;
-                }
-                $key = 'l'.$label;
+            if ($this->entryIsFree($entry)) {
+                continue;
             }
-            $byTeacherPeriod[$key][$entry->period_number][] = $entry;
+            $tid = $this->resolveEntryTeacherId($entry, $teachers);
+            if ($tid === null) {
+                continue;
+            }
+            $byTeacherPeriod[$tid][(int) $entry->period_number][] = $entry;
         }
 
         $row = 3;
         foreach ($teachers as $teacher) {
-            $key = 't'.$teacher->id;
+            $tid = (int) $teacher->id;
             $subRow = $row;
             $classRow = $row + 1;
 
-            $ws->setCellValue('A'.$subRow, $this->shortLabel((string) $teacher->name, 14));
+            $ws->setCellValue('A'.$subRow, $this->shortTeacherName((string) $teacher->name));
             $ws->mergeCells('A'.$subRow.':A'.$classRow);
-            $ws->getStyle('A'.$subRow)->getFont()->setBold(true);
+            $ws->getStyle('A'.$subRow)->getFont()->setName(self::FONT)->setBold(true)->setSize(self::FONT_SIZE);
             $ws->getStyle('A'.$subRow.':A'.$classRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
             if ($teacher->color) {
                 $this->fillCell($ws, 'A'.$subRow, $teacher->color);
@@ -455,7 +650,7 @@ class ClassRoutineExcelExporter
 
             $periodCount = 0;
             foreach ($periodCols as $p => $col) {
-                $list = $byTeacherPeriod[$key][$p] ?? [];
+                $list = $byTeacherPeriod[$tid][$p] ?? [];
                 if ($list === []) {
                     $ws->setCellValue($col.$subRow, 'FREE');
                     $ws->setCellValue($col.$classRow, '');
@@ -472,7 +667,7 @@ class ClassRoutineExcelExporter
                             $subs[] = $this->shortLabel((string) $sub, 12);
                         }
                         $className = $classNameById[(int) $e->school_class_id] ?? '#'.$e->school_class_id;
-                        $cls[] = $this->shortLabel((string) $className, 10);
+                        $cls[] = (string) $className;
                     }
                     $ws->setCellValue($col.$subRow, implode(' / ', array_unique($subs)));
                     $ws->setCellValue($col.$classRow, implode(' + ', $cls));
@@ -497,10 +692,12 @@ class ClassRoutineExcelExporter
         $lastRow = max(2, $row - 1);
         $usedRange = 'A2:'.$countCol.$lastRow;
         $ws->getStyle($usedRange)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setARGB('FF000000');
+        $ws->getStyle('A1:'.$countCol.$lastRow)->getFont()->setName(self::FONT)->setSize(self::FONT_SIZE);
+        $ws->getStyle('A1')->getFont()->setName(self::FONT)->setBold(true)->setSize(10);
         $ws->getStyle('C3:'.$lastPeriodCol.$lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
 
         foreach (range(2, $lastRow) as $r) {
-            $ws->getRowDimension($r)->setRowHeight(15);
+            $ws->getRowDimension($r)->setRowHeight(13);
         }
     }
 
@@ -533,9 +730,62 @@ class ClassRoutineExcelExporter
     }
 
     /**
-     * Fit long teacher / subject / class names into narrow period columns.
-     * Multi-word names become "FIRST L." (then truncated if still too long).
+     * Teacher names: first word full + last word's first letter only (e.g. RAM KUMAR SINGH → RAM S.).
      */
+    private function shortTeacherName(?string $name): string
+    {
+        $upper = mb_strtoupper(trim((string) $name));
+        if ($upper === '') {
+            return '';
+        }
+        $parts = preg_split('/\s+/u', $upper) ?: [$upper];
+        if (count($parts) === 1) {
+            return $parts[0];
+        }
+
+        return $parts[0].' '.mb_substr($parts[count($parts) - 1], 0, 1).'.';
+    }
+
+    /** NURSERY → NUR; LKG / UKG / numbered classes kept compact. */
+    private function classExportLabel(string $name): string
+    {
+        $key = mb_strtolower(trim(preg_replace('/\s+/u', '', $name) ?? $name));
+        if (isset(self::CLASS_SHORT[$key])) {
+            return self::CLASS_SHORT[$key];
+        }
+        // "Class 1" / "I" / "1st" → keep a short uppercase token
+        if (preg_match('/^(\d+)(st|nd|rd|th)?$/i', $key, $m)) {
+            return (string) (int) $m[1];
+        }
+
+        return mb_strtoupper(trim($name));
+    }
+
+    /**
+     * Sort key: NUR→0, LKG→1, UKG→2, then class 1, 2, 3… then anything else by sort_order/name.
+     *
+     * @return array{0: int, 1: int, 2: string}
+     */
+    private function classSortKey(SchoolClass $class): array
+    {
+        $key = mb_strtolower(trim(preg_replace('/\s+/u', '', (string) $class->name) ?? ''));
+        $prePrimary = ['nursery' => 0, 'nur' => 0, 'nurs' => 0, 'lkg' => 1, 'ukg' => 2];
+        if (isset($prePrimary[$key])) {
+            return [$prePrimary[$key], 0, $key];
+        }
+        if (preg_match('/^(\d+)/', $key, $m)) {
+            return [100 + (int) $m[1], 0, $key];
+        }
+        // Roman numerals I–XII often used for classes
+        $romans = ['i' => 1, 'ii' => 2, 'iii' => 3, 'iv' => 4, 'v' => 5, 'vi' => 6, 'vii' => 7, 'viii' => 8, 'ix' => 9, 'x' => 10, 'xi' => 11, 'xii' => 12];
+        if (isset($romans[$key])) {
+            return [100 + $romans[$key], 0, $key];
+        }
+
+        return [500 + (int) ($class->sort_order ?? 0), (int) $class->id, $key];
+    }
+
+    /** Subject labels only — shrink if longer than $max. */
     private function shortLabel(?string $name, int $max = 12): string
     {
         $upper = mb_strtoupper(trim((string) $name));
@@ -544,19 +794,6 @@ class ClassRoutineExcelExporter
         }
         if (mb_strlen($upper) <= $max) {
             return $upper;
-        }
-
-        $parts = preg_split('/\s+/u', $upper) ?: [$upper];
-        if (count($parts) >= 2) {
-            $first = $parts[0];
-            $last = $parts[count($parts) - 1];
-            $candidate = $first.' '.mb_substr($last, 0, 1).'.';
-            if (mb_strlen($candidate) <= $max) {
-                return $candidate;
-            }
-            // e.g. MOHAMMAD… → MOHAM L.
-            $room = max(1, $max - 3);
-            return mb_substr($first, 0, $room).' '.mb_substr($last, 0, 1).'.';
         }
 
         return mb_substr($upper, 0, max(1, $max - 1)).'…';
