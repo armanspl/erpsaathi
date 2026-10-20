@@ -16,6 +16,7 @@ class ClassRoutineEntry extends Model
         'section_id',
         'day_of_week',
         'period_number',
+        'is_free',
         'subject_id',
         'subject_label',
         'teacher_id',
@@ -29,6 +30,7 @@ class ClassRoutineEntry extends Model
         return [
             'day_of_week' => 'integer',
             'period_number' => 'integer',
+            'is_free' => 'boolean',
         ];
     }
 

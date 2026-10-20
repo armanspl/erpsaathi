@@ -126,11 +126,12 @@ function slot(group, classId, period) {
 }
 function subjectOf(e) {
     if (!e) return '';
+    if (e.is_free || String(e.subject_label || '').toUpperCase() === 'FREE') return 'FREE';
     return e.subject?.name || props.subjects.find((s) => s.id === e.subject_id)?.name || e.subject_label || '';
 }
 // Matched teachers are keyed by id, text-only (unmatched import) names by the name itself.
 function teacherKeyOf(e) {
-    if (!e) return null;
+    if (!e || e.is_free || String(e.subject_label || '').toUpperCase() === 'FREE') return null;
     if (e.teacher_id) return `t${e.teacher_id}`;
     const label = (e.teacher_label || '').trim().toUpperCase();
     return label ? `l${label}` : null;
@@ -180,19 +181,28 @@ function totalPeriods(group) {
     return Object.values(slotsFor(group)).reduce((n, byPeriod) => n + Object.values(byPeriod).reduce((m, l) => m + l.length, 0), 0);
 }
 
-// All active teachers + any teacher named in the routine (matched-but-inactive, or text-only names).
+// Active teachers only (props.teachers already excludes inactive). Text-only unmatched
+// import names may still appear; matched inactive teachers are never added.
+const activeTeacherIds = computed(() => new Set(props.teachers.map((t) => t.id)));
 const fullRoster = computed(() => {
     const roster = new Map(props.teachers.map((t) => [`t${t.id}`, { key: `t${t.id}`, name: t.name }]));
     Object.values(byDay.value).forEach((day) => Object.values(day).forEach((e) => {
         const key = teacherKeyOf(e);
-        if (key && !roster.has(key)) roster.set(key, { key, name: teacherNameOf(e) });
+        if (!key || roster.has(key)) return;
+        if (e.teacher_id && !activeTeacherIds.value.has(e.teacher_id)) return;
+        roster.set(key, { key, name: teacherNameOf(e) });
     }));
     return [...roster.values()].sort((a, b) => a.name.localeCompare(b.name));
 });
 // Teachers who teach somewhere in this routine (any day) — the list when "no periods" ones are hidden.
 const teachingKeys = computed(() => {
     const keys = new Set();
-    Object.values(byDay.value).forEach((day) => Object.values(day).forEach((e) => { const k = teacherKeyOf(e); if (k) keys.add(k); }));
+    Object.values(byDay.value).forEach((day) => Object.values(day).forEach((e) => {
+        const k = teacherKeyOf(e);
+        if (!k) return;
+        if (e.teacher_id && !activeTeacherIds.value.has(e.teacher_id)) return;
+        keys.add(k);
+    }));
     return keys;
 });
 function rosterFor() {

@@ -170,6 +170,18 @@
                                 {{ tab.label }}
                             </button>
                         </div>
+                        <label class="inline-flex items-center gap-1.5 text-slate-500">
+                            <span>Periods today</span>
+                            <input
+                                type="number"
+                                min="1"
+                                max="20"
+                                class="form-input !w-16 !py-1 !text-xs"
+                                :value="periodsForDay(activeDay)"
+                                @change="setDayPeriods(activeDay, $event.target.value)"
+                                title="e.g. 5 for half day, 7 for full day — applies only to this weekday"
+                            />
+                        </label>
                         <span class="text-slate-400">Copy {{ dayLabel(activeDay) }} to:</span>
                         <select v-model="copyTargetDay" class="form-input !py-1 !text-xs">
                             <option :value="null">Select day</option>
@@ -185,7 +197,22 @@
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
                                 <th class="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 font-semibold text-slate-500 dark:bg-slate-800">Class</th>
-                                <th v-for="p in periodsRange" :key="p" class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">P{{ p }}</th>
+                                <th v-for="p in periodsRange" :key="p" class="whitespace-nowrap px-2 py-2 text-center font-semibold text-slate-500">
+                                    <div class="flex flex-col items-center gap-1">
+                                        <span>P{{ p }}</span>
+                                        <button
+                                            type="button"
+                                            class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide transition"
+                                            :class="isPeriodAllFree(p)
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-white text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-50 dark:bg-slate-900 dark:text-emerald-300 dark:ring-emerald-500/30'"
+                                            :title="isPeriodAllFree(p) ? 'Clear FREE for all classes in this period' : 'Mark this whole period FREE for every class'"
+                                            @click="togglePeriodFree(p)"
+                                        >
+                                            {{ isPeriodAllFree(p) ? '✓ Free all' : 'Free all' }}
+                                        </button>
+                                    </div>
+                                </th>
                                 <th class="whitespace-nowrap px-2 py-2 font-semibold text-slate-500">Remarks</th>
                             </tr>
                         </thead>
@@ -198,27 +225,47 @@
                                 <td v-for="p in periodsRange" :key="p" class="min-w-[130px] px-1.5 py-1.5 align-top">
                                     <div
                                         class="space-y-1 rounded-lg border p-1.5"
-                                        :class="cellHasUnmatched(c.id, p) ? 'border-rose-300 bg-rose-50 dark:border-rose-500/40 dark:bg-rose-500/10' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60'"
+                                        :class="cell(c.id, p).is_free
+                                            ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-500/10'
+                                            : cellHasUnmatched(c.id, p)
+                                                ? 'border-rose-300 bg-rose-50 dark:border-rose-500/40 dark:bg-rose-500/10'
+                                                : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60'"
                                     >
-                                        <select v-model="cell(c.id, p).subject_id" class="form-input !py-1 !text-[11px]" @change="cell(c.id, p).subject_label = null">
-                                            <option :value="null">{{ cell(c.id, p).subject_label ? `⚠ ${cell(c.id, p).subject_label}` : '— subject —' }}</option>
-                                            <option v-for="sub in subjects" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
-                                        </select>
-                                        <select v-model="cell(c.id, p).teacher_id" class="form-input !py-1 !text-[11px]" @change="onTeacherPick(c.id, p)">
-                                            <option :value="null">{{ cell(c.id, p).teacher_label ? `⚠ ${cell(c.id, p).teacher_label}` : '— teacher —' }}</option>
-                                            <optgroup v-if="freeTeachersForPeriod(p, c.id).length" label="Free (leisure)">
-                                                <option v-for="t in freeTeachersForPeriod(p, c.id)" :key="'f'+t.id" :value="t.id">{{ t.name }}</option>
-                                            </optgroup>
-                                            <optgroup v-if="busyTeachersForPeriod(p, c.id).length" label="Busy this period">
-                                                <option v-for="t in busyTeachersForPeriod(p, c.id)" :key="'b'+t.id" :value="t.id">{{ t.name }} — {{ t.busyIn }}</option>
-                                            </optgroup>
-                                        </select>
-                                        <div v-if="cell(c.id, p).teacher_id || cell(c.id, p).teacher_label" class="flex items-center gap-1">
-                                            <input v-model="cell(c.id, p).color" type="color" class="h-5 w-6 shrink-0 cursor-pointer rounded border-0 p-0" title="Badge colour for this cell" />
-                                            <span
-                                                class="flex-1 truncate rounded px-1 py-0.5 text-center text-[10px] font-semibold"
-                                                :style="{ background: cell(c.id, p).color || '#e2e8f0', color: contrastColor(cell(c.id, p).color) }"
-                                            >{{ teacherLabelFor(c.id, p) }}</span>
+                                        <button
+                                            type="button"
+                                            class="w-full rounded px-1 py-0.5 text-[10px] font-bold uppercase tracking-wide transition"
+                                            :class="cell(c.id, p).is_free
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-white text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-50 dark:bg-slate-900 dark:text-emerald-300 dark:ring-emerald-500/30'"
+                                            :title="cell(c.id, p).is_free ? 'Clear FREE (assign subject/teacher again)' : 'Mark this class period as FREE'"
+                                            @click="toggleFree(c.id, p)"
+                                        >
+                                            {{ cell(c.id, p).is_free ? '✓ Free' : 'Free' }}
+                                        </button>
+                                        <template v-if="!cell(c.id, p).is_free">
+                                            <select v-model="cell(c.id, p).subject_id" class="form-input !py-1 !text-[11px]" @change="cell(c.id, p).subject_label = null">
+                                                <option :value="null">{{ cell(c.id, p).subject_label ? `⚠ ${cell(c.id, p).subject_label}` : '— subject —' }}</option>
+                                                <option v-for="sub in subjects" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
+                                            </select>
+                                            <select v-model="cell(c.id, p).teacher_id" class="form-input !py-1 !text-[11px]" @change="onTeacherPick(c.id, p)">
+                                                <option :value="null">{{ cell(c.id, p).teacher_label ? `⚠ ${cell(c.id, p).teacher_label}` : '— teacher —' }}</option>
+                                                <optgroup v-if="freeTeachersForPeriod(p, c.id).length" label="Free (leisure)">
+                                                    <option v-for="t in freeTeachersForPeriod(p, c.id)" :key="'f'+t.id" :value="t.id">{{ t.name }}</option>
+                                                </optgroup>
+                                                <optgroup v-if="busyTeachersForPeriod(p, c.id).length" label="Busy this period">
+                                                    <option v-for="t in busyTeachersForPeriod(p, c.id)" :key="'b'+t.id" :value="t.id">{{ t.name }} — {{ t.busyIn }}</option>
+                                                </optgroup>
+                                            </select>
+                                            <div v-if="cell(c.id, p).teacher_id || cell(c.id, p).teacher_label" class="flex items-center gap-1">
+                                                <input v-model="cell(c.id, p).color" type="color" class="h-5 w-6 shrink-0 cursor-pointer rounded border-0 p-0" title="Badge colour for this cell" />
+                                                <span
+                                                    class="flex-1 truncate rounded px-1 py-0.5 text-center text-[10px] font-semibold"
+                                                    :style="{ background: cell(c.id, p).color || '#e2e8f0', color: contrastColor(cell(c.id, p).color) }"
+                                                >{{ teacherLabelFor(c.id, p) }}</span>
+                                            </div>
+                                        </template>
+                                        <div v-else class="rounded bg-emerald-100 px-1 py-1 text-center text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                                            Free period
                                         </div>
                                     </div>
                                 </td>
@@ -405,7 +452,9 @@ const currentSessionName = ref('');
 const editingSheet = ref(null);
 const sheetSaving = ref(false);
 const form = reactive({ academic_session_id: null, branch_id: null, title: '', periods_per_day: 7 });
-// grid[dow][classId][period] = { subject_id, subject_label, teacher_id, teacher_label, color, remarks }
+// Per-day period overrides (half day etc.). Keys are day_of_week; missing → form.periods_per_day.
+const dayPeriods = reactive({});
+// grid[dow][classId][period] = { is_free, subject_id, subject_label, teacher_id, teacher_label, color }
 const grid = reactive({});
 const classRemarks = reactive({});
 const activeDay = ref(1);
@@ -415,19 +464,36 @@ const mode = ref('edit');
 // Within edit mode: class-centric grid vs teacher-centric assign grid (same underlying data).
 const editLayout = ref('class');
 
-const periodsRange = computed(() => Array.from({ length: form.periods_per_day || 0 }, (_, i) => i + 1));
+function periodsForDay(dow) {
+    const n = Number(dayPeriods[dow]);
+    if (n >= 1) return n;
+    return Math.max(1, Number(form.periods_per_day) || 7);
+}
+
+function setDayPeriods(dow, raw) {
+    let n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > 20) n = 20;
+    dayPeriods[dow] = n;
+    // Keep sheet-wide default at least as high as any day (used as fallback / create default).
+    if (n > (form.periods_per_day || 0)) form.periods_per_day = n;
+    ensureDay(dow);
+}
+
+const periodsRange = computed(() => Array.from({ length: periodsForDay(activeDay.value) }, (_, i) => i + 1));
 
 function blankCell() {
-    return { subject_id: null, subject_label: null, teacher_id: null, teacher_label: null, color: null };
+    return { is_free: false, subject_id: null, subject_label: null, teacher_id: null, teacher_label: null, color: null };
 }
 
 function ensureDay(dow) {
     grid[dow] ??= {};
+    const maxP = periodsForDay(dow);
     classes.value.forEach((c) => {
         grid[dow][c.id] ??= {};
-        periodsRange.value.forEach((p) => {
+        for (let p = 1; p <= maxP; p++) {
             grid[dow][c.id][p] ??= blankCell();
-        });
+        }
     });
 }
 function ensureAllDays() {
@@ -439,6 +505,46 @@ function cell(classId, period) {
     grid[activeDay.value][classId] ??= {};
     grid[activeDay.value][classId][period] ??= blankCell();
     return grid[activeDay.value][classId][period];
+}
+
+function toggleFree(classId, period) {
+    const c = cell(classId, period);
+    c.is_free = !c.is_free;
+    if (c.is_free) {
+        c.subject_id = null;
+        c.subject_label = null;
+        c.teacher_id = null;
+        c.teacher_label = null;
+        c.color = null;
+    }
+}
+
+/** True when every class on the active day has this period marked FREE. */
+function isPeriodAllFree(period) {
+    if (!classes.value.length) return false;
+    return classes.value.every((c) => cell(c.id, period).is_free);
+}
+
+/** Mark / clear FREE for this period across all classes (e.g. school-wide free period). */
+function togglePeriodFree(period) {
+    const makeFree = !isPeriodAllFree(period);
+    classes.value.forEach((c) => {
+        const slot = cell(c.id, period);
+        slot.is_free = makeFree;
+        if (makeFree) {
+            slot.subject_id = null;
+            slot.subject_label = null;
+            slot.teacher_id = null;
+            slot.teacher_label = null;
+            slot.color = null;
+        }
+    });
+    pushToast(
+        makeFree
+            ? `Period ${period} marked FREE for all classes.`
+            : `Period ${period} FREE cleared — you can assign subjects/teachers again.`,
+        'success'
+    );
 }
 
 function cellHasUnmatched(classId, period) {
@@ -468,7 +574,8 @@ function busyMapForPeriod(period, excludeClassId = null) {
     classes.value.forEach((c) => {
         if (excludeClassId != null && c.id === excludeClassId) return;
         const cellData = dayGrid[c.id]?.[period];
-        const tid = cellData?.teacher_id;
+        if (!cellData || cellData.is_free) return;
+        const tid = cellData.teacher_id;
         if (!tid) return;
         const prev = busy.get(tid) || [];
         prev.push(c.name);
@@ -500,7 +607,9 @@ function teacherPeriodClassIds(teacherId, period) {
     const dayGrid = grid[activeDay.value] || {};
     const ids = [];
     classes.value.forEach((c) => {
-        if (dayGrid[c.id]?.[period]?.teacher_id === teacherId) ids.push(c.id);
+        const cellData = dayGrid[c.id]?.[period];
+        if (cellData?.is_free) return;
+        if (cellData?.teacher_id === teacherId) ids.push(c.id);
     });
     return ids;
 }
@@ -553,6 +662,7 @@ function onTeacherWiseClassChange(teacherId, period, classIdRaw) {
     if (!classId) return;
 
     const target = cell(classId, period);
+    target.is_free = false;
     // If another teacher already had this class+period, replace them.
     target.teacher_id = teacherId;
     target.teacher_label = null;
@@ -598,24 +708,47 @@ function onPeriodsChange() {
 function copyDay() {
     if (!copyTargetDay.value) return;
     ensureDay(activeDay.value);
+    dayPeriods[copyTargetDay.value] = periodsForDay(activeDay.value);
     ensureDay(copyTargetDay.value);
     grid[copyTargetDay.value] = JSON.parse(JSON.stringify(grid[activeDay.value]));
     pushToast(`Copied ${dayLabel(activeDay.value)} to ${dayLabel(copyTargetDay.value)}.`, 'success');
     copyTargetDay.value = null;
 }
 
+function periodsByDayPayload() {
+    const out = {};
+    DAYS.forEach((d) => {
+        out[d.dow] = periodsForDay(d.dow);
+    });
+    return out;
+}
+
 // The routine as it is in the grid right now (saved, freshly imported or typed in by hand) — what View shows.
 const viewSheet = computed(() => ({
     title: form.title,
     periods_per_day: form.periods_per_day,
-    days: DAYS.map((d) => ({
-        day_of_week: d.dow,
-        entries: classes.value.flatMap((c) => periodsRange.value.map((p) => {
-            const x = grid[d.dow]?.[c.id]?.[p];
-            if (!x || (!x.subject_id && !x.subject_label && !x.teacher_id && !x.teacher_label)) return null;
-            return { ...x, school_class_id: c.id, period_number: p, remarks: classRemarks[c.id] || null };
-        }).filter(Boolean)),
-    })),
+    periods_by_day: periodsByDayPayload(),
+    days: DAYS.map((d) => {
+        const maxP = periodsForDay(d.dow);
+        return {
+            day_of_week: d.dow,
+            periods: maxP,
+            entries: classes.value.flatMap((c) => {
+                const list = [];
+                for (let p = 1; p <= maxP; p++) {
+                    const x = grid[d.dow]?.[c.id]?.[p];
+                    if (!x) continue;
+                    if (x.is_free) {
+                        list.push({ ...x, is_free: true, school_class_id: c.id, period_number: p, remarks: classRemarks[c.id] || null });
+                        continue;
+                    }
+                    if (!x.subject_id && !x.subject_label && !x.teacher_id && !x.teacher_label) continue;
+                    list.push({ ...x, is_free: false, school_class_id: c.id, period_number: p, remarks: classRemarks[c.id] || null });
+                }
+                return list;
+            }),
+        };
+    }),
 }));
 
 const sheetSubtitle = computed(() => {
@@ -662,6 +795,7 @@ function resetForm() {
         title: '',
         periods_per_day: 7,
     });
+    Object.keys(dayPeriods).forEach((k) => delete dayPeriods[k]);
     Object.keys(grid).forEach((k) => delete grid[k]);
     Object.keys(classRemarks).forEach((k) => delete classRemarks[k]);
     ensureAllDays();
@@ -676,20 +810,35 @@ function openCreate() {
     view.value = 'edit';
 }
 
-function daysFromServer(daysData) {
+function daysFromServer(daysData, periodsByDayMap = null) {
     Object.keys(grid).forEach((k) => delete grid[k]);
     Object.keys(classRemarks).forEach((k) => delete classRemarks[k]);
+    Object.keys(dayPeriods).forEach((k) => delete dayPeriods[k]);
+
+    if (periodsByDayMap && typeof periodsByDayMap === 'object') {
+        Object.entries(periodsByDayMap).forEach(([dow, n]) => {
+            const d = Number(dow);
+            const count = Number(n);
+            if (d >= 1 && count >= 1) dayPeriods[d] = count;
+        });
+    }
+    (daysData || []).forEach((day) => {
+        if (day.periods >= 1) dayPeriods[day.day_of_week] = Number(day.periods);
+    });
+
     ensureAllDays();
     (daysData || []).forEach((day) => {
         (day.entries || []).forEach((entry) => {
             grid[day.day_of_week] ??= {};
             grid[day.day_of_week][entry.school_class_id] ??= {};
+            const free = !!(entry.is_free || String(entry.subject_label || '').toUpperCase() === 'FREE');
             grid[day.day_of_week][entry.school_class_id][entry.period_number] = {
-                subject_id: entry.subject_id,
-                subject_label: entry.subject_label,
-                teacher_id: entry.teacher_id,
-                teacher_label: entry.teacher_label,
-                color: entry.color,
+                is_free: free,
+                subject_id: free ? null : entry.subject_id,
+                subject_label: free ? null : entry.subject_label,
+                teacher_id: free ? null : entry.teacher_id,
+                teacher_label: free ? null : entry.teacher_label,
+                color: free ? null : entry.color,
             };
             if (entry.remarks) classRemarks[entry.school_class_id] = entry.remarks;
         });
@@ -709,8 +858,7 @@ async function openSheet(sheet, openMode = 'edit') {
             title: data.title || '',
             periods_per_day: data.periods_per_day || 7,
         });
-        ensureAllDays();
-        daysFromServer(data.days);
+        daysFromServer(data.days, data.periods_by_day);
         importWarnings.value = null;
         activeDay.value = 1;
         view.value = 'edit';
@@ -740,33 +888,52 @@ async function saveSheet() {
                 branch_id: form.branch_id,
                 title: form.title || null,
                 periods_per_day: form.periods_per_day,
+                periods_by_day: periodsByDayPayload(),
             });
             sheetId = data.id;
             editingSheet.value = data;
         }
 
-        const days = DAYS.map((d) => ({
-            day_of_week: d.dow,
-            entries: classes.value.flatMap((c) => periodsRange.value.map((p) => {
-                const cellData = grid[d.dow]?.[c.id]?.[p];
-                if (!cellData) return null;
-                if (!cellData.subject_id && !cellData.subject_label && !cellData.teacher_id && !cellData.teacher_label) return null;
-                return {
-                    school_class_id: c.id,
-                    period_number: p,
-                    subject_id: cellData.subject_id || null,
-                    subject_label: cellData.subject_id ? null : cellData.subject_label,
-                    teacher_id: cellData.teacher_id || null,
-                    teacher_label: cellData.teacher_id ? null : cellData.teacher_label,
-                    color: cellData.color || null,
-                    remarks: classRemarks[c.id] || null,
-                };
-            }).filter(Boolean)),
-        }));
+        const days = DAYS.map((d) => {
+            const maxP = periodsForDay(d.dow);
+            return {
+                day_of_week: d.dow,
+                entries: classes.value.flatMap((c) => {
+                    const list = [];
+                    for (let p = 1; p <= maxP; p++) {
+                        const cellData = grid[d.dow]?.[c.id]?.[p];
+                        if (!cellData) continue;
+                        if (cellData.is_free) {
+                            list.push({
+                                school_class_id: c.id,
+                                period_number: p,
+                                is_free: true,
+                                remarks: classRemarks[c.id] || null,
+                            });
+                            continue;
+                        }
+                        if (!cellData.subject_id && !cellData.subject_label && !cellData.teacher_id && !cellData.teacher_label) continue;
+                        list.push({
+                            school_class_id: c.id,
+                            period_number: p,
+                            is_free: false,
+                            subject_id: cellData.subject_id || null,
+                            subject_label: cellData.subject_id ? null : cellData.subject_label,
+                            teacher_id: cellData.teacher_id || null,
+                            teacher_label: cellData.teacher_id ? null : cellData.teacher_label,
+                            color: cellData.color || null,
+                            remarks: classRemarks[c.id] || null,
+                        });
+                    }
+                    return list;
+                }),
+            };
+        });
 
         await client.put(`/academics/class-routine/${sheetId}`, {
             title: form.title || null,
             periods_per_day: form.periods_per_day,
+            periods_by_day: periodsByDayPayload(),
             days,
         });
         pushToast('Class routine saved.', 'success');

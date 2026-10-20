@@ -59,6 +59,8 @@ class ClassRoutineController extends Controller
             'branch_id' => 'required|exists:branches,id',
             'title' => 'nullable|string|max:255',
             'periods_per_day' => 'nullable|integer|min:1|max:20',
+            'periods_by_day' => 'nullable|array',
+            'periods_by_day.*' => 'integer|min:1|max:20',
         ], [
             'academic_session_id.unique' => 'A class routine already exists for this session and branch.',
         ]);
@@ -68,6 +70,7 @@ class ClassRoutineController extends Controller
             'branch_id' => $data['branch_id'],
             'title' => $data['title'] ?? null,
             'periods_per_day' => $data['periods_per_day'] ?? 7,
+            'periods_by_day' => $this->normalizePeriodsByDay($data['periods_by_day'] ?? null),
         ]);
 
         return response()->json($this->present($sheet), 201);
@@ -78,12 +81,15 @@ class ClassRoutineController extends Controller
         $data = $request->validate([
             'title' => 'nullable|string|max:255',
             'periods_per_day' => 'nullable|integer|min:1|max:20',
+            'periods_by_day' => 'nullable|array',
+            'periods_by_day.*' => 'integer|min:1|max:20',
             'days' => 'array',
             'days.*.day_of_week' => 'required|integer|min:1|max:7',
             'days.*.entries' => 'array',
             'days.*.entries.*.school_class_id' => 'required|exists:school_classes,id',
             'days.*.entries.*.section_id' => 'nullable|exists:sections,id',
             'days.*.entries.*.period_number' => 'required|integer|min:1|max:20',
+            'days.*.entries.*.is_free' => 'nullable|boolean',
             'days.*.entries.*.subject_id' => 'nullable|exists:subjects,id',
             'days.*.entries.*.subject_label' => 'nullable|string|max:100',
             'days.*.entries.*.teacher_id' => 'nullable|exists:teachers,id',
@@ -96,13 +102,44 @@ class ClassRoutineController extends Controller
             $classRoutine->update([
                 'title' => $data['title'] ?? $classRoutine->title,
                 'periods_per_day' => $data['periods_per_day'] ?? $classRoutine->periods_per_day,
+                'periods_by_day' => array_key_exists('periods_by_day', $data)
+                    ? $this->normalizePeriodsByDay($data['periods_by_day'])
+                    : $classRoutine->periods_by_day,
             ]);
 
             $classRoutine->entries()->delete();
 
             $teacherColorBackfill = []; // teacher_id -> color, applied once below (never clobbers an existing colour)
             foreach ($data['days'] ?? [] as $day) {
+                $dow = (int) $day['day_of_week'];
+                $dayMax = $classRoutine->periodsForDay($dow);
+
                 foreach ($day['entries'] ?? [] as $entry) {
+                    $period = (int) ($entry['period_number'] ?? 0);
+                    if ($period < 1 || $period > $dayMax) {
+                        continue; // outside this day's period count (e.g. half-day)
+                    }
+
+                    $isFree = (bool) ($entry['is_free'] ?? false);
+                    if ($isFree) {
+                        // Persist an explicit FREE slot — no subject/teacher.
+                        $classRoutine->entries()->create([
+                            'school_class_id' => $entry['school_class_id'],
+                            'section_id' => $entry['section_id'] ?? null,
+                            'day_of_week' => $dow,
+                            'period_number' => $period,
+                            'is_free' => true,
+                            'subject_id' => null,
+                            'subject_label' => 'FREE',
+                            'teacher_id' => null,
+                            'teacher_label' => null,
+                            'color' => null,
+                            'remarks' => $entry['remarks'] ?? null,
+                        ]);
+
+                        continue;
+                    }
+
                     if (empty($entry['subject_id']) && empty($entry['subject_label'])
                         && empty($entry['teacher_id']) && empty($entry['teacher_label'])) {
                         continue; // a fully blank cell — nothing to persist
@@ -124,8 +161,9 @@ class ClassRoutineController extends Controller
                     $classRoutine->entries()->create([
                         'school_class_id' => $entry['school_class_id'],
                         'section_id' => $entry['section_id'] ?? null,
-                        'day_of_week' => $day['day_of_week'],
-                        'period_number' => $entry['period_number'],
+                        'day_of_week' => $dow,
+                        'period_number' => $period,
+                        'is_free' => false,
                         'subject_id' => $entry['subject_id'] ?? null,
                         'subject_label' => empty($entry['subject_id']) ? ($entry['subject_label'] ?? null) : null,
                         'teacher_id' => $entry['teacher_id'] ?? null,
@@ -222,6 +260,7 @@ class ClassRoutineController extends Controller
             $days[] = [
                 'day_of_week' => $dow,
                 'label' => $label,
+                'periods' => $sheet->periodsForDay($dow),
                 'entries' => $sheet->entries->where('day_of_week', $dow)->values(),
             ];
         }
@@ -231,5 +270,27 @@ class ClassRoutineController extends Controller
             'days' => $days,
             'session_name' => $currentSession,
         ];
+    }
+
+    /**
+     * @param  array<int|string, mixed>|null  $map
+     * @return array<string, int>|null
+     */
+    private function normalizePeriodsByDay(?array $map): ?array
+    {
+        if ($map === null || $map === []) {
+            return null;
+        }
+
+        $out = [];
+        foreach ($map as $day => $count) {
+            $d = (int) $day;
+            $n = (int) $count;
+            if ($d >= 1 && $d <= 7 && $n >= 1 && $n <= 20) {
+                $out[(string) $d] = $n;
+            }
+        }
+
+        return $out === [] ? null : $out;
     }
 }
