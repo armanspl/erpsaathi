@@ -2297,5 +2297,30 @@ watch(() => erpStore.currentSession, async () => {
     if (student.value) await selectStudent(student.value);
 });
 
-onMounted(loadLookups);
+/** Open a student when arriving from People → Students → Fee → Pay Fee (?student_id=). */
+async function openStudentFromQuery() {
+    const raw = route.query.student_id;
+    const id = Number(Array.isArray(raw) ? raw[0] : raw);
+    if (! id) {
+        return;
+    }
+    try {
+        await ensureStudentsLoaded();
+        let s = students.value.find((row) => Number(row.id) === id);
+        if (! s) {
+            const { data } = await client.get(`/people/students/${id}`);
+            s = data;
+        }
+        if (s) {
+            await selectStudent(s);
+        }
+    } catch (e) {
+        pushToast(e?.response?.data?.message || 'Could not open that student for Pay Fee.', 'error');
+    }
+}
+
+onMounted(async () => {
+    await loadLookups();
+    await openStudentFromQuery();
+});
 </script>

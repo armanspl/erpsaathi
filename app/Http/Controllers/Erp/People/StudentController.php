@@ -109,7 +109,9 @@ class StudentController extends Controller
                     'schoolClass:id,name',
                     'section:id,name,school_class_id',
                     'branch:id,name',
-                    'father:id,name,phone',
+                    'father:id,name,phone,email',
+                    'mother:id,name,phone,email',
+                    'guardian:id,name,phone,email',
                     // Just admission_type — the People list's "New" stat card needs this;
                     // the rest of udiseDetail's ~20 fields stay in the heavy (non-lite) load.
                     'udiseDetail:student_id,admission_type',

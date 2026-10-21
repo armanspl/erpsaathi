@@ -8,6 +8,31 @@
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button type="button" class="btn-outline" @click="goImport"><IconGlyph name="upload" /> Import</button>
+                <div ref="printWrap" class="relative">
+                    <button
+                        type="button"
+                        class="btn-outline inline-flex items-center gap-1.5"
+                        :disabled="!sortedRows.length || printing"
+                        @click="printMenu = !printMenu"
+                    >
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+                        {{ printing ? 'Printing…' : 'Print ▾' }}
+                    </button>
+                    <div v-if="printMenu" class="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        <button type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="runPrint('parents')">
+                            <span class="font-medium text-slate-800 dark:text-slate-100">Parents details</span>
+                            <span class="block text-xs text-slate-400">Guardian list with contact &amp; class</span>
+                        </button>
+                        <button type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="runPrint('basic')">
+                            <span class="font-medium text-slate-800 dark:text-slate-100">Basic details</span>
+                            <span class="block text-xs text-slate-400">Admission, parents, address &amp; status</span>
+                        </button>
+                        <button type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="runPrint('list')">
+                            <span class="font-medium text-slate-800 dark:text-slate-100">Student list</span>
+                            <span class="block text-xs text-slate-400">Adm no, name, class, roll, session</span>
+                        </button>
+                    </div>
+                </div>
                 <button type="button" class="btn-outline" :disabled="exporting" @click="exportModalOpen = true">
                     <IconGlyph name="download" /> {{ exporting ? 'Exporting...' : 'Export' }}
                 </button>
@@ -768,7 +793,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
 import FilterBar from '../../components/common/FilterBar.vue';
@@ -793,6 +818,7 @@ import { statusBadgeClass } from '../../utils/colors';
 import { pushToast } from '../../utils/toast';
 import { erpStore, isAllSessions } from '../../store';
 import { downloadExport, downloadStudentDocument } from '../../utils/downloadExport';
+import { printStudentReport } from '../../utils/studentListPrint';
 import { STUDENT_DOCUMENT_TYPES } from '../../data/studentDocumentTypes';
 
 import StudentTabPersonal from '../../components/students/StudentTabPersonal.vue';
@@ -809,9 +835,67 @@ const route = useRoute();
 const router = useRouter();
 const exporting = ref(false);
 const exportModalOpen = ref(false);
+const printMenu = ref(false);
+const printWrap = ref(null);
+const printing = ref(false);
+/** Cached school contact fields for print headers (name/logo come from erpStore). */
+let printSchoolCache = null;
 
 function goImport() {
     router.push({ path: '/import-export', query: { type: 'global-workbook-import' } });
+}
+
+function closePrintMenu(e) {
+    if (!printWrap.value?.contains(e.target)) printMenu.value = false;
+}
+
+onMounted(() => document.addEventListener('click', closePrintMenu));
+onUnmounted(() => document.removeEventListener('click', closePrintMenu));
+
+async function resolvePrintSchool() {
+    if (printSchoolCache) return printSchoolCache;
+    const base = {
+        school_name: erpStore.school?.school_name || 'School',
+        logo_url: erpStore.school?.logo_url || null,
+        address: '',
+        phone: '',
+        email: '',
+        website: '',
+    };
+    try {
+        const { data } = await client.get('/settings/school');
+        printSchoolCache = {
+            school_name: data.school_name || base.school_name,
+            logo_url: data.logo_url || base.logo_url,
+            address: data.formatted_address || [data.address_line_1, data.city, data.state].filter(Boolean).join(', '),
+            phone: data.phone || '',
+            email: data.email || '',
+            website: data.website || '',
+        };
+    } catch {
+        printSchoolCache = base;
+    }
+    return printSchoolCache;
+}
+
+async function runPrint(kind) {
+    printMenu.value = false;
+    if (!sortedRows.value.length) {
+        pushToast('No students to print for the current filters.', 'info');
+        return;
+    }
+    printing.value = true;
+    try {
+        const school = await resolvePrintSchool();
+        const ok = printStudentReport(kind, sortedRows.value, {
+            school,
+            sessionName: isAllSessions() ? '' : (erpStore.currentSession || ''),
+            transportedIds: transportedStudentIds.value,
+        });
+        if (!ok) pushToast('Allow pop-ups to print the report.', 'error');
+    } finally {
+        printing.value = false;
+    }
 }
 
 async function onStudentExport({ format, status, sessions, columns }) {
