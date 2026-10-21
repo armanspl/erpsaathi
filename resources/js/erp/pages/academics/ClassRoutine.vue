@@ -324,9 +324,18 @@
 
                 <!-- TEACHER WISE EDIT: assign class + subject per teacher per period -->
                 <div v-else class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    <p class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-                        Pick a class (and subject) for each teacher in each period. Free periods stay empty. Use Delete to clear a teacher from this whole routine (all days).
-                    </p>
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/50">
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                            Pick a class (and subject) for each teacher in each period. Free periods stay empty. Delete clears that teacher from every day — they stay off this list after Save.
+                        </p>
+                        <div v-if="teacherWiseAddable.length" class="flex items-center gap-1.5">
+                            <select v-model="teacherWiseAddId" class="form-input !py-1 !text-[11px] min-w-[140px]">
+                                <option value="">Add teacher…</option>
+                                <option v-for="t in teacherWiseAddable" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                            <button type="button" class="btn-outline !py-1 !text-[11px]" :disabled="!teacherWiseAddId" @click="addTeacherToWise">Add</button>
+                        </div>
+                    </div>
                     <table class="min-w-full border-collapse text-left text-xs">
                         <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
                             <tr>
@@ -513,10 +522,58 @@ const mode = ref('edit');
 const editLayout = ref('class');
 /** Teachers hidden from Teacher-wise after "Delete" (still assignable via Class wise). */
 const removedFromRoutineTeacherIds = ref(new Set());
+/** Teachers explicitly added to Teacher-wise before they have any period (Add teacher). */
+const pinnedTeacherIds = ref(new Set());
+const teacherWiseAddId = ref('');
 
-const teacherWiseTeachers = computed(() =>
-    teachers.value.filter((t) => !removedFromRoutineTeacherIds.value.has(t.id))
-);
+/** teacher_id values that appear at least once in the editable grid. */
+function teacherIdsAssignedInRoutine() {
+    const ids = new Set();
+    DAYS.forEach((d) => {
+        const dayGrid = grid[d.dow] || {};
+        Object.values(dayGrid).forEach((byPeriod) => {
+            Object.values(byPeriod || {}).forEach((cellData) => {
+                if (cellData?.teacher_id) ids.add(cellData.teacher_id);
+            });
+        });
+    });
+    return ids;
+}
+
+/**
+ * Teacher-wise roster:
+ * - Brand-new empty routine → all teachers (so you can fill from this tab).
+ * - Once anyone is assigned or deleted → only teachers who still teach (or were pinned via Add).
+ *   Cleared teachers stay gone after Save / reopen because they have no periods left.
+ */
+const teacherWiseTeachers = computed(() => {
+    const assigned = teacherIdsAssignedInRoutine();
+    const removed = removedFromRoutineTeacherIds.value;
+    const pinned = pinnedTeacherIds.value;
+    const bootstrap = assigned.size === 0 && removed.size === 0 && pinned.size === 0;
+    return teachers.value.filter((t) => {
+        if (removed.has(t.id)) return false;
+        if (bootstrap) return true;
+        return assigned.has(t.id) || pinned.has(t.id);
+    });
+});
+
+const teacherWiseAddable = computed(() => {
+    const shown = new Set(teacherWiseTeachers.value.map((t) => t.id));
+    return teachers.value.filter((t) => !shown.has(t.id));
+});
+
+function addTeacherToWise() {
+    const id = Number(teacherWiseAddId.value);
+    if (!id) return;
+    const nextRemoved = new Set(removedFromRoutineTeacherIds.value);
+    nextRemoved.delete(id);
+    removedFromRoutineTeacherIds.value = nextRemoved;
+    const nextPinned = new Set(pinnedTeacherIds.value);
+    nextPinned.add(id);
+    pinnedTeacherIds.value = nextPinned;
+    teacherWiseAddId.value = '';
+}
 
 function periodsForDay(dow) {
     const n = Number(dayPeriods[dow]);
@@ -623,6 +680,11 @@ function onTeacherPick(classId, period) {
             const next = new Set(removedFromRoutineTeacherIds.value);
             next.delete(c.teacher_id);
             removedFromRoutineTeacherIds.value = next;
+        }
+        if (pinnedTeacherIds.value.has(c.teacher_id)) {
+            const nextPinned = new Set(pinnedTeacherIds.value);
+            nextPinned.delete(c.teacher_id);
+            pinnedTeacherIds.value = nextPinned;
         }
     }
 }
@@ -744,6 +806,11 @@ function removeTeacherFromRoutine(teacher) {
     const next = new Set(removedFromRoutineTeacherIds.value);
     next.add(teacherId);
     removedFromRoutineTeacherIds.value = next;
+    if (pinnedTeacherIds.value.has(teacherId)) {
+        const nextPinned = new Set(pinnedTeacherIds.value);
+        nextPinned.delete(teacherId);
+        pinnedTeacherIds.value = nextPinned;
+    }
     pushToast(`${teacher.name} removed from this routine.`, 'success');
 }
 
@@ -930,6 +997,9 @@ function resetForm() {
 function openCreate() {
     editingSheet.value = null;
     mode.value = 'edit';
+    removedFromRoutineTeacherIds.value = new Set();
+    pinnedTeacherIds.value = new Set();
+    teacherWiseAddId.value = '';
     resetForm();
     importWarnings.value = null;
     activeDay.value = 1;
@@ -975,6 +1045,8 @@ async function openSheet(sheet, openMode = 'edit') {
     editingSheet.value = sheet;
     mode.value = openMode;
     removedFromRoutineTeacherIds.value = new Set();
+    pinnedTeacherIds.value = new Set();
+    teacherWiseAddId.value = '';
     sheetsLoading.value = true;
     try {
         await loadLookups();
@@ -999,6 +1071,8 @@ function closeEdit() {
     editingSheet.value = null;
     importWarnings.value = null;
     removedFromRoutineTeacherIds.value = new Set();
+    pinnedTeacherIds.value = new Set();
+    teacherWiseAddId.value = '';
     loadSheets();
 }
 
