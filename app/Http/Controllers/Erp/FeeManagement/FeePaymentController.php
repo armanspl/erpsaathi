@@ -647,7 +647,7 @@ class FeePaymentController extends Controller
     public function receipt(FeePayment $payment)
     {
         $payment->load([
-            'student:id,name,admission_no,roll_no,branch_id,school_class_id,section_id,father_id,mother_id',
+            'student:id,name,admission_no,roll_no,mobile,address,address_line_2,city,branch_id,school_class_id,section_id,father_id,mother_id',
             'student.branch:id,name',
             'student.schoolClass:id,name',
             'student.section:id,name',
@@ -768,6 +768,8 @@ class FeePaymentController extends Controller
                 'roll_no' => $student?->roll_no,
                 'father' => $student?->father?->name,
                 'mother' => $student?->mother?->name,
+                'mobile' => $student?->mobile,
+                'address' => trim(implode(', ', array_filter([$student?->address, $student?->address_line_2, $student?->city]))),
                 'branch' => $student?->branch?->name,
                 'class' => $student?->schoolClass?->name,
                 'section' => $student?->section?->name,

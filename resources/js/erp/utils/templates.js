@@ -1,4 +1,10 @@
-/** Full-ERP visual templates. Selecting one restyles the shell + primary palette. */
+/**
+ * Full-ERP visual templates. Selecting one restyles the whole ERP: every template has a fixed
+ * palette in CSS (erp-theme-school-green.css / erp-theme-palettes.css, rendered by
+ * erp-theme-system.css), so only a colour the user picks by hand overrides it.
+ * legacyPrimary = the colour older versions saved for the template; it still counts as
+ * "no custom colour".
+ */
 
 export const DEFAULT_UI_TEMPLATE = 'school-green';
 
@@ -22,109 +28,120 @@ export const UI_TEMPLATES = [
     {
         id: 'royal-navy-gold',
         name: 'Royal Navy + Gold',
-        tagline: 'Premium navy with restrained gold accents',
+        tagline: 'Clean white with soft navy and antique-gold accents',
         dark: false,
-        primary: '#0F1B3D',
-        // Colours come from resources/css/erp-theme-royal.css (fixed token ramps), not from
-        // the generated runtime primary shades the other templates use.
+        primary: '#233D7B',
+        legacyPrimary: '#0F1B3D',
         fixedPalette: true,
         preview: {
-            bg: '#F7F5F0',
+            bg: '#F5F6F9',
             surface: '#FFFFFF',
-            accent: '#0F1B3D',
-            accentSoft: '#C9A24B',
-            text: '#1E293B',
-            muted: '#64748B',
+            accent: '#233D7B',
+            accentSoft: '#A8894E',
+            text: '#141B2D',
+            muted: '#4A5468',
         },
     },
     {
         id: 'midnight-gold',
         name: 'Midnight Gold',
-        tagline: 'Classy charcoal with champagne accents',
+        tagline: 'Graphite and warm charcoal with muted champagne',
         dark: true,
-        primary: '#C6A75E',
+        primary: '#866C3E',
+        legacyPrimary: '#C6A75E',
+        fixedPalette: true,
         preview: {
-            bg: '#07080c',
-            surface: '#15161c',
-            accent: '#c6a75e',
-            accentSoft: '#e2c98a',
-            text: '#f3efe6',
-            muted: '#9a958c',
+            bg: '#0F0F11',
+            surface: '#17171A',
+            accent: '#CDB689',
+            accentSoft: '#E4D3AE',
+            text: '#E8E4DC',
+            muted: '#ABA59B',
         },
     },
     {
         id: 'harbor-navy',
         name: 'Harbor Navy',
-        tagline: 'Deep navy with cool steel highlights',
+        tagline: 'Deep blue-grey with soft slate-blue highlights',
         dark: true,
-        primary: '#5B8DEF',
+        primary: '#3F69B0',
+        legacyPrimary: '#5B8DEF',
+        fixedPalette: true,
         preview: {
-            bg: '#06101c',
-            surface: '#0d1a2b',
-            accent: '#5b8def',
-            accentSoft: '#9bb8f5',
-            text: '#e8eef8',
-            muted: '#8a9bb0',
+            bg: '#0E141C',
+            surface: '#141C27',
+            accent: '#8FB3E8',
+            accentSoft: '#B4CBEF',
+            text: '#E2E8F0',
+            muted: '#A3AFBF',
         },
     },
     {
         id: 'forest-ledger',
         name: 'Forest Ledger',
-        tagline: 'Ink green with sage and brass notes',
+        tagline: 'Charcoal-green with forest surfaces and sage notes',
         dark: true,
-        primary: '#6FAF8E',
+        primary: '#3F7A5E',
+        legacyPrimary: '#6FAF8E',
+        fixedPalette: true,
         preview: {
-            bg: '#07110c',
-            surface: '#0f1a14',
-            accent: '#6faf8e',
-            accentSoft: '#a7d4bb',
-            text: '#e9f2ec',
-            muted: '#8fa396',
+            bg: '#0F1311',
+            surface: '#161C19',
+            accent: '#9DBFA8',
+            accentSoft: '#BBD5C3',
+            text: '#E3E8E4',
+            muted: '#A6B2AA',
         },
     },
     {
         id: 'ivory-studio',
         name: 'Ivory Studio',
-        tagline: 'Bright workspace with deep ink contrast',
+        tagline: 'Warm ivory, crisp white cards and deep ink type',
         dark: false,
-        primary: '#2F4A6E',
+        primary: '#2F3342',
+        legacyPrimary: '#2F4A6E',
+        fixedPalette: true,
         preview: {
-            bg: '#f2f4f7',
-            surface: '#ffffff',
-            accent: '#2f4a6e',
-            accentSoft: '#1c314d',
-            text: '#152033',
-            muted: '#6b7585',
+            bg: '#F7F5F0',
+            surface: '#FFFFFF',
+            accent: '#2F3342',
+            accentSoft: '#9A8670',
+            text: '#1F2128',
+            muted: '#555761',
         },
     },
     {
         id: 'terracotta-sand',
         name: 'Terracotta Sand',
-        tagline: 'Warm sandstone with terracotta accents',
+        tagline: 'Soft sand with muted terracotta and brown type',
         dark: false,
-        primary: '#C1622D',
+        primary: '#9A5335',
+        legacyPrimary: '#C1622D',
+        fixedPalette: true,
         preview: {
-            bg: '#faf6f0',
-            surface: '#ffffff',
-            accent: '#c1622d',
-            accentSoft: '#e08a56',
-            text: '#2b2320',
-            muted: '#8a7d6e',
+            bg: '#F7F2EA',
+            surface: '#FFFCF8',
+            accent: '#9A5335',
+            accentSoft: '#B8935A',
+            text: '#2E241E',
+            muted: '#64564B',
         },
     },
     {
         id: 'velvet-plum',
         name: 'Velvet Plum',
-        tagline: 'Deep plum with rose-gold accents',
+        tagline: 'Aubergine-charcoal with muted plum and rose gold',
         dark: true,
-        primary: '#C97B98',
+        primary: '#865877',
+        legacyPrimary: '#C97B98',
+        fixedPalette: true,
         preview: {
-            bg: '#120a14',
-            surface: '#1d1220',
-            accent: '#c97b98',
-            accentSoft: '#e3a8c0',
-            text: '#f3e9ef',
-            muted: '#9c8a96',
+            bg: '#130F14',
+            surface: '#1B151C',
+            accent: '#D9A9A0',
+            accentSoft: '#E3C6D8',
+            text: '#EDE5EC',
+            muted: '#B2A5B1',
         },
     },
 ];
@@ -135,4 +152,10 @@ export function getUiTemplate(id) {
 
 export function isValidUiTemplate(id) {
     return UI_TEMPLATES.some((t) => t.id === id);
+}
+
+/** True when a saved colour is just the template's own (current or older) primary, not a custom pick. */
+export function isTemplateDefaultColor(tpl, hex) {
+    const c = String(hex || '').toLowerCase();
+    return !c || c === String(tpl.primary || '').toLowerCase() || c === String(tpl.legacyPrimary || '').toLowerCase();
 }

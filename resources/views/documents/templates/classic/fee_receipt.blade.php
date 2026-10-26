@@ -44,6 +44,8 @@
     @include('documents.templates.partials.classic-fee-header', [
         'title_bg' => '#15803d',
         'show_phone' => true,
+        'single_logo' => true,
+        'show_udise' => true,
     ])
 
     <hr class="doc-divider">
@@ -57,6 +59,10 @@
         <tr>
             <td><span class="doc-label">Father:</span> <span class="doc-value">{{ $father_name }}</span></td>
             <td><span class="doc-label">DATE:</span> <span class="doc-value">{{ $receipt_date }}</span></td>
+        </tr>
+        <tr>
+            <td><span class="doc-label">Address:</span> <span class="doc-value">{{ $student_address }}</span></td>
+            <td><span class="doc-label">Phone:</span> <span class="doc-value">{{ $student_mobile }}</span></td>
         </tr>
         <tr>
             <td><span class="doc-label">City / Village:</span> <span class="doc-value">{{ $city }}</span></td>

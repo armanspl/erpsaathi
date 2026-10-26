@@ -2,10 +2,14 @@
      Title + school + address stack in the center cell so DomPDF does not leave a
      large gap under a logo-tall row. Logos stay at current size/position.
      Expects: $receipt_title, $school_logo, $school_name, $school_address
-     Optional: $school_phone, $show_phone (bool), $title_bg (hex, default green) --}}
+     Optional: $school_phone, $show_phone (bool), $title_bg (hex, default green),
+               $single_logo (bool — left logo only; the right cell stays as a spacer so the title keeps centered),
+               $udise_code + $show_udise (bool) --}}
 @php
     $titleBg = $title_bg ?? '#15803d';
     $showPhone = ! empty($show_phone);
+    $singleLogo = ! empty($single_logo);
+    $showUdise = ! empty($show_udise);
 @endphp
 <style>
     .doc-header { text-align: center; margin: 0; padding: 0; line-height: 1; }
@@ -61,8 +65,11 @@
                 @if($showPhone && ! empty($school_phone))
                     <div class="doc-school-sub bold">Contact No. {{ $school_phone }}</div>
                 @endif
+                @if($showUdise && ! empty($udise_code))
+                    <div class="doc-school-sub bold">U-DISE Code : {{ $udise_code }}</div>
+                @endif
             </td>
-            <td class="doc-logo-cell-right"><img class="doc-logo" src="{{ $school_logo }}" alt=""></td>
+            <td class="doc-logo-cell-right">@unless($singleLogo)<img class="doc-logo" src="{{ $school_logo }}" alt="">@endunless</td>
         </tr>
     </table>
 </div>

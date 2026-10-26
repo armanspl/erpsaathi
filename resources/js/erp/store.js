@@ -1,6 +1,6 @@
 import { reactive, watch } from 'vue';
 import { applyTheme, isValidHex, loadStoredTheme, resetTheme } from './utils/theme';
-import { DEFAULT_UI_TEMPLATE, getUiTemplate, isValidUiTemplate } from './utils/templates';
+import { DEFAULT_UI_TEMPLATE, getUiTemplate, isTemplateDefaultColor, isValidUiTemplate } from './utils/templates';
 import client from './api/client';
 
 const savedDark = localStorage.getItem('erp_dark_mode');
@@ -18,9 +18,10 @@ const initialThemeColor = (accountThemeColor && isValidHex(accountThemeColor))
     ? accountThemeColor
     : (initialTemplate.primary || loadStoredTheme());
 
-// Fixed-palette templates (Royal Navy + Gold) take their ramps from the theme CSS; only an
-// explicitly chosen custom colour should override them with generated shades.
-if (initialTemplate.fixedPalette && initialThemeColor.toLowerCase() === initialTemplate.primary.toLowerCase()) {
+// Fixed-palette templates take their ramps from the theme CSS; only an explicitly chosen custom
+// colour should override them with generated shades (a saved template primary — current or the
+// one older versions stored — is not a custom choice).
+if (initialTemplate.fixedPalette && isTemplateDefaultColor(initialTemplate, initialThemeColor)) {
     resetTheme();
 } else {
     applyTheme(initialThemeColor);

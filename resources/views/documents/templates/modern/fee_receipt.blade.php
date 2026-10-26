@@ -1,7 +1,7 @@
 @include('documents.templates.partials.modern-style')
 <div class="doc">
     <div class="doc-accent"></div>
-    @include('documents.templates.partials.modern-fee-header', ['title_bg' => '#4f46e5', 'title_fg' => '#ffffff'])
+    @include('documents.templates.partials.modern-fee-header', ['title_bg' => '#4f46e5', 'title_fg' => '#ffffff', 'single_logo' => true, 'show_udise' => true])
     <hr class="doc-divider" style="margin: 0.8mm 0;">
 
     <table style="width: 100%;">
@@ -18,6 +18,10 @@
                     <tr class="doc-row">
                         <td class="doc-cell"><span class="doc-label">Father</span> <span class="doc-value">{{ $father_name }}</span></td>
                         <td class="doc-cell"><span class="doc-label">City</span> <span class="doc-value">{{ $city }}</span></td>
+                    </tr>
+                    <tr class="doc-row">
+                        <td class="doc-cell"><span class="doc-label">Address</span> <span class="doc-value">{{ $student_address }}</span></td>
+                        <td class="doc-cell"><span class="doc-label">Phone</span> <span class="doc-value">{{ $student_mobile }}</span></td>
                     </tr>
                     <tr class="doc-row">
                         <td class="doc-cell"><span class="doc-label">Class / Section</span> <span class="doc-value">{{ $class }} {{ $section }}</span></td>

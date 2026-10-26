@@ -20,16 +20,16 @@
                     </div>
                 </div>
                 <div class="py-1">
-                    <RouterLink to="/account/profile" class="menu-item" @click="close">👤 Profile</RouterLink>
-                    <RouterLink to="/settings/school-settings" class="menu-item" @click="close">⚙️ Settings</RouterLink>
+                    <RouterLink to="/account/profile" class="menu-item" @click="close"><AppIcon name="user" class="menu-icon" /> Profile</RouterLink>
+                    <RouterLink to="/settings/school-settings" class="menu-item" @click="close"><AppIcon name="settings" class="menu-icon" /> Settings</RouterLink>
                     <button type="button" class="menu-item w-full justify-between" @click="toggleDarkMode">
-                        <span>🌙 Dark Mode</span>
+                        <span class="inline-flex items-center gap-2.5"><AppIcon name="moon" class="menu-icon" /> Night mode</span>
                         <span class="relative inline-flex h-5 w-9 items-center rounded-full transition" :class="erpStore.darkMode ? 'bg-primary-600' : 'bg-slate-200 dark:bg-slate-700'">
                             <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition" :class="erpStore.darkMode ? 'translate-x-[18px]' : 'translate-x-0.5'" />
                         </span>
                     </button>
                     <div class="px-3 py-2">
-                        <p class="mb-1.5 text-xs text-slate-500 dark:text-slate-400">🎨 Template</p>
+                        <p class="mb-1.5 text-xs text-slate-500 dark:text-slate-400"><AppIcon name="palette" class="menu-icon mr-1 inline-block align-[-3px]" />Template</p>
                         <div class="flex items-center gap-1.5">
                             <button
                                 v-for="t in UI_TEMPLATES"
@@ -46,7 +46,7 @@
                     </div>
                 </div>
                 <div class="border-t border-slate-100 py-1 dark:border-slate-800">
-                    <button type="button" class="menu-item w-full text-rose-600 dark:text-rose-400" @click="logout">↪️ Logout</button>
+                    <button type="button" class="menu-item w-full text-rose-600 dark:text-rose-400" @click="logout"><AppIcon name="logout" class="menu-icon" /> Logout</button>
                 </div>
             </div>
         </template>
@@ -55,6 +55,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import AppIcon from '../common/AppIcon.vue';
 import Dropdown from '../common/Dropdown.vue';
 import { erpStore, toggleDarkMode, logout, setUiTemplate } from '../../store';
 import { UI_TEMPLATES } from '../../utils/templates';
@@ -84,6 +85,9 @@ function pick(id, close) {
 
 .menu-item {
     @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-600 transition hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800;
+}
+.menu-icon {
+    @apply h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500;
 }
 .erp-avatar {
     background: linear-gradient(135deg, var(--erp-brand-from, #e2c98a), var(--erp-brand-to, #8a6d2f));

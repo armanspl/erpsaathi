@@ -21,7 +21,7 @@
                         </button>
                         <button type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="printSlips">
                             <span class="font-medium text-slate-800 dark:text-slate-100">Print demand slips</span>
-                            <span class="block text-xs text-slate-400">One slip per student, 6 per page</span>
+                            <span class="block text-xs text-slate-400">One slip per student, 8 per page</span>
                         </button>
                     </div>
                 </div>
@@ -118,6 +118,20 @@
             <p v-if="tab === 'left'" class="text-xs text-slate-500">
                 Payments are kept and shown. No fee is charged after a student left — only months up to their TC month (or none, if they left before this session).
             </p>
+        </div>
+
+        <!-- Note printed on every demand slip -->
+        <div class="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div class="flex-1">
+                    <label class="form-label">Note on every demand slip</label>
+                    <textarea v-model="slipNote" rows="2" maxlength="500" class="form-input" placeholder="e.g. Please clear the monthly dues before 10th of every month otherwise RS 50 is added as late fine." />
+                    <p class="mt-1 text-xs text-slate-500">Printed above the "Please pay" line on each slip. Leave empty to print no note.</p>
+                </div>
+                <button type="button" class="btn-primary shrink-0" :disabled="savingNote || slipNote === savedSlipNote" @click="saveNote">
+                    {{ savingNote ? 'Saving…' : 'Save note' }}
+                </button>
+            </div>
         </div>
 
         <!-- Summary -->
@@ -241,7 +255,11 @@ const vehicles = ref([]);
 const columns = ref([]);
 const rows = ref([]);
 const totals = ref({});
-const school = ref({ name: '', address: '', phone: '' });
+const school = ref({ name: '', address: '', phone: '', logo: '' });
+// Note printed on every slip — saved in fee settings, editable on this page.
+const slipNote = ref('');
+const savedSlipNote = ref('');
+const savingNote = ref(false);
 const sessionName = ref('');
 // Months the demand covers — the session start through the current month (from the server).
 const periodLabel = ref('');
@@ -350,6 +368,8 @@ async function reload() {
         totals.value = data.totals || {};
         vehicles.value = data.vehicles || [];
         school.value = data.school || school.value;
+        if (slipNote.value === savedSlipNote.value) slipNote.value = data.slip_note || ''; // keep unsaved edits
+        savedSlipNote.value = data.slip_note || '';
         sessionName.value = data.session?.name || '';
         periodLabel.value = data.period?.label || '';
         tabCounts.value = data.tab_counts || { active: 0, left: 0 };
@@ -360,6 +380,20 @@ async function reload() {
         pushToast(err?.response?.data?.message || 'Could not load demand slip.', 'error');
     } finally {
         loading.value = false;
+    }
+}
+
+async function saveNote() {
+    savingNote.value = true;
+    try {
+        const { data } = await client.put('/fee-management/demand-slip/note', { slip_note: slipNote.value });
+        slipNote.value = data.slip_note || '';
+        savedSlipNote.value = slipNote.value;
+        pushToast('Demand slip note saved.', 'success');
+    } catch (err) {
+        pushToast(err?.response?.status === 403 ? 'You do not have permission to change the demand slip note.' : (err?.response?.data?.message || 'Could not save the note.'), 'error');
+    } finally {
+        savingNote.value = false;
     }
 }
 
@@ -436,6 +470,7 @@ function printList() {
 /** One demand slip per student: what was expected, paid and is still due for each fee head. */
 function printSlips() {
     const due = (v) => Math.max(0, -(Number(v) || 0));
+    const note = slipNote.value.trim();
     const slipHtml = sortedRows.value.map((r) => {
         const lines = [
             ['Annual / Session fee', Number(r.ann_pmnt) - Number(r.ann_dues), r.ann_pmnt, r.ann_dues],
@@ -443,50 +478,83 @@ function printSlips() {
             ['Transport fee', r.tra_calc, r.tra_pmnt, r.tra_dues],
         ].filter(([, expected, paid]) => Number(expected) || Number(paid));
         const totalDueAmount = due(r.dues);
+        const field = (label, value) => `<td><span class="lbl">${label}</span><span class="val">${esc(value) || '—'}</span></td>`;
         return `<div class="slip">
-            ${schoolHeader()}
-            <div class="title">FEE DEMAND SLIP${sessionName.value ? ` — ${esc(sessionName.value)}` : ''}${r.left_note ? ` <span class="left">${esc(r.left_note)}</span>` : ''}${periodLabel.value ? `<div class="period">${esc(periodLabel.value)}</div>` : ''}</div>
+            <div class="head">
+                ${school.value.logo ? `<img class="logo" src="${esc(school.value.logo)}" alt="">` : ''}
+                <div class="school">
+                    <div class="name">${esc(school.value.name)}</div>
+                    <div class="sub">${esc([school.value.address, school.value.phone && `Ph: ${school.value.phone}`].filter(Boolean).join(' · '))}</div>
+                </div>
+            </div>
+            <div class="band">
+                <span>FEE DEMAND SLIP</span>
+                <span class="band-meta">${esc([sessionName.value && `Session ${sessionName.value}`, periodLabel.value].filter(Boolean).join(' · '))}</span>
+            </div>
+            ${r.left_note ? `<div class="left">${esc(r.left_note)}</div>` : ''}
             <table class="info">
-                <tr><td>Adm No: <b>${esc(r.admission_no)}</b></td><td>Class: <b>${esc(r.class)}${r.section ? ` - ${esc(r.section)}` : ''}</b></td></tr>
-                <tr><td colspan="2">Name: <b>${esc(r.name)}</b></td></tr>
-                <tr><td>Father: <b>${esc(r.father_name)}</b></td><td>Mobile: <b>${esc(r.mobile)}</b></td></tr>
-                <tr><td colspan="2">Vehicle: <b>${esc(r.vehicle)}</b></td></tr>
+                <tr>${field('Name', r.name)}${field('Adm No', r.admission_no)}</tr>
+                <tr>${field('Father', r.father_name)}${field('Class', `${r.class || ''}${r.section ? ` - ${r.section}` : ''}`)}</tr>
+                <tr>${field('Mobile', r.mobile)}${field('Vehicle', r.vehicle)}</tr>
             </table>
             <table class="fees">
                 <thead><tr><th>Fee head</th><th class="num">Expected</th><th class="num">Paid</th><th class="num">Due</th></tr></thead>
                 <tbody>${lines.map(([label, expected, paid, dues]) => `<tr><td>${label}</td><td class="num">${money(expected)}</td><td class="num">${money(paid)}</td><td class="num${due(dues) ? ' neg' : ''}">${money(due(dues))}</td></tr>`).join('')
-                    || '<tr><td colspan="4">No fee set for this session.</td></tr>'}</tbody>
-                <tfoot><tr><td colspan="3">Paid (REG ${money(r.reg)} + ADM ${money(r.adm)} + fees): ${money(r.tot_pmnt)}</td>
-                    <td class="num${totalDueAmount ? ' neg' : ''}">${money(totalDueAmount)}</td></tr></tfoot>
+                    || '<tr><td colspan="4" class="empty">No fee set for this session.</td></tr>'}</tbody>
             </table>
-            <div class="foot">
-                <span>${totalDueAmount ? `Please pay <b>₹${money(totalDueAmount)}</b> at the earliest.` : 'No dues — thank you.'}</span>
-                <span class="sign">Accountant / Principal</span>
+            <div class="totals">
+                <span class="paid">Total paid: <b>₹${money(r.tot_pmnt)}</b> <i>(incl. REG ₹${money(r.reg)} + ADM ₹${money(r.adm)})</i></span>
+                <span class="due-box${totalDueAmount ? '' : ' clear'}">${totalDueAmount ? `TOTAL DUE ₹${money(totalDueAmount)}` : 'NO DUES'}</span>
+            </div>
+            <div class="bottom">
+                ${note ? `<div class="note">${esc(note)}</div>` : ''}
+                <div class="foot">
+                    <span>${totalDueAmount ? `Please pay <b>₹${money(totalDueAmount)}</b> at the earliest.` : 'No dues — thank you.'}</span>
+                    <span class="sign">Accountant / Principal</span>
+                </div>
             </div>
         </div>`;
     });
 
-    // 6 slips per A4 page: 2 columns × 3 rows.
+    // 8 slips per A4 page: 2 columns × 4 rows.
     const pages = [];
-    for (let i = 0; i < slipHtml.length; i += 6) {
-        pages.push(`<div class="page">${slipHtml.slice(i, i + 6).join('')}</div>`);
+    for (let i = 0; i < slipHtml.length; i += 8) {
+        pages.push(`<div class="page">${slipHtml.slice(i, i + 8).join('')}</div>`);
     }
 
     openPrint('Fee Demand Slips', `
         @page { size: A4 portrait; margin: 6mm; }
-        .page { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 2.5mm; height: 285mm; page-break-after: always; }
+        .page { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 2mm; height: 285mm; page-break-after: always; }
         .page:last-child { page-break-after: auto; }
-        .slip { border: 1px solid #333; padding: 4px 6px; overflow: hidden; page-break-inside: avoid; font-size: 9.5px; display: flex; flex-direction: column; min-height: 0; }
-        .school { text-align: center; font-size: 8px; line-height: 1.2; } .school .name { font-size: 11px; font-weight: bold; }
-        .title { text-align: center; font-weight: bold; letter-spacing: 0.5px; border-top: 1px solid #333; border-bottom: 1px solid #333; margin: 2px 0; padding: 1px 0; font-size: 10px; }
-        .title .left { font-size: 8px; color: #b45309; font-weight: normal; }
-        .title .period { font-size: 8px; font-weight: normal; }
+        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .slip { border: 1px solid #1e3a8a; border-radius: 4px; padding: 5px 7px; overflow: hidden; page-break-inside: avoid; font-size: 9px; line-height: 1.25; display: flex; flex-direction: column; min-height: 0; color: #1e293b; }
+        .head { display: flex; align-items: center; gap: 6px; padding-bottom: 1px; }
+        .head .logo { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+        .school { flex: 1; min-width: 0; text-align: center; }
+        .school .name { font-size: 12.5px; font-weight: bold; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .school .sub { font-size: 7.5px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .band { display: flex; justify-content: space-between; align-items: center; gap: 6px; background: #1e3a8a; color: #fff; border-radius: 2px; padding: 2px 6px; font-size: 9.5px; font-weight: bold; letter-spacing: 0.6px; }
+        .band-meta { font-size: 7.5px; font-weight: normal; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .left { margin-top: 1px; font-size: 8.5px; color: #b45309; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; }
-        .info td { padding: 0 2px; font-size: 9px; vertical-align: top; }
-        .fees { margin-top: 2px; } .fees th, .fees td { border: 1px solid #999; padding: 1px 3px; } .fees th { background: #eee; font-size: 8.5px; }
-        .fees tfoot td { font-weight: bold; font-size: 8.5px; }
-        .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; padding-top: 3px; font-size: 8.5px; gap: 6px; }
-        .sign { border-top: 1px solid #555; padding-top: 1px; min-width: 100px; text-align: center; flex-shrink: 0; }
+        .info { margin: 2px 0; table-layout: fixed; }
+        .info td { padding: 0 2px; vertical-align: top; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .info td:first-child { width: 58%; }
+        .info .lbl { display: inline-block; min-width: 42px; color: #64748b; font-size: 7.5px; text-transform: uppercase; }
+        .info .val { font-weight: bold; }
+        .fees th, .fees td { border: 1px solid #cbd5e1; padding: 1px 5px; }
+        .fees th { background: #e2e8f0; color: #1e293b; text-transform: uppercase; text-align: left; font-size: 7.5px; }
+        .fees th.num { text-align: right; }
+        .fees tbody tr:nth-child(even) td { background: #f8fafc; }
+        .fees .empty { text-align: center; color: #64748b; }
+        .totals { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 3px; }
+        .totals .paid { min-width: 0; font-size: 8px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .totals .paid i { color: #64748b; font-size: 7px; }
+        .due-box { flex-shrink: 0; background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 2px; padding: 1px 7px; font-weight: bold; font-size: 10.5px; }
+        .due-box.clear { background: #dcfce7; color: #15803d; border-color: #86efac; }
+        .note { margin-bottom: 2px; background: #fffbeb; border: 1px solid #fcd34d; border-left: 3px solid #f59e0b; border-radius: 2px; padding: 2px 6px; font-size: 8.5px; font-weight: bold; color: #92400e; line-height: 1.25; }
+        .bottom { margin-top: auto; }
+        .foot { display: flex; justify-content: space-between; align-items: flex-end; padding-top: 7px; gap: 6px; font-size: 9px; }
+        .sign { border-top: 1px solid #475569; padding-top: 1px; min-width: 110px; text-align: center; flex-shrink: 0; font-size: 8px; color: #334155; }
     `, pages.join(''));
 }
 

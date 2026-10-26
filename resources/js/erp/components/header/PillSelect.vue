@@ -2,7 +2,7 @@
     <Dropdown align="left" close-on-click>
         <template #trigger>
             <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
-                <span class="text-sm">{{ icon }}</span>
+                <AppIcon :name="icon" class="h-4 w-4 shrink-0 text-sm text-primary-600 dark:text-primary-400" />
                 <span class="hidden max-w-[7.5rem] truncate sm:inline">{{ modelValue }}</span>
                 <svg class="h-3 w-3 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" /></svg>
             </button>
@@ -28,11 +28,12 @@
 
 <script setup>
 import Dropdown from '../common/Dropdown.vue';
+import AppIcon from '../common/AppIcon.vue';
 
 defineProps({
     modelValue: { type: String, required: true },
     options: { type: Array, required: true },
-    icon: { type: String, default: '📅' },
+    icon: { type: String, default: 'calendar' },
     label: { type: String, default: 'Select' },
 });
 defineEmits(['update:modelValue']);

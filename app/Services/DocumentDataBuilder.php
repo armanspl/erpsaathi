@@ -107,7 +107,7 @@ class DocumentDataBuilder
     public function feeReceipt(FeePayment $payment): array
     {
         $payment->loadMissing([
-            'student:id,name,admission_no,roll_no,city,branch_id,school_class_id,section_id,father_id',
+            'student:id,name,admission_no,roll_no,mobile,address,address_line_2,city,branch_id,school_class_id,section_id,father_id',
             'student.branch:id,name',
             'student.schoolClass:id,name',
             'student.section:id,name',
@@ -398,6 +398,8 @@ class DocumentDataBuilder
                 : now()->format('d-m-Y'),
             'student_name' => strtoupper((string) ($student?->name ?? '')),
             'father_name' => strtoupper((string) ($student?->father?->name ?? '')),
+            'student_mobile' => (string) ($student?->mobile ?? ''),
+            'student_address' => strtoupper(trim(implode(', ', array_filter([$student?->address, $student?->address_line_2])))),
             'city' => strtoupper((string) ($student?->city ?? '')),
             'admission_id' => $student?->admission_no ?? '',
             'class' => $student?->schoolClass?->name ?? '',

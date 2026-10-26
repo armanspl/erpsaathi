@@ -1,8 +1,11 @@
 {{-- Shared compact header for modern Fee Receipt / Fee Due Receipt.
-     Title + school + address stack in the center cell (DomPDF-safe). Logos unchanged. --}}
+     Title + school + address stack in the center cell (DomPDF-safe). Logos unchanged.
+     Optional: $single_logo (bool — left logo only, right cell kept as a spacer), $udise_code + $show_udise (bool) --}}
 @php
     $titleBg = $title_bg ?? '#4f46e5';
     $titleFg = $title_fg ?? '#ffffff';
+    $singleLogo = ! empty($single_logo);
+    $showUdise = ! empty($show_udise);
 @endphp
 <style>
     .fee-hdr { width: 100%; border-collapse: collapse; margin: 0; line-height: 1; }
@@ -60,7 +63,10 @@
             <div class="fee-hdr-title">{{ $receipt_title }}</div>
             <div class="fee-hdr-school">{{ $school_name }}</div>
             <div class="fee-hdr-addr">Address : {{ $school_address }}</div>
+            @if($showUdise && ! empty($udise_code))
+                <div class="fee-hdr-addr">U-DISE Code : {{ $udise_code }}</div>
+            @endif
         </td>
-        <td class="fee-hdr-logo-right"><img class="doc-logo" src="{{ $school_logo }}" alt=""></td>
+        <td class="fee-hdr-logo-right">@unless($singleLogo)<img class="doc-logo" src="{{ $school_logo }}" alt="">@endunless</td>
     </tr>
 </table>

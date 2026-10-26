@@ -62,11 +62,12 @@ class StudentController extends Controller
 
         if ($forFee) {
             $query = Student::query()
-                ->select(['id', 'name', 'admission_no', 'branch_id', 'school_class_id', 'section_id', 'status'])
+                ->select(['id', 'name', 'admission_no', 'branch_id', 'school_class_id', 'section_id', 'father_id', 'status'])
                 ->with([
                     'schoolClass:id,name',
                     'section:id,name,school_class_id',
                     'branch:id,name',
+                    'father:id,name', // shown next to the name in the Fee Receipt student search
                 ])
                 ->where('status', 'Active');
 

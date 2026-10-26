@@ -412,6 +412,7 @@ Route::prefix('fee-management')->name('fee-management.')->group(function () {
     // Writes — page-level (legacy fee.manage still grants via PermissionResolver).
     Route::middleware('erp.permission:fee-management.fee-settings.edit')->group(function () {
         Route::put('settings/preferences', [FeeSettingController::class, 'updatePreferences'])->name('settings.preferences');
+        Route::put('demand-slip/note', [DemandSlipController::class, 'updateNote'])->name('demand-slip.note');
         Route::post('heads', [FeeHeadController::class, 'store'])->name('heads.store');
         Route::put('heads/{feeHead}', [FeeHeadController::class, 'update'])->name('heads.update');
         Route::delete('heads/{feeHead}', [FeeHeadController::class, 'destroy'])->name('heads.destroy');

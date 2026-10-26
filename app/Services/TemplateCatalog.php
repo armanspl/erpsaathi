@@ -270,11 +270,14 @@ class TemplateCatalog
             ['school_address', 'School address', false],
             ['school_phone', 'School phone', false],
             ['school_logo', 'School logo', false],
+            ['udise_code', 'U-DISE code', false],
             ['receipt_title', 'Receipt title', true],
             ['receipt_no', 'Receipt no.', false],
             ['receipt_date', 'Receipt date', true],
             ['student_name', 'Student name', true],
             ['father_name', 'Father name', false],
+            ['student_mobile', 'Student phone', false],
+            ['student_address', 'Student address', false],
             ['city', 'City / Village', false],
             ['admission_id', 'Admission ID', false],
             ['class', 'Class', false],
@@ -560,6 +563,7 @@ class TemplateCatalog
             'school_name' => 'Global Access School', 'receipt_title' => 'Fee Receipt', 'receipt_no' => 'FR-2026-0142',
             'receipt_date' => '', 'student_name' => 'MOHAMMAD ISRAR ALI', 'father_name' => 'DR MOHAMMAD IZHAR ALI',
             'city' => 'SIWAN', 'admission_id' => '251395', 'class' => '3', 'section' => 'A', 'fee_for_months' => 'Jun Jul',
+            'udise_code' => '10150101234', 'student_mobile' => '9876543210', 'student_address' => 'MAIN ROAD, SIWAN',
             'items_table' => "S.N Particulars      Duration      Amount       Paid\n"
                 ."1   TUITION FEE       Jun 2026      2,000.00   1,000.00\n"
                 ."2   Transport         Jun 2026      1,500.00     500.00",

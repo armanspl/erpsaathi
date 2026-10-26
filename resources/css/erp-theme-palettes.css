@@ -1,0 +1,828 @@
+/*
+ * Palettes for the seven alternative ERP templates (School Green lives in its own file).
+ *
+ * Each template only declares seed tokens per mode:
+ *   accent ramp (--sg-brand-50…950), page + layered surfaces, borders, text, sidebar states,
+ *   a secondary accent (--sg-accent2, used for "due" in charts and one dashboard card),
+ *   the shadow tint (--sg-tint, an "R G B" triple) and its neutral --color-slate-* ramp.
+ * The shared blocks below derive everything else (buttons, focus ring, table header, chart,
+ * shadows …) from those seeds, and erp-theme-system.css renders the components.
+ *
+ * Rules of the palettes: neutral backgrounds for most of the interface, the accent reserved for
+ * active navigation, buttons, icons, highlights and selected states; muted, low-saturation hues;
+ * white text on every --sg-brand-600 button passes WCAG AA (≥ 4.5:1) in both modes.
+ */
+
+/* ═════════════════════ Shared derivations (all seven templates) ═════════════════════
+   :where() keeps these at zero specificity so a template can override any of them. */
+html:where([data-erp-template]:not([data-erp-template='school-green'])) {
+    --sg-input-bg: var(--sg-surface);
+    --sg-link: var(--sg-brand-600);
+    --sg-nav-text: var(--sg-text-muted);
+    --sg-nav-icon: var(--sg-text-subtle);
+    --sg-nav-hover-bg: var(--sg-surface-3);
+    --sg-thead-bg: color-mix(in srgb, var(--sg-brand-50) 55%, var(--sg-surface-2));
+    --sg-thead-text: var(--sg-text-muted);
+    --sg-row-hover: var(--sg-surface-2);
+    --sg-btn-from: color-mix(in srgb, var(--sg-brand-600) 84%, #FFFFFF);
+    --sg-btn-to: var(--sg-brand-600);
+    --sg-btn-hover-from: var(--sg-brand-600);
+    --sg-btn-hover-to: var(--sg-brand-700);
+    --sg-btn-text: #FFFFFF;
+    --sg-ring: color-mix(in srgb, var(--sg-brand-500) 24%, transparent);
+    --sg-scroll: var(--sg-border-strong);
+    --sg-canvas-glow: color-mix(in srgb, var(--sg-brand-500) 5%, transparent);
+    --sg-accent-strong: var(--sg-brand-700);
+    --sg-icon-accent: var(--sg-brand-600);
+    --sg-outline-hover-border: var(--sg-brand-300);
+    --sg-chart-1-from: var(--sg-brand-400);
+    --sg-chart-1-to: var(--sg-brand-600);
+    --sg-chart-2-from: color-mix(in srgb, var(--sg-accent2) 70%, #FFFFFF);
+    --sg-chart-2-to: var(--sg-accent2);
+    --sg-chart-2-text: var(--sg-accent2-text);
+
+    --sg-shadow-xs: 0 1px 2px rgb(var(--sg-tint) / 0.06);
+    --sg-shadow-card:
+        inset 0 1px 0 rgb(255 255 255 / 0.9),
+        0 1px 2px rgb(var(--sg-tint) / 0.04),
+        0 4px 10px -4px rgb(var(--sg-tint) / 0.07),
+        0 14px 30px -18px rgb(var(--sg-tint) / 0.14);
+    --sg-shadow-raised:
+        inset 0 1px 0 rgb(255 255 255 / 0.9),
+        0 2px 4px rgb(var(--sg-tint) / 0.05),
+        0 10px 24px -10px rgb(var(--sg-tint) / 0.16);
+    --sg-shadow-pop: 0 4px 10px -2px rgb(var(--sg-tint) / 0.08), 0 18px 40px -14px rgb(var(--sg-tint) / 0.22);
+    --sg-shadow-modal: 0 8px 20px -8px rgb(var(--sg-tint) / 0.14), 0 30px 70px -20px rgb(var(--sg-tint) / 0.32);
+    --sg-shadow-brand:
+        inset 0 1px 0 rgb(255 255 255 / 0.2),
+        inset 0 -1px 0 rgb(0 0 0 / 0.12),
+        0 1px 2px color-mix(in srgb, var(--sg-brand-600) 30%, transparent),
+        0 6px 14px -6px color-mix(in srgb, var(--sg-brand-600) 50%, transparent);
+    --sg-shadow-inset: inset 0 1px 2px rgb(var(--sg-tint) / 0.05);
+    --sg-shadow-sidebar: 1px 0 0 var(--sg-border), 8px 0 24px -20px rgb(var(--sg-tint) / 0.25);
+    --sg-shadow-topbar: 0 1px 0 var(--sg-border), 0 6px 18px -16px rgb(var(--sg-tint) / 0.35);
+    --sg-backdrop: rgb(var(--sg-tint) / 0.42);
+
+    --sg-radius-control: 10px;
+    --sg-radius-card: 16px;
+    --sg-radius-modal: 20px;
+    --sg-font: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+    /* Dashboard summary-card tones: people = secondary accent, money = accent, pending = muted amber */
+    --erp-kpi-2: var(--sg-accent2);
+    --erp-kpi-2-bg: color-mix(in srgb, var(--sg-accent2) 13%, transparent);
+    --erp-kpi-3: var(--sg-brand-500);
+    --erp-kpi-3-bg: color-mix(in srgb, var(--sg-brand-500) 12%, transparent);
+    --erp-kpi-4: #B7791F;
+    --erp-kpi-4-bg: rgb(183 121 31 / 0.12);
+
+    /* Bridge for the shared --rng-* tokens */
+    --rng-primary: var(--sg-brand-600);
+    --rng-primary-hover: var(--sg-brand-700);
+    --rng-primary-light: var(--sg-brand-50);
+    --rng-brand-500: var(--sg-brand-500);
+    --rng-bg: var(--sg-canvas);
+    --rng-surface: var(--sg-surface);
+    --rng-border: var(--sg-border);
+    --rng-row-hover: var(--sg-row-hover);
+    --rng-text: var(--sg-text);
+    --rng-text-muted: var(--sg-text-muted);
+
+    /* Remaining decorative shades (e.g. dark:text-teal-400 on Fee Due) fold into the accent too,
+       so no stray teal / indigo / violet survives in these palettes. */
+    --color-indigo-800: var(--sg-brand-800);
+    --color-indigo-900: var(--sg-brand-900);
+    --color-indigo-950: var(--sg-brand-950);
+    --color-violet-200: var(--sg-brand-200);
+    --color-violet-300: var(--sg-brand-300);
+    --color-violet-400: var(--sg-brand-400);
+    --color-violet-800: var(--sg-brand-800);
+    --color-violet-900: var(--sg-brand-900);
+    --color-purple-100: var(--sg-brand-100);
+    --color-purple-200: var(--sg-brand-200);
+    --color-purple-300: var(--sg-brand-300);
+    --color-purple-400: var(--sg-brand-400);
+    --color-purple-500: var(--sg-brand-500);
+    --color-teal-200: var(--sg-brand-200);
+    --color-teal-300: var(--sg-brand-300);
+    --color-teal-400: var(--sg-brand-400);
+    --color-teal-800: var(--sg-brand-800);
+    --color-teal-900: var(--sg-brand-900);
+    --color-pink-100: var(--sg-brand-100);
+    --color-pink-300: var(--sg-brand-300);
+    --color-pink-400: var(--sg-brand-400);
+    --color-pink-500: var(--sg-brand-500);
+    --color-pink-700: var(--sg-brand-700);
+    --color-cyan-50: var(--sg-brand-50);
+    --color-cyan-100: var(--sg-brand-100);
+    --color-cyan-300: var(--sg-brand-300);
+    --color-cyan-400: var(--sg-brand-400);
+    --color-cyan-500: var(--sg-brand-500);
+    --color-cyan-600: var(--sg-brand-600);
+    --color-cyan-700: var(--sg-brand-700);
+
+    color-scheme: light;
+    scrollbar-color: var(--sg-scroll) transparent;
+}
+
+html:where([data-erp-template]:not([data-erp-template='school-green']).dark) {
+    --sg-thead-bg: var(--sg-surface-2);
+    --sg-row-hover: var(--sg-surface-2);
+    --sg-nav-hover-bg: var(--sg-surface-2);
+    --sg-btn-from: color-mix(in srgb, var(--sg-brand-600) 88%, #FFFFFF);
+    --sg-btn-hover-from: color-mix(in srgb, var(--sg-brand-600) 80%, #FFFFFF);
+    --sg-btn-hover-to: color-mix(in srgb, var(--sg-brand-600) 92%, #FFFFFF);
+    --sg-ring: color-mix(in srgb, var(--sg-brand-400) 30%, transparent);
+    --sg-canvas-glow: color-mix(in srgb, var(--sg-brand-400) 5%, transparent);
+    --sg-accent-strong: var(--sg-brand-300);
+    --sg-icon-accent: var(--sg-brand-400);
+    --sg-outline-hover-border: color-mix(in srgb, var(--sg-brand-400) 45%, var(--sg-border));
+    --sg-chart-1-from: var(--sg-brand-300);
+    --sg-chart-1-to: var(--sg-brand-500);
+    --sg-chart-2-from: color-mix(in srgb, var(--sg-accent2) 75%, #FFFFFF);
+
+    --sg-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
+    --sg-shadow-card:
+        inset 0 1px 0 rgb(255 255 255 / 0.035),
+        0 1px 2px rgb(0 0 0 / 0.35),
+        0 12px 28px -16px rgb(0 0 0 / 0.65);
+    --sg-shadow-raised:
+        inset 0 1px 0 rgb(255 255 255 / 0.05),
+        0 2px 4px rgb(0 0 0 / 0.35),
+        0 14px 30px -14px rgb(0 0 0 / 0.7);
+    --sg-shadow-pop: 0 6px 14px -4px rgb(0 0 0 / 0.5), 0 22px 44px -16px rgb(0 0 0 / 0.75);
+    --sg-shadow-modal: 0 10px 24px -8px rgb(0 0 0 / 0.55), 0 34px 80px -24px rgb(0 0 0 / 0.85);
+    --sg-shadow-brand:
+        inset 0 1px 0 rgb(255 255 255 / 0.14),
+        inset 0 -1px 0 rgb(0 0 0 / 0.2),
+        0 1px 2px rgb(0 0 0 / 0.4),
+        0 6px 16px -6px color-mix(in srgb, var(--sg-brand-500) 35%, transparent);
+    --sg-shadow-inset: inset 0 1px 2px rgb(0 0 0 / 0.35);
+    --sg-shadow-sidebar: 1px 0 0 var(--sg-border), 8px 0 24px -20px rgb(0 0 0 / 0.6);
+    --sg-shadow-topbar: 0 1px 0 var(--sg-border), 0 6px 18px -16px rgb(0 0 0 / 0.6);
+    --sg-backdrop: rgb(0 0 0 / 0.62);
+
+    --erp-kpi-3: var(--sg-brand-400);
+    --erp-kpi-3-bg: color-mix(in srgb, var(--sg-brand-400) 13%, transparent);
+    --erp-kpi-4: #E0B25A;
+    --erp-kpi-4-bg: rgb(224 178 90 / 0.12);
+
+    --rng-primary: var(--sg-brand-400);
+    --rng-primary-hover: var(--sg-brand-300);
+
+    color-scheme: dark;
+}
+
+/* ═════════════════════ 1. Royal Navy + Gold ═════════════════════
+   Light: clean white, soft navy accents, muted antique gold.
+   Night: deep midnight blue, lighter navy surfaces, restrained champagne gold. */
+html[data-erp-template='royal-navy-gold'] {
+    --sg-brand-50: #EEF2FA;
+    --sg-brand-100: #DCE3F3;
+    --sg-brand-200: #B9C6E4;
+    --sg-brand-300: #8FA2CF;
+    --sg-brand-400: #5F78B3;
+    --sg-brand-500: #3A5596;
+    --sg-brand-600: #233D7B;
+    --sg-brand-700: #1B3066;
+    --sg-brand-800: #152652;
+    --sg-brand-900: #101C3D;
+    --sg-brand-950: #0A1229;
+    --sg-accent2: #A8894E;
+    --sg-accent2-text: #7E6534;
+
+    --sg-canvas: #F5F6F9;
+    --sg-surface: #FFFFFF;
+    --sg-surface-2: #F8F9FB;
+    --sg-surface-3: #EEF1F6;
+    --sg-border: #E2E6EE;
+    --sg-border-strong: #CDD3DF;
+    --sg-text: #141B2D;
+    --sg-text-muted: #4A5468;
+    --sg-text-subtle: #7C8496;
+    --sg-heading: #0E1528;
+    --sg-tint: 20 27 45;
+
+    --sg-sidebar-bg: #FFFFFF;
+    --sg-nav-active-bg: #EEF2FA;
+    --sg-nav-active-text: #1B3066;
+    --sg-nav-active-bar: #A8894E;
+
+    --color-slate-50: #F7F8FB;
+    --color-slate-100: #EEF1F6;
+    --color-slate-200: #E2E6EE;
+    --color-slate-300: #CDD3DF;
+    --color-slate-400: #969FB2;
+    --color-slate-500: #5C667A;
+    --color-slate-600: #4A5468;
+    --color-slate-700: #343D50;
+    --color-slate-800: #1E2638;
+    --color-slate-900: #141B2D;
+    --color-slate-950: #0A1229;
+}
+html[data-erp-template='royal-navy-gold'].dark {
+    --sg-brand-50: #141F38;
+    --sg-brand-100: #192745;
+    --sg-brand-200: #22335A;
+    --sg-brand-300: #B7C7EA;
+    --sg-brand-400: #8EA6DA;
+    --sg-brand-500: #6683C4;
+    --sg-brand-600: #3A5BA0;
+    --sg-brand-700: #304C88;
+    --sg-brand-800: #263D6E;
+    --sg-brand-900: #1C2D52;
+    --sg-brand-950: #121E38;
+    --sg-accent2: #C9B27A;
+    --sg-accent2-text: #DCC99A;
+
+    --sg-canvas: #0B1120;
+    --sg-surface: #111A2E;
+    --sg-surface-2: #16213A;
+    --sg-surface-3: #1C2945;
+    --sg-input-bg: #0D1527;
+    --sg-border: #22304C;
+    --sg-border-strong: #2E3E5E;
+    --sg-text: #E3E8F2;
+    --sg-text-muted: #A3AEC4;
+    --sg-text-subtle: #77839B;
+    --sg-heading: #F3F5FA;
+    --sg-link: #9DB3E0;
+
+    --sg-sidebar-bg: #0D1527;
+    --sg-nav-active-bg: rgb(201 178 122 / 0.1);
+    --sg-nav-active-text: #DCC99A;
+    --sg-nav-active-bar: #C9B27A;
+
+    --color-slate-50: #F1F4F9;
+    --color-slate-100: #E3E8F2;
+    --color-slate-200: #C9D1E0;
+    --color-slate-300: #A3AEC4;
+    --color-slate-400: #8792A8;
+    --color-slate-500: #6B768D;
+    --color-slate-600: #4A5570;
+    --color-slate-700: #2A3753;
+    --color-slate-800: #1C2945;
+    --color-slate-900: #121B30;
+    --color-slate-950: #0B1120;
+}
+
+/* ═════════════════════ 2. Midnight Gold ═════════════════════
+   Light: soft ivory, warm charcoal text, subtle bronze accents.
+   Night: deep graphite, layered charcoal surfaces, muted champagne highlights. */
+html[data-erp-template='midnight-gold'] {
+    --sg-brand-50: #F7F1E7;
+    --sg-brand-100: #EEE2CE;
+    --sg-brand-200: #DEC7A2;
+    --sg-brand-300: #C9A877;
+    --sg-brand-400: #B38D57;
+    --sg-brand-500: #9C7642;
+    --sg-brand-600: #84622F;
+    --sg-brand-700: #6E5126;
+    --sg-brand-800: #57401F;
+    --sg-brand-900: #413019;
+    --sg-brand-950: #2A1F10;
+    --sg-accent2: #A86E57;
+    --sg-accent2-text: #84513E;
+
+    --sg-canvas: #F7F4EE;
+    --sg-surface: #FFFDF9;
+    --sg-surface-2: #FAF7F1;
+    --sg-surface-3: #F1ECE3;
+    --sg-border: #E7E1D6;
+    --sg-border-strong: #D5CDBF;
+    --sg-text: #2A2622;
+    --sg-text-muted: #5F584F;
+    --sg-text-subtle: #8C847A;
+    --sg-heading: #1F1B17;
+    --sg-tint: 42 38 34;
+
+    --sg-sidebar-bg: #FFFDF9;
+    --sg-nav-active-bg: #F4EDE1;
+    --sg-nav-active-text: #57401F;
+    --sg-nav-active-bar: #9C7642;
+
+    --color-slate-50: #FAF8F4;
+    --color-slate-100: #F3EFE8;
+    --color-slate-200: #E7E1D6;
+    --color-slate-300: #D5CDBF;
+    --color-slate-400: #A39B8F;
+    --color-slate-500: #6F685E;
+    --color-slate-600: #5F584F;
+    --color-slate-700: #46403A;
+    --color-slate-800: #302B26;
+    --color-slate-900: #2A2622;
+    --color-slate-950: #1A1714;
+}
+html[data-erp-template='midnight-gold'].dark {
+    --sg-brand-50: #211E19;
+    --sg-brand-100: #29251E;
+    --sg-brand-200: #3A3326;
+    --sg-brand-300: #E4D3AE;
+    --sg-brand-400: #CDB689;
+    --sg-brand-500: #B39A6B;
+    --sg-brand-600: #866C3E;
+    --sg-brand-700: #74603A;
+    --sg-brand-800: #5C4C2F;
+    --sg-brand-900: #3F3522;
+    --sg-brand-950: #2A2418;
+    --sg-accent2: #C99179;
+    --sg-accent2-text: #DFB19D;
+
+    --sg-canvas: #0F0F11;
+    --sg-surface: #17171A;
+    --sg-surface-2: #1D1D21;
+    --sg-surface-3: #242428;
+    --sg-input-bg: #121214;
+    --sg-border: #2A2A2F;
+    --sg-border-strong: #36363C;
+    --sg-text: #E8E4DC;
+    --sg-text-muted: #ABA59B;
+    --sg-text-subtle: #7F7A72;
+    --sg-heading: #F4F1EA;
+    --sg-link: #CDB689;
+
+    --sg-sidebar-bg: #131315;
+    --sg-nav-active-bg: rgb(205 182 137 / 0.1);
+    --sg-nav-active-text: #E4D3AE;
+    --sg-nav-active-bar: #CDB689;
+
+    --color-slate-50: #F4F2EE;
+    --color-slate-100: #E8E4DC;
+    --color-slate-200: #CFCAC1;
+    --color-slate-300: #ABA59B;
+    --color-slate-400: #8E8980;
+    --color-slate-500: #716C65;
+    --color-slate-600: #4E4B47;
+    --color-slate-700: #333236;
+    --color-slate-800: #242428;
+    --color-slate-900: #18181B;
+    --color-slate-950: #0F0F11;
+}
+
+/* ═════════════════════ 3. Harbor Navy ═════════════════════
+   Light: cool white, slate-blue accents, steel-grey borders.
+   Night: deep blue-grey, layered slate surfaces, soft blue highlights. */
+html[data-erp-template='harbor-navy'] {
+    --sg-brand-50: #EEF3FB;
+    --sg-brand-100: #DCE6F6;
+    --sg-brand-200: #BCCFEC;
+    --sg-brand-300: #93B1DE;
+    --sg-brand-400: #6A90CC;
+    --sg-brand-500: #4A73B6;
+    --sg-brand-600: #3A5E9C;
+    --sg-brand-700: #314F84;
+    --sg-brand-800: #29416B;
+    --sg-brand-900: #213452;
+    --sg-brand-950: #152238;
+    --sg-accent2: #5F8FA6;
+    --sg-accent2-text: #3F6B80;
+
+    --sg-canvas: #F4F6F9;
+    --sg-surface: #FFFFFF;
+    --sg-surface-2: #F8FAFC;
+    --sg-surface-3: #EEF2F7;
+    --sg-border: #E1E6EE;
+    --sg-border-strong: #CBD3DF;
+    --sg-text: #17202E;
+    --sg-text-muted: #4B5668;
+    --sg-text-subtle: #7D8797;
+    --sg-heading: #0F1724;
+    --sg-tint: 23 32 46;
+
+    --sg-sidebar-bg: #FFFFFF;
+    --sg-nav-active-bg: #EEF3FB;
+    --sg-nav-active-text: #29416B;
+    --sg-nav-active-bar: #4A73B6;
+
+    --color-slate-50: #F7F9FC;
+    --color-slate-100: #EEF2F7;
+    --color-slate-200: #E1E6EE;
+    --color-slate-300: #CBD3DF;
+    --color-slate-400: #97A1B1;
+    --color-slate-500: #5E6A7C;
+    --color-slate-600: #4B5668;
+    --color-slate-700: #364152;
+    --color-slate-800: #222B3A;
+    --color-slate-900: #17202E;
+    --color-slate-950: #0B1220;
+}
+html[data-erp-template='harbor-navy'].dark {
+    --sg-brand-50: #15202F;
+    --sg-brand-100: #19283B;
+    --sg-brand-200: #22354F;
+    --sg-brand-300: #B4CBEF;
+    --sg-brand-400: #8FB3E8;
+    --sg-brand-500: #6E98DB;
+    --sg-brand-600: #3F69B0;
+    --sg-brand-700: #355A98;
+    --sg-brand-800: #2C4B7E;
+    --sg-brand-900: #223A61;
+    --sg-brand-950: #172843;
+    --sg-accent2: #7FB0C6;
+    --sg-accent2-text: #A6CADB;
+
+    --sg-canvas: #0E141C;
+    --sg-surface: #141C27;
+    --sg-surface-2: #1A2431;
+    --sg-surface-3: #212D3C;
+    --sg-input-bg: #111821;
+    --sg-border: #263342;
+    --sg-border-strong: #324254;
+    --sg-text: #E2E8F0;
+    --sg-text-muted: #A3AFBF;
+    --sg-text-subtle: #788496;
+    --sg-heading: #F1F5F9;
+    --sg-link: #8FB3E8;
+
+    --sg-sidebar-bg: #111821;
+    --sg-nav-active-bg: rgb(143 179 232 / 0.12);
+    --sg-nav-active-text: #B4CBEF;
+    --sg-nav-active-bar: #8FB3E8;
+
+    --color-slate-50: #F1F5F9;
+    --color-slate-100: #E2E8F0;
+    --color-slate-200: #C8D1DD;
+    --color-slate-300: #A3AFBF;
+    --color-slate-400: #8692A4;
+    --color-slate-500: #6A7689;
+    --color-slate-600: #4A5668;
+    --color-slate-700: #2D3A4B;
+    --color-slate-800: #212D3C;
+    --color-slate-900: #151D28;
+    --color-slate-950: #0E141C;
+}
+
+/* ═════════════════════ 4. Forest Ledger ═════════════════════
+   Light: warm white, deep pine-green accents, muted sage surfaces.
+   Night: deep charcoal-green, lighter forest surfaces, soft sage highlights.
+   Kept distinct from School Green: bluer pine instead of bright green, warm not cool whites. */
+html[data-erp-template='forest-ledger'] {
+    --sg-brand-50: #EEF4F0;
+    --sg-brand-100: #DCE8E0;
+    --sg-brand-200: #BBD2C3;
+    --sg-brand-300: #8FB39E;
+    --sg-brand-400: #5F8F76;
+    --sg-brand-500: #3F735A;
+    --sg-brand-600: #2F5E4A;
+    --sg-brand-700: #264D3D;
+    --sg-brand-800: #1F3E31;
+    --sg-brand-900: #183026;
+    --sg-brand-950: #0F1F18;
+    --sg-accent2: #A6874A;
+    --sg-accent2-text: #7C6331;
+
+    --sg-canvas: #F5F4EF;
+    --sg-surface: #FFFEFB;
+    --sg-surface-2: #F7F7F2;
+    --sg-surface-3: #EDEFE7;
+    --sg-border: #E1E3D9;
+    --sg-border-strong: #CDD1C3;
+    --sg-text: #1C2420;
+    --sg-text-muted: #4E5A52;
+    --sg-text-subtle: #808A82;
+    --sg-heading: #142019;
+    --sg-tint: 28 36 32;
+
+    --sg-sidebar-bg: #FBFAF5;
+    --sg-nav-active-bg: #E8EFE9;
+    --sg-nav-active-text: #1F3E31;
+    --sg-nav-active-bar: #3F735A;
+
+    --color-slate-50: #F8F8F4;
+    --color-slate-100: #EFF1EA;
+    --color-slate-200: #E1E3D9;
+    --color-slate-300: #CDD1C3;
+    --color-slate-400: #9AA196;
+    --color-slate-500: #66706A;
+    --color-slate-600: #4E5A52;
+    --color-slate-700: #39433D;
+    --color-slate-800: #252E29;
+    --color-slate-900: #1C2420;
+    --color-slate-950: #0F1712;
+}
+html[data-erp-template='forest-ledger'].dark {
+    --sg-brand-50: #18241E;
+    --sg-brand-100: #1C2C24;
+    --sg-brand-200: #263A30;
+    --sg-brand-300: #BBD5C3;
+    --sg-brand-400: #9DBFA8;
+    --sg-brand-500: #7AA68A;
+    --sg-brand-600: #3F7A5E;
+    --sg-brand-700: #36694F;
+    --sg-brand-800: #2C5641;
+    --sg-brand-900: #224333;
+    --sg-brand-950: #172E23;
+    --sg-accent2: #C9AC70;
+    --sg-accent2-text: #DCC696;
+
+    --sg-canvas: #0F1311;
+    --sg-surface: #161C19;
+    --sg-surface-2: #1C2420;
+    --sg-surface-3: #232C27;
+    --sg-input-bg: #121815;
+    --sg-border: #29332E;
+    --sg-border-strong: #35413A;
+    --sg-text: #E3E8E4;
+    --sg-text-muted: #A6B2AA;
+    --sg-text-subtle: #7A867E;
+    --sg-heading: #F1F4F1;
+    --sg-link: #9DBFA8;
+
+    --sg-sidebar-bg: #121815;
+    --sg-nav-active-bg: rgb(157 191 168 / 0.12);
+    --sg-nav-active-text: #BBD5C3;
+    --sg-nav-active-bar: #9DBFA8;
+
+    --color-slate-50: #F2F5F2;
+    --color-slate-100: #E3E8E4;
+    --color-slate-200: #C9D1CB;
+    --color-slate-300: #A6B2AA;
+    --color-slate-400: #89958D;
+    --color-slate-500: #6D7871;
+    --color-slate-600: #4D5852;
+    --color-slate-700: #2F3934;
+    --color-slate-800: #222B26;
+    --color-slate-900: #171D1A;
+    --color-slate-950: #0F1311;
+}
+
+/* ═════════════════════ 5. Ivory Studio ═════════════════════
+   Light: warm ivory, crisp white cards, deep ink typography, subtle taupe borders.
+   Night: deep warm charcoal, layered graphite surfaces, soft ivory highlights. */
+html[data-erp-template='ivory-studio'] {
+    --sg-brand-50: #F2F2F4;
+    --sg-brand-100: #E4E5E9;
+    --sg-brand-200: #C9CBD3;
+    --sg-brand-300: #A3A7B4;
+    --sg-brand-400: #737889;
+    --sg-brand-500: #4F5466;
+    --sg-brand-600: #2F3342;
+    --sg-brand-700: #252836;
+    --sg-brand-800: #1C1F2A;
+    --sg-brand-900: #15171F;
+    --sg-brand-950: #0D0E14;
+    --sg-accent2: #9A8670;
+    --sg-accent2-text: #6F5E4B;
+
+    --sg-canvas: #F7F5F0;
+    --sg-surface: #FFFFFF;
+    --sg-surface-2: #FAF9F6;
+    --sg-surface-3: #F1EEE8;
+    --sg-border: #E6E1D8;
+    --sg-border-strong: #D3CCC0;
+    --sg-text: #1F2128;
+    --sg-text-muted: #555761;
+    --sg-text-subtle: #878890;
+    --sg-heading: #15171C;
+    --sg-tint: 31 33 40;
+    --sg-thead-bg: #F6F4EF;
+
+    --sg-sidebar-bg: #FFFFFF;
+    --sg-nav-active-bg: #F1EEE8;
+    --sg-nav-active-text: #15171C;
+    --sg-nav-active-bar: #2F3342;
+
+    --color-slate-50: #FAF9F6;
+    --color-slate-100: #F3F1EC;
+    --color-slate-200: #E6E1D8;
+    --color-slate-300: #D3CCC0;
+    --color-slate-400: #A29C92;
+    --color-slate-500: #6C6A70;
+    --color-slate-600: #555761;
+    --color-slate-700: #3E4049;
+    --color-slate-800: #2A2C34;
+    --color-slate-900: #1F2128;
+    --color-slate-950: #121318;
+}
+html[data-erp-template='ivory-studio'].dark {
+    --sg-brand-50: #24211D;
+    --sg-brand-100: #2B2822;
+    --sg-brand-200: #3A352E;
+    --sg-brand-300: #EDE6D8;
+    --sg-brand-400: #DDD3C1;
+    --sg-brand-500: #B9AE9B;
+    --sg-brand-600: #6B6357;
+    --sg-brand-700: #5C554B;
+    --sg-brand-800: #4A443C;
+    --sg-brand-900: #36322C;
+    --sg-brand-950: #24211D;
+    --sg-accent2: #BFA98A;
+    --sg-accent2-text: #D9C8AE;
+
+    --sg-canvas: #141311;
+    --sg-surface: #1B1A18;
+    --sg-surface-2: #22201D;
+    --sg-surface-3: #2A2824;
+    --sg-input-bg: #171614;
+    --sg-border: #2F2C28;
+    --sg-border-strong: #3B3833;
+    --sg-text: #ECE8E0;
+    --sg-text-muted: #B0AAA0;
+    --sg-text-subtle: #847F76;
+    --sg-heading: #F7F4EE;
+    --sg-link: #E8E1D3;
+    --sg-thead-bg: #22201D;
+
+    --sg-sidebar-bg: #171614;
+    --sg-nav-active-bg: rgb(232 225 211 / 0.08);
+    --sg-nav-active-text: #F2ECDF;
+    --sg-nav-active-bar: #DDD3C1;
+
+    --color-slate-50: #F7F4EE;
+    --color-slate-100: #ECE8E0;
+    --color-slate-200: #D4CFC6;
+    --color-slate-300: #B0AAA0;
+    --color-slate-400: #938D84;
+    --color-slate-500: #76716A;
+    --color-slate-600: #55514B;
+    --color-slate-700: #3B3833;
+    --color-slate-800: #2A2824;
+    --color-slate-900: #1D1C1A;
+    --color-slate-950: #141311;
+}
+
+/* ═════════════════════ 6. Terracotta Sand ═════════════════════
+   Light: soft sand, warm white cards, muted terracotta accents, dark brown typography.
+   Night: deep warm brown-charcoal, muted clay accents, soft sand text. */
+html[data-erp-template='terracotta-sand'] {
+    --sg-brand-50: #FAF0EA;
+    --sg-brand-100: #F4DFD3;
+    --sg-brand-200: #E8C0AA;
+    --sg-brand-300: #D69B7E;
+    --sg-brand-400: #C47A58;
+    --sg-brand-500: #B0623F;
+    --sg-brand-600: #9A5335;
+    --sg-brand-700: #81452D;
+    --sg-brand-800: #693926;
+    --sg-brand-900: #4F2B1D;
+    --sg-brand-950: #331C13;
+    --sg-accent2: #B8935A;
+    --sg-accent2-text: #866937;
+
+    --sg-canvas: #F7F2EA;
+    --sg-surface: #FFFCF8;
+    --sg-surface-2: #FAF6F0;
+    --sg-surface-3: #F2EADF;
+    --sg-border: #E8DED0;
+    --sg-border-strong: #D7C9B7;
+    --sg-text: #2E241E;
+    --sg-text-muted: #64564B;
+    --sg-text-subtle: #93857A;
+    --sg-heading: #241B16;
+    --sg-tint: 46 36 30;
+
+    --sg-sidebar-bg: #FFFCF8;
+    --sg-nav-active-bg: #F6EAE1;
+    --sg-nav-active-text: #693926;
+    --sg-nav-active-bar: #B0623F;
+
+    --color-slate-50: #FBF8F4;
+    --color-slate-100: #F4EEE6;
+    --color-slate-200: #E8DED0;
+    --color-slate-300: #D7C9B7;
+    --color-slate-400: #A99A8B;
+    --color-slate-500: #776A5F;
+    --color-slate-600: #64564B;
+    --color-slate-700: #4A3E35;
+    --color-slate-800: #352B24;
+    --color-slate-900: #2E241E;
+    --color-slate-950: #1C1511;
+}
+html[data-erp-template='terracotta-sand'].dark {
+    --sg-brand-50: #2A1D16;
+    --sg-brand-100: #33231A;
+    --sg-brand-200: #463024;
+    --sg-brand-300: #EBC2AA;
+    --sg-brand-400: #D9A487;
+    --sg-brand-500: #C4846A;
+    --sg-brand-600: #A35E40;
+    --sg-brand-700: #8C4F36;
+    --sg-brand-800: #74412C;
+    --sg-brand-900: #573122;
+    --sg-brand-950: #3A2117;
+    --sg-accent2: #D2B07A;
+    --sg-accent2-text: #E3CA9F;
+
+    --sg-canvas: #16110E;
+    --sg-surface: #1E1814;
+    --sg-surface-2: #251E19;
+    --sg-surface-3: #2D251F;
+    --sg-input-bg: #1A1411;
+    --sg-border: #342A23;
+    --sg-border-strong: #423630;
+    --sg-text: #F0E7DC;
+    --sg-text-muted: #B8AA9B;
+    --sg-text-subtle: #8A7D70;
+    --sg-heading: #F8F1E7;
+    --sg-link: #D9A487;
+
+    --sg-sidebar-bg: #1A1411;
+    --sg-nav-active-bg: rgb(217 164 135 / 0.12);
+    --sg-nav-active-text: #EBC2AA;
+    --sg-nav-active-bar: #D9A487;
+
+    --color-slate-50: #F8F1E7;
+    --color-slate-100: #F0E7DC;
+    --color-slate-200: #D9CDBF;
+    --color-slate-300: #B8AA9B;
+    --color-slate-400: #9A8C7F;
+    --color-slate-500: #7C6F64;
+    --color-slate-600: #594E45;
+    --color-slate-700: #3B312A;
+    --color-slate-800: #2D251F;
+    --color-slate-900: #201A16;
+    --color-slate-950: #16110E;
+}
+
+/* ═════════════════════ 7. Velvet Plum ═════════════════════
+   Light: soft neutral white, muted plum accents, subtle dusty-rose highlights.
+   Night: deep aubergine-charcoal, lighter plum surfaces, restrained rose-gold accents. */
+html[data-erp-template='velvet-plum'] {
+    --sg-brand-50: #F7F0F5;
+    --sg-brand-100: #EEDFEA;
+    --sg-brand-200: #DCC0D4;
+    --sg-brand-300: #C39BB8;
+    --sg-brand-400: #A77598;
+    --sg-brand-500: #8C5A7E;
+    --sg-brand-600: #74476A;
+    --sg-brand-700: #613B58;
+    --sg-brand-800: #4E3047;
+    --sg-brand-900: #3B2436;
+    --sg-brand-950: #271824;
+    --sg-accent2: #C4808F;
+    --sg-accent2-text: #9A5666;
+
+    --sg-canvas: #F7F5F7;
+    --sg-surface: #FFFFFF;
+    --sg-surface-2: #FAF8FA;
+    --sg-surface-3: #F2EEF2;
+    --sg-border: #E7E1E7;
+    --sg-border-strong: #D5CCD5;
+    --sg-text: #241C25;
+    --sg-text-muted: #5B505C;
+    --sg-text-subtle: #8B808C;
+    --sg-heading: #1B141C;
+    --sg-tint: 36 28 37;
+
+    --sg-sidebar-bg: #FFFFFF;
+    --sg-nav-active-bg: #F6EEF3;
+    --sg-nav-active-text: #4E3047;
+    --sg-nav-active-bar: #C4808F;
+
+    --color-slate-50: #FAF8FA;
+    --color-slate-100: #F3EFF3;
+    --color-slate-200: #E7E1E7;
+    --color-slate-300: #D5CCD5;
+    --color-slate-400: #A398A3;
+    --color-slate-500: #6E636F;
+    --color-slate-600: #5B505C;
+    --color-slate-700: #423943;
+    --color-slate-800: #2D252E;
+    --color-slate-900: #241C25;
+    --color-slate-950: #160F17;
+}
+html[data-erp-template='velvet-plum'].dark {
+    --sg-brand-50: #251B26;
+    --sg-brand-100: #2D212E;
+    --sg-brand-200: #3E2D3F;
+    --sg-brand-300: #E3C6D8;
+    --sg-brand-400: #C9A0BC;
+    --sg-brand-500: #A97C9C;
+    --sg-brand-600: #865877;
+    --sg-brand-700: #734B66;
+    --sg-brand-800: #5E3E54;
+    --sg-brand-900: #462F3F;
+    --sg-brand-950: #2F202B;
+    --sg-accent2: #D9A9A0;
+    --sg-accent2-text: #E8C3BB;
+
+    --sg-canvas: #130F14;
+    --sg-surface: #1B151C;
+    --sg-surface-2: #221A23;
+    --sg-surface-3: #2A212B;
+    --sg-input-bg: #171218;
+    --sg-border: #322835;
+    --sg-border-strong: #403442;
+    --sg-text: #EDE5EC;
+    --sg-text-muted: #B2A5B1;
+    --sg-text-subtle: #847884;
+    --sg-heading: #F7F1F6;
+    --sg-link: #D9A9A0;
+
+    --sg-sidebar-bg: #171218;
+    --sg-nav-active-bg: rgb(217 169 160 / 0.1);
+    --sg-nav-active-text: #E8C3BB;
+    --sg-nav-active-bar: #D9A9A0;
+
+    --color-slate-50: #F7F1F6;
+    --color-slate-100: #EDE5EC;
+    --color-slate-200: #D4C9D3;
+    --color-slate-300: #B2A5B1;
+    --color-slate-400: #958894;
+    --color-slate-500: #786C77;
+    --color-slate-600: #574D57;
+    --color-slate-700: #3A303B;
+    --color-slate-800: #2A212B;
+    --color-slate-900: #1E171F;
+    --color-slate-950: #130F14;
+}

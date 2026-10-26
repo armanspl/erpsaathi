@@ -24,8 +24,8 @@
 
         <!-- Right -->
         <div class="flex items-center gap-1.5 sm:gap-2">
-            <PillSelect v-model="erpStore.currentSession" :options="erpStore.sessions" icon="📅" label="Academic Session" class="hidden sm:block" />
-            <PillSelect v-model="erpStore.currentBranch" :options="erpStore.branches" icon="🏫" label="Branch" class="hidden lg:block" />
+            <PillSelect v-model="erpStore.currentSession" :options="erpStore.sessions" icon="calendar" label="Academic Session" class="hidden sm:block" />
+            <PillSelect v-model="erpStore.currentBranch" :options="erpStore.branches" icon="building" label="Branch" class="hidden lg:block" />
 
             <div class="mx-1 hidden h-6 w-px sm:block" style="background: var(--erp-border, rgba(198,167,94,0.22))" />
 

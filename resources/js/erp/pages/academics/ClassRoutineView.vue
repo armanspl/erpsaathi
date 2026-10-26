@@ -197,19 +197,10 @@ const fullRoster = computed(() => {
     }));
     return [...roster.values()].sort((a, b) => a.name.localeCompare(b.name));
 });
-// Teachers who teach somewhere in this routine (any day) — the list when "no periods" ones are hidden.
-const teachingKeys = computed(() => {
-    const keys = new Set();
-    Object.values(byDay.value).forEach((day) => Object.values(day).forEach((e) => {
-        const k = teacherKeyOf(e);
-        if (!k) return;
-        if (e.teacher_id && !activeTeacherIds.value.has(e.teacher_id)) return;
-        keys.add(k);
-    }));
-    return keys;
-});
-function rosterFor() {
-    return includeIdle.value ? fullRoster.value : fullRoster.value.filter((t) => teachingKeys.value.has(t.key));
+// Teachers with at least one period in THIS day group — the list when "no periods" ones are hidden,
+// so a teacher who only teaches on Friday doesn't show with 0 periods on MON / TUE / WED.
+function rosterFor(group) {
+    return includeIdle.value ? fullRoster.value : fullRoster.value.filter((t) => countFor(group, t.key) > 0);
 }
 /** True when at least one class has a real (non-FREE) lesson this period. */
 function periodHasTeaching(group, period) {
@@ -220,7 +211,7 @@ function periodHasTeaching(group, period) {
 function freeTeachers(group, period) {
     if (!periodHasTeaching(group, period)) return [];
     const slots = slotsFor(group);
-    return rosterFor().filter((t) => !slots[t.key]?.[period]?.length);
+    return rosterFor(group).filter((t) => !slots[t.key]?.[period]?.length);
 }
 
 function teacherCell(group, key, period) {
@@ -254,7 +245,7 @@ function header(title) {
 
 function classWiseHtml(group) {
     const ps = periods.value;
-    const roster = rosterFor();
+    const roster = rosterFor(group);
     const teachers = `<table class="teachers"><thead><tr><th>#</th><th>TEACHERS</th><th>PERIOD</th></tr></thead><tbody>${
         roster.map((t, i) => `<tr><td>${i + 1}</td><td>${esc(t.name)}</td><td class="c">${countFor(group, t.key)}</td></tr>`).join('')
     }</tbody><tfoot><tr><td></td><td>TOTAL</td><td class="c">${totalPeriods(group)}</td></tr></tfoot></table>`;
@@ -289,7 +280,7 @@ function classWiseHtml(group) {
 
 function teacherWiseHtml(group) {
     const ps = periods.value;
-    const rows = rosterFor().map((t) => {
+    const rows = rosterFor(group).map((t) => {
         const cells = ps.map((p) => teacherCell(group, t.key, p));
         const cls = (c) => (c.clash ? ' clash' : c.free ? ' free' : '');
         return `<tr><td rowspan="2" class="cls">${esc(t.name)}</td><td class="lbl">SUB</td>${cells.map((c) => `<td class="c sub${cls(c)}">${esc(c.sub)}</td>`).join('')}<td rowspan="2" class="c">${countFor(group, t.key)}</td></tr>

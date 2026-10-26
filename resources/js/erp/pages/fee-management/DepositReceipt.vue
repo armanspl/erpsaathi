@@ -35,14 +35,12 @@
                         <div class="justify-self-center rounded bg-emerald-700 px-4 py-1 text-sm font-bold uppercase tracking-wide text-white">
                             Fee Receipt
                         </div>
-                        <div class="justify-self-end flex h-14 w-14 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50 text-xl">
-                            <img v-if="receipt.school.logo_path" :src="receipt.school.logo_path" alt="Logo" class="h-full w-full object-contain" />
-                            <span v-else>🏫</span>
-                        </div>
+                        <div />
                     </div>
                     <h1 class="mt-1 text-lg font-bold leading-tight text-blue-700">{{ receipt.school.name }}</h1>
                     <p v-if="receipt.school.address" class="mt-0.5 text-xs leading-snug text-slate-500">Address : {{ receipt.school.address }}</p>
                     <p v-if="receipt.school.phone" class="mt-0.5 text-xs font-semibold leading-snug text-slate-600">Contact No. {{ receipt.school.phone }}</p>
+                    <p v-if="receipt.school.udise_no" class="mt-0.5 text-xs font-semibold leading-snug text-slate-600">U-DISE Code : {{ receipt.school.udise_no }}</p>
                     <p class="mt-0.5 text-sm font-semibold leading-tight text-slate-700">{{ receipt.session.name }}</p>
                     <p class="text-sm leading-tight text-slate-600">{{ receipt.months_bar }}</p>
                 </div>
@@ -53,6 +51,8 @@
                         <p><span class="text-slate-500">Student Name :</span> <strong class="uppercase">{{ receipt.student.name }}</strong></p>
                         <p><span class="text-slate-500">Father Name :</span> <strong class="uppercase">{{ receipt.student.father || '—' }}</strong></p>
                         <p><span class="text-slate-500">Mother Name :</span> <strong class="uppercase">{{ receipt.student.mother || '—' }}</strong></p>
+                        <p><span class="text-slate-500">Phone :</span> <strong>{{ receipt.student.mobile || '—' }}</strong></p>
+                        <p><span class="text-slate-500">Address :</span> <strong class="uppercase">{{ receipt.student.address || '—' }}</strong></p>
                     </div>
                     <div class="min-w-[180px] space-y-1 sm:text-right">
                         <p><strong>Date :</strong> {{ receipt.printed_at }}</p>

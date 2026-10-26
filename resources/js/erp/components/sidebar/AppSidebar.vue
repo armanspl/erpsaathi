@@ -73,7 +73,24 @@
                         :title="showLabels ? '' : group.label"
                         @click="onNavClick"
                     >
-                        <span class="flex h-6 w-6 shrink-0 items-center justify-center text-base">{{ group.icon }}</span>
+                        <span class="erp-nav-icon flex h-6 w-6 shrink-0 items-center justify-center text-base"><AppIcon :name="group.svg || group.icon" class="h-[18px] w-[18px]" /></span>
+                        <span v-show="showLabels" class="min-w-0 flex-1 truncate text-left">{{ group.label }}</span>
+                    </RouterLink>
+
+                    <!-- Tabbed group (e.g. Academics): one link, its pages are tabs on the page itself -->
+                    <RouterLink
+                        v-else-if="group.tabbed"
+                        :to="group.children[0].path"
+                        class="erp-nav-item group flex w-full items-center rounded-lg text-sm font-medium transition-[padding,gap,background-color,color] duration-200"
+                        :class="[
+                            showLabels ? 'gap-2.5 px-2.5 py-2.5' : 'justify-center px-0 py-2.5',
+                            isGroupActive(group) ? 'is-active' : '',
+                        ]"
+                        :title="showLabels ? '' : group.label"
+                        @mouseenter="warmGroup(group.key)"
+                        @click="onNavClick"
+                    >
+                        <span class="erp-nav-icon flex h-6 w-6 shrink-0 items-center justify-center text-base"><AppIcon :name="group.svg || group.icon" class="h-[18px] w-[18px]" /></span>
                         <span v-show="showLabels" class="min-w-0 flex-1 truncate text-left">{{ group.label }}</span>
                     </RouterLink>
 
@@ -89,7 +106,7 @@
                             :aria-expanded="expandedKey === group.key"
                             @click="onGroupClick(group)"
                         >
-                            <span class="flex h-6 w-6 shrink-0 items-center justify-center text-base">{{ group.icon }}</span>
+                            <span class="erp-nav-icon flex h-6 w-6 shrink-0 items-center justify-center text-base"><AppIcon :name="group.svg || group.icon" class="h-[18px] w-[18px]" /></span>
                             <span v-show="showLabels" class="min-w-0 flex-1 truncate text-left">{{ group.label }}</span>
                             <svg
                                 v-show="showLabels"
@@ -145,7 +162,8 @@ import { prefetchAdmissions } from '../../api/admissions';
 import { prefetchAttendance } from '../../api/attendance';
 import { prefetchFeeManagement } from '../../api/feeManagement';
 import { prefetchPeople } from '../../api/people';
-import { menu, findMenuItemByPath } from '../../data/menu';
+import { menu, findMenuItemByPath, slugify } from '../../data/menu';
+import AppIcon from '../common/AppIcon.vue';
 import { erpStore, logout, schoolInitials, toggleSidebarPin } from '../../store';
 import { usePermissions } from '../../composables/usePermissions';
 
@@ -209,13 +227,28 @@ function canSeeChild(group, child) {
     return !key || can(key);
 }
 
+/**
+ * group.sidebarItems (e.g. People) regroups the visible children for display: a string is that
+ * child as-is; { label, children } is one link to the first visible covered page, active on any of them.
+ */
+function sidebarEntries(group, visibleChildren) {
+    if (!group.sidebarItems) return visibleChildren;
+    const byLabel = new Map(visibleChildren.map((c) => [c.label, c]));
+    return group.sidebarItems.map((item) => {
+        if (typeof item === 'string') return byLabel.get(item) || null;
+        const covered = item.children.map((label) => byLabel.get(label)).filter(Boolean);
+        if (!covered.length) return null;
+        return { ...covered[0], label: item.label, key: slugify(item.label), covers: covered.map((c) => c.path) };
+    }).filter(Boolean);
+}
+
 const visibleMenu = computed(() =>
     menu
         .map((group) => {
             if (group.path && !group.children.length) {
                 return can('dashboard.dashboard.view') ? group : null;
             }
-            const children = group.children.filter((c) => canSeeChild(group, c));
+            const children = sidebarEntries(group, group.children.filter((c) => canSeeChild(group, c)));
             if (!children.length) return null;
             return { ...group, children };
         })
@@ -246,6 +279,7 @@ function isGroupActive(group) {
     return activeGroupKey.value === group.key;
 }
 function isChildActive(child) {
+    if (child.covers) return child.covers.includes(route.path);
     if (route.path !== child.path) return false;
     if (child.query?.type) return route.query.type === child.query.type;
     return true;

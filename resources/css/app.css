@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import './erp-theme-royal.css';
 @import './erp-theme-school-green.css';
+@import './erp-theme-palettes.css';
+@import './erp-theme-system.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

@@ -100,12 +100,16 @@ class ClassRoutineExcelExporter
             $ws = $spreadsheet->createSheet();
             $ws->setTitle($this->uniqueSheetTitle($group['label'], $usedTitles));
             $periods = $this->periodsForGroup($sheet, $group['days']);
+            // Only teachers with at least one period on these days — 0-period teachers are left out
+            // of the legend, LEISURE and teacher-wise sheets (same as the on-screen Teacher wise tab).
+            $counts = $this->teacherPeriodCounts($group['entries'], $teachers, $periods);
+            $groupTeachers = $teachers->filter(fn ($t) => ($counts[(int) $t->id] ?? 0) > 0)->values();
 
             $this->buildDaySheet(
                 $ws,
                 $group['label'],
                 $classes,
-                $teachers,
+                $groupTeachers,
                 $group['entries'],
                 $periods
             );
@@ -115,7 +119,7 @@ class ClassRoutineExcelExporter
             $this->buildTeacherWiseSheet(
                 $tw,
                 $group['label'],
-                $teachers,
+                $groupTeachers,
                 $group['entries'],
                 $classNameById,
                 $periods

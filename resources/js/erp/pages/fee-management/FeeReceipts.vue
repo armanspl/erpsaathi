@@ -68,16 +68,22 @@
                                 @focus="showQuickResults = true; ensureStudentsLoaded()"
                                 @blur="hideQuickResultsSoon"
                             />
-                            <div v-if="showQuickResults && quickSearch && quickFilteredStudents.length" class="absolute z-10 mt-1 max-h-56 w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                            <div v-if="showQuickResults && quickSearch && quickFilteredStudents.length" class="absolute right-0 z-20 mt-1 max-h-96 w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
                                 <button
                                     v-for="s in quickFilteredStudents"
                                     :key="s.id"
                                     type="button"
-                                    class="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    class="flex w-full items-start justify-between gap-4 border-b border-slate-100 px-4 py-2.5 text-left text-sm last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
                                     @mousedown.prevent="quickSelectStudent(s)"
                                 >
-                                    <span class="font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</span>
-                                    <span class="text-xs text-slate-400">{{ s.admission_no }} · {{ studentClassLabel(s) }}</span>
+                                    <span class="min-w-0 flex-1">
+                                        <span class="block break-words font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</span>
+                                        <span class="block break-words text-xs text-slate-500">Father: {{ s.father?.name || '—' }}</span>
+                                    </span>
+                                    <span class="max-w-[45%] shrink-0 break-words text-right text-xs text-slate-500">
+                                        <span class="block font-medium text-slate-600 dark:text-slate-300">{{ s.admission_no }}</span>
+                                        <span class="block">{{ studentClassLabel(s) }}</span>
+                                    </span>
                                 </button>
                             </div>
                         </div>
@@ -636,8 +642,11 @@
                             :class="modalPick?.id === s.id ? 'bg-primary-50 dark:bg-primary-500/10' : ''"
                             @click="modalPick = s"
                         >
-                            <span class="font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</span>
-                            <span class="text-xs text-slate-400">{{ s.admission_no }} · {{ s.section?.name || '—' }}</span>
+                            <span class="min-w-0 flex-1">
+                                <span class="block break-words font-medium text-slate-800 dark:text-slate-100">{{ s.name }}</span>
+                                <span class="block break-words text-xs text-slate-500">Father: {{ s.father?.name || '—' }}</span>
+                            </span>
+                            <span class="shrink-0 text-xs text-slate-400">{{ s.admission_no }} · {{ s.section?.name || '—' }}</span>
                         </button>
                     </div>
                 </div>

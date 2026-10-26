@@ -8,6 +8,8 @@ class ErpFeeSetting extends Model
 {
     protected $table = 'erp_fee_settings';
 
+    public const DEFAULT_DEMAND_SLIP_NOTE = 'Please clear the monthly dues before 10th of every month otherwise RS 50 is added as late fine.';
+
     protected $fillable = [
         'default_payment_mode',
         'receipt_paid_at',
@@ -15,6 +17,7 @@ class ErpFeeSetting extends Model
         'tc_fee_enabled',
         'tc_fee_amount',
         'tc_allow_pending_fees',
+        'demand_slip_note',
         'tally_company_name',
         'tally_cash_ledger',
         'tally_bank_ledger',
@@ -42,6 +45,7 @@ class ErpFeeSetting extends Model
             'tc_fee_enabled' => true,
             'tc_fee_amount' => 500,
             'tc_allow_pending_fees' => false,
+            'demand_slip_note' => self::DEFAULT_DEMAND_SLIP_NOTE,
             'tally_cash_ledger' => 'Cash',
             'tally_bank_ledger' => 'Bank',
             'tally_party_ledger' => 'Fee Receivable',

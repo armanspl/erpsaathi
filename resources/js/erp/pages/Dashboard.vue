@@ -11,40 +11,106 @@
                 </p>
             </div>
             <div class="dash-actions">
-                <RouterLink to="/fee-management/pay-fee" class="dash-btn dash-btn--primary">Collect fee</RouterLink>
-                <RouterLink to="/people/students?add=1" class="dash-btn">Add student</RouterLink>
-                <RouterLink :to="{ path: '/import-export', query: { type: 'global-workbook-export' } }" class="dash-btn">Export workbook</RouterLink>
+                <RouterLink to="/fee-management/pay-fee" class="dash-btn dash-btn--primary">
+                    <AppIcon name="wallet" class="h-4 w-4" /> Collect fee
+                </RouterLink>
+                <RouterLink to="/people/students?add=1" class="dash-btn">
+                    <AppIcon name="user-plus" class="h-4 w-4" /> Add student
+                </RouterLink>
+                <RouterLink :to="{ path: '/import-export', query: { type: 'global-workbook-export' } }" class="dash-btn">
+                    <AppIcon name="download" class="h-4 w-4" /> Export workbook
+                </RouterLink>
             </div>
         </header>
 
-        <div v-if="error" class="dash-alert">
+        <div v-if="error" class="dash-alert" role="alert">
             {{ error }}
             <button type="button" class="dash-alert__retry" @click="load">Retry</button>
         </div>
 
-        <div v-if="loading" class="dash-skel">
+        <div v-if="loading" class="dash-skel" aria-busy="true" aria-label="Loading dashboard">
             <div v-for="n in 8" :key="n" class="dash-skel__card" />
         </div>
 
         <template v-else-if="!error">
-            <section class="dash-stats">
-                <article v-for="s in peopleStats" :key="s.label" class="dash-stat">
-                    <span class="dash-stat__icon" aria-hidden="true" v-html="STAT_ICONS[s.icon]" />
-                    <p class="dash-stat__label">{{ s.label }}</p>
-                    <p class="dash-stat__value">{{ s.value }}</p>
+            <!-- Summary cards -->
+            <section class="dash-kpis" aria-label="Summary">
+                <article v-for="k in kpis" :key="k.label" class="dash-kpi" :class="`is-${k.tone}`">
+                    <div class="dash-kpi__top">
+                        <p class="dash-kpi__label">{{ k.label }}</p>
+                        <span class="dash-kpi__icon" aria-hidden="true"><AppIcon :name="k.icon" class="h-5 w-5" /></span>
+                    </div>
+                    <p class="dash-kpi__value">{{ k.value }}</p>
+                    <div v-if="k.progress !== undefined" class="dash-kpi__bar" role="img" :aria-label="`${k.progress}% collected`">
+                        <span :style="{ width: `${k.progress}%` }" />
+                    </div>
+                    <p class="dash-kpi__sub">{{ k.sub }}</p>
                 </article>
             </section>
 
-            <section class="dash-stats dash-stats--money">
-                <article v-for="s in moneyStats" :key="s.label" class="dash-stat dash-stat--accent">
-                    <span class="dash-stat__icon" aria-hidden="true" v-html="STAT_ICONS[s.icon]" />
-                    <p class="dash-stat__label">{{ s.label }}</p>
-                    <p class="dash-stat__value">{{ s.value }}</p>
-                </article>
+            <!-- Secondary figures -->
+            <section class="dash-strip" aria-label="More figures">
+                <div v-for="s in strip" :key="s.label" class="dash-strip__item">
+                    <span class="dash-strip__icon" aria-hidden="true"><AppIcon :name="s.icon" class="h-4 w-4" /></span>
+                    <span class="min">
+                        <span class="dash-strip__label">{{ s.label }}</span>
+                        <span class="dash-strip__value">{{ s.value }}</span>
+                    </span>
+                </div>
             </section>
+
+            <div class="dash-grid dash-grid--wide">
+                <DashCard title="Fee collection overview" icon="chart" to="/fee-management/fee-collection-report">
+                    <div v-if="!feeCollectionStatus.length" class="dash-empty center">No fee data for the current session.</div>
+                    <template v-else>
+                        <div class="dash-fee__summary">
+                            <div class="dash-fee__total">
+                                <span class="leg is-collected">Collected</span>
+                                <strong>₹{{ money(feeTotals.collected) }}</strong>
+                            </div>
+                            <div class="dash-fee__total">
+                                <span class="leg is-due">Due</span>
+                                <strong>₹{{ money(feeTotals.due) }}</strong>
+                            </div>
+                            <div class="dash-fee__total">
+                                <span class="leg is-rate">Collection rate</span>
+                                <strong>{{ feeTotals.rate }}%</strong>
+                            </div>
+                        </div>
+                        <div class="dash-chart" role="img" :aria-label="`Fee collected and due by class: ₹${money(feeTotals.collected)} collected, ₹${money(feeTotals.due)} due`">
+                            <div class="dash-chart__plot">
+                                <div
+                                    v-for="c in feeCollectionStatus"
+                                    :key="c.class"
+                                    class="dash-chart__col"
+                                    :title="`${c.class}: ₹${money(c.collected_amount)} collected · ₹${money(c.due_amount)} due`"
+                                >
+                                    <span class="dash-chart__amt">₹{{ shortMoney(Number(c.collected_amount || 0) + Number(c.due_amount || 0)) }}</span>
+                                    <div class="dash-chart__track">
+                                        <div class="dash-chart__bar" :style="{ height: colHeight(c) }">
+                                            <span class="seg is-due" :style="{ flexGrow: Number(c.due_amount || 0) }" />
+                                            <span class="seg is-collected" :style="{ flexGrow: Number(c.collected_amount || 0) }" />
+                                        </div>
+                                    </div>
+                                    <span class="dash-chart__label">{{ c.class }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </DashCard>
+
+                <DashCard title="Quick actions" icon="activity">
+                    <div class="dash-quick">
+                        <RouterLink v-for="action in quickActions" :key="action.label" :to="action.to" class="dash-quick__item">
+                            <span class="dash-quick__icon" aria-hidden="true"><AppIcon :name="action.icon" class="h-5 w-5" /></span>
+                            {{ action.label }}
+                        </RouterLink>
+                    </div>
+                </DashCard>
+            </div>
 
             <div class="dash-grid dash-grid--3">
-                <DashCard title="Today">
+                <DashCard title="Today" icon="calendar-check">
                     <div class="dash-rows">
                         <div class="dash-row">
                             <span>Student attendance</span>
@@ -88,7 +154,7 @@
                     </div>
                 </DashCard>
 
-                <DashCard title="Pending tasks">
+                <DashCard title="Pending tasks" icon="alert">
                     <ul class="dash-list">
                         <li v-for="t in pendingTasks" :key="t.label">
                             <RouterLink :to="t.to" class="dash-task">
@@ -100,17 +166,62 @@
                     </ul>
                 </DashCard>
 
-                <DashCard title="Quick links">
-                    <div class="dash-quick">
-                        <RouterLink v-for="action in quickActions" :key="action.label" :to="action.to" class="dash-quick__item">
-                            {{ action.label }}
-                        </RouterLink>
+                <DashCard title="Upcoming events" icon="calendar" to="/academics/academic-calendar">
+                    <div v-if="!upcomingEvents.length" class="dash-empty">No upcoming events.</div>
+                    <ul v-else class="dash-events">
+                        <li v-for="e in upcomingEvents" :key="e.title + e.date">
+                            <span class="dash-events__date" aria-hidden="true">
+                                <AppIcon name="calendar" class="h-4 w-4" />
+                            </span>
+                            <span class="min">
+                                <span class="name">{{ e.title }}</span>
+                                <span class="hint">{{ e.date }}</span>
+                            </span>
+                        </li>
+                    </ul>
+                </DashCard>
+            </div>
+
+            <div class="dash-grid dash-grid--wide">
+                <DashCard title="Recent students" icon="graduation" to="/people/students">
+                    <div v-if="!recentAdmissions.length" class="dash-empty center">No admissions yet.</div>
+                    <div v-else class="dash-scroll">
+                        <table class="dash-table">
+                            <thead>
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Adm. no.</th>
+                                    <th>Class</th>
+                                    <th class="num">Admitted</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="r in recentAdmissions" :key="r.adm">
+                                    <td>
+                                        <span class="dash-person">
+                                            <span class="dash-avatar" aria-hidden="true">{{ initials(r.name) }}</span>
+                                            <span class="name">{{ r.name }}</span>
+                                        </span>
+                                    </td>
+                                    <td class="mono">{{ r.adm }}</td>
+                                    <td>{{ r.class }}</td>
+                                    <td class="num">{{ r.date }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
+                </DashCard>
+
+                <DashCard title="Recent activity" icon="history">
+                    <div v-if="!recentActivities.length" class="dash-empty">No recent activity.</div>
+                    <ul v-else class="dash-activity">
+                        <li v-for="(a, i) in recentActivities" :key="i">{{ a }}</li>
+                    </ul>
                 </DashCard>
             </div>
 
             <div class="dash-grid dash-grid--2">
-                <DashCard title="Class-wise strength" to="/people/students">
+                <DashCard title="Class-wise strength" icon="users" to="/people/students">
                     <div v-if="!classStrength.length" class="dash-empty center">No active students yet.</div>
                     <div v-else class="dash-scroll">
                         <table class="dash-table dash-table--tight">
@@ -148,101 +259,46 @@
                     </div>
                 </DashCard>
 
-                <DashCard title="Fee by class" to="/fee-management/fee-collection-report">
-                    <div v-if="!feeCollectionStatus.length" class="dash-empty center">No fee data for the current session.</div>
-                    <div v-else class="dash-scroll dash-fee">
-                        <div class="dash-fee__legend">
-                            <span class="leg is-collected">Collected</span>
-                            <span class="leg is-due">Due</span>
+                <DashCard title="Category-wise (boys / girls)" icon="layers" to="/people/students">
+                    <div v-if="!categoryByClass.length" class="dash-empty center">No category data yet.</div>
+                    <template v-else>
+                        <div class="dash-cat__summary">
+                            <span class="dash-cat__summary-item">
+                                <em>Total</em>
+                                <strong class="is-boy">{{ categorySummary.boys }}B</strong>
+                                <span class="sep">/</span>
+                                <strong class="is-girl">{{ categorySummary.girls }}G</strong>
+                            </span>
+                            <span v-if="categorySummary.rteBoys + categorySummary.rteGirls > 0" class="dash-cat__summary-item is-rte">
+                                <em>RTE</em>
+                                <strong class="is-boy">{{ categorySummary.rteBoys }}B</strong>
+                                <span class="sep">/</span>
+                                <strong class="is-girl">{{ categorySummary.rteGirls }}G</strong>
+                            </span>
                         </div>
-                        <div v-for="c in feeCollectionStatus" :key="c.class" class="dash-fee__row">
-                            <div class="dash-fee__head">
-                                <span class="name">{{ c.class }}</span>
-                                <span class="dash-fee__amts">
-                                    <span class="amt is-collected">₹{{ shortMoney(c.collected_amount) }}</span>
-                                    <span class="amt is-due">₹{{ shortMoney(c.due_amount) }}</span>
-                                </span>
-                            </div>
-                            <div class="dash-fee__stack" :title="`${c.collected}% collected · ${c.pending} pending`">
-                                <span class="seg is-collected" :style="{ width: barWidth(c, 'collected') }" />
-                                <span class="seg is-due" :style="{ width: barWidth(c, 'due') }" />
-                            </div>
-                        </div>
-                    </div>
-                </DashCard>
-            </div>
-
-            <DashCard title="Category-wise (boys / girls)" to="/people/students">
-                <div v-if="!categoryByClass.length" class="dash-empty center">No category data yet.</div>
-                <template v-else>
-                    <div class="dash-cat__summary">
-                        <span class="dash-cat__summary-item">
-                            <em>Total</em>
-                            <strong class="is-boy">{{ categorySummary.boys }}B</strong>
-                            <span class="sep">/</span>
-                            <strong class="is-girl">{{ categorySummary.girls }}G</strong>
-                        </span>
-                        <span v-if="categorySummary.rteBoys + categorySummary.rteGirls > 0" class="dash-cat__summary-item is-rte">
-                            <em>RTE</em>
-                            <strong class="is-boy">{{ categorySummary.rteBoys }}B</strong>
-                            <span class="sep">/</span>
-                            <strong class="is-girl">{{ categorySummary.rteGirls }}G</strong>
-                        </span>
-                    </div>
-                    <div class="dash-cat">
-                        <div v-for="row in categoryByClass" :key="row.class" class="dash-cat__class">
-                            <div class="dash-cat__title">
-                                <span class="name">{{ row.class }}</span>
-                                <span class="hint">{{ row.boys }}B · {{ row.girls }}G</span>
-                            </div>
-                            <div class="dash-cat__chips">
-                                <span
-                                    v-for="cat in row.categories"
-                                    :key="cat.category"
-                                    class="dash-cat__chip"
-                                    :class="{ 'is-rte': cat.category === 'RTE' }"
-                                    :style="{ '--cat-hue': categoryHue(cat.category) }"
-                                >
-                                    <em>{{ cat.category }}</em>
-                                    <strong class="is-boy">{{ cat.boys }}</strong>
-                                    <span class="sep">/</span>
-                                    <strong class="is-girl">{{ cat.girls }}</strong>
-                                </span>
+                        <div class="dash-cat">
+                            <div v-for="row in categoryByClass" :key="row.class" class="dash-cat__class">
+                                <div class="dash-cat__title">
+                                    <span class="name">{{ row.class }}</span>
+                                    <span class="hint">{{ row.boys }}B · {{ row.girls }}G</span>
+                                </div>
+                                <div class="dash-cat__chips">
+                                    <span
+                                        v-for="cat in row.categories"
+                                        :key="cat.category"
+                                        class="dash-cat__chip"
+                                        :class="{ 'is-rte': cat.category === 'RTE' }"
+                                        :style="{ '--cat-hue': categoryHue(cat.category) }"
+                                    >
+                                        <em>{{ cat.category }}</em>
+                                        <strong class="is-boy">{{ cat.boys }}</strong>
+                                        <span class="sep">/</span>
+                                        <strong class="is-girl">{{ cat.girls }}</strong>
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </template>
-            </DashCard>
-
-            <div class="dash-grid dash-grid--3">
-                <DashCard title="Recent admissions" to="/admissions/admission">
-                    <div v-if="!recentAdmissions.length" class="dash-empty">No admissions yet.</div>
-                    <ul v-else class="dash-feed">
-                        <li v-for="r in recentAdmissions" :key="r.adm">
-                            <div class="min">
-                                <p class="name">{{ r.name }}</p>
-                                <p class="hint">{{ r.adm }} · {{ r.class }}</p>
-                            </div>
-                            <span class="hint">{{ r.date }}</span>
-                        </li>
-                    </ul>
-                </DashCard>
-
-                <DashCard title="Upcoming events">
-                    <div v-if="!upcomingEvents.length" class="dash-empty">No upcoming events.</div>
-                    <ul v-else class="dash-feed">
-                        <li v-for="e in upcomingEvents" :key="e.title + e.date">
-                            <p class="name">{{ e.title }}</p>
-                            <span class="hint">{{ e.date }}</span>
-                        </li>
-                    </ul>
-                </DashCard>
-
-                <DashCard title="Recent activity">
-                    <div v-if="!recentActivities.length" class="dash-empty">No recent activity.</div>
-                    <ul v-else class="dash-activity">
-                        <li v-for="(a, i) in recentActivities" :key="i">{{ a }}</li>
-                    </ul>
+                    </template>
                 </DashCard>
             </div>
         </template>
@@ -251,6 +307,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
+import AppIcon from '../components/common/AppIcon.vue';
 import DashCard from '../components/dashboard/DashCard.vue';
 import { erpStore, loadSessions } from '../store';
 import client from '../api/client';
@@ -260,8 +317,8 @@ const firstName = computed(() => (erpStore.user?.name || '').split(' ')[0] || ''
 
 const loading = ref(true);
 const error = ref('');
-const peopleStats = ref([]);
-const moneyStats = ref([]);
+const people = ref({ students: 0, teachers: 0, staff: 0, drivers: 0 });
+const moneyData = ref({ fee_collected: 0, fee_pending: 0, bank_balance: 0, expense: 0 });
 const todaySummary = ref({
     students: { present: 0, absent: 0 },
     staff: { present: 0, absent: 0 },
@@ -296,6 +353,41 @@ let loadSeq = 0;
 /** Ignore session watcher until the first mount load finishes (avoids double fetch during hydration). */
 let sessionWatchReady = false;
 
+// Summary cards — all figures come straight from GET /dashboard.
+const collectionRate = computed(() => {
+    const collected = Number(moneyData.value.fee_collected || 0);
+    const billed = collected + Number(moneyData.value.fee_pending || 0);
+    return billed > 0 ? Math.round((collected / billed) * 100) : 0;
+});
+const kpis = computed(() => {
+    const p = people.value;
+    const staffTotal = Number(p.teachers || 0) + Number(p.staff || 0) + Number(p.drivers || 0);
+    return [
+        { label: 'Total students', value: money(p.students), sub: 'Enrolled students', icon: 'graduation', tone: 'green' },
+        { label: 'Total staff', value: money(staffTotal), sub: `${plural(p.teachers, 'teacher')} · ${p.staff} staff · ${plural(p.drivers, 'driver')}`, icon: 'users', tone: 'teal' },
+        { label: 'Fees collected', value: `₹${money(moneyData.value.fee_collected)}`, sub: `${collectionRate.value}% of billed fees`, icon: 'wallet', tone: 'emerald', progress: collectionRate.value },
+        { label: 'Pending fees', value: `₹${money(moneyData.value.fee_pending)}`, sub: 'Outstanding dues', icon: 'clock', tone: 'amber' },
+    ];
+});
+const strip = computed(() => [
+    { label: 'Bank balance', value: `₹${money(moneyData.value.bank_balance)}`, icon: 'bank' },
+    { label: 'Expense', value: `₹${money(moneyData.value.expense)}`, icon: 'receipt' },
+    { label: 'Collected today', value: `₹${money(todaySummary.value.fee.received)} · ${todaySummary.value.fee.receipts} receipts`, icon: 'trend' },
+    { label: 'Attendance today', value: `${todaySummary.value.students.present} present · ${todaySummary.value.students.absent} absent`, icon: 'calendar-check' },
+]);
+
+const feeTotals = computed(() => {
+    const collected = feeCollectionStatus.value.reduce((s, c) => s + Number(c.collected_amount || 0), 0);
+    const due = feeCollectionStatus.value.reduce((s, c) => s + Number(c.due_amount || 0), 0);
+    const billed = collected + due;
+    return { collected, due, rate: billed > 0 ? Math.round((collected / billed) * 100) : 0 };
+});
+const feeMax = computed(() => Math.max(1, ...feeCollectionStatus.value.map((c) => Number(c.collected_amount || 0) + Number(c.due_amount || 0))));
+function colHeight(c) {
+    const total = Number(c.collected_amount || 0) + Number(c.due_amount || 0);
+    return `${total > 0 ? Math.max(4, (total / feeMax.value) * 100) : 0}%`;
+}
+
 function money(n) {
     return Number(n || 0).toLocaleString('en-IN');
 }
@@ -308,13 +400,12 @@ function shortMoney(n) {
     return v.toLocaleString('en-IN');
 }
 
-function barWidth(row, kind) {
-    const collected = Number(row.collected_amount || 0);
-    const due = Number(row.due_amount || 0);
-    const total = collected + due;
-    if (total <= 0) return '0%';
-    const pct = kind === 'collected' ? (collected / total) * 100 : (due / total) * 100;
-    return `${Math.max(pct > 0 ? 4 : 0, pct)}%`;
+function plural(n, word) {
+    return `${Number(n || 0)} ${word}${Number(n) === 1 ? '' : 's'}`;
+}
+
+function initials(name) {
+    return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 }
 
 function categoryHue(name) {
@@ -335,7 +426,7 @@ async function ensureSessionsReady() {
 
 async function load() {
     const sessionKey = erpStore.currentSession || localStorage.getItem('erp_current_session') || '';
-    if (loadedForSession === sessionKey && peopleStats.value.length) {
+    if (loadedForSession === sessionKey && !loading.value && !error.value) {
         return;
     }
 
@@ -346,18 +437,8 @@ async function load() {
         const { data } = await client.get('/dashboard');
         if (seq !== loadSeq) return;
         loadedForSession = sessionKey;
-        peopleStats.value = [
-            { label: 'Students', value: data.people_stats.students, icon: 'students' },
-            { label: 'Teachers', value: data.people_stats.teachers, icon: 'teachers' },
-            { label: 'Staff', value: data.people_stats.staff, icon: 'staff' },
-            { label: 'Drivers', value: data.people_stats.drivers, icon: 'drivers' },
-        ];
-        moneyStats.value = [
-            { label: 'Fee collected', value: `₹${money(data.money_stats.fee_collected)}`, icon: 'collected' },
-            { label: 'Fee pending', value: `₹${money(data.money_stats.fee_pending)}`, icon: 'pending' },
-            { label: 'Bank balance', value: `₹${money(data.money_stats.bank_balance)}`, icon: 'bank' },
-            { label: 'Expense', value: `₹${money(data.money_stats.expense)}`, icon: 'expense' },
-        ];
+        people.value = { students: 0, teachers: 0, staff: 0, drivers: 0, ...(data.people_stats || {}) };
+        moneyData.value = { fee_collected: 0, fee_pending: 0, bank_balance: 0, expense: 0, ...(data.money_stats || {}) };
         todaySummary.value = {
             students: data.today_summary?.students || { present: 0, absent: 0 },
             staff: data.today_summary?.staff || { present: 0, absent: 0 },
@@ -399,25 +480,13 @@ watch(
     },
 );
 
-// Stroke icons (currentColor) for the stat cards; colour comes from --erp-stat-icon.
-const svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-const STAT_ICONS = {
-    students: svg('<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>'),
-    teachers: svg('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'),
-    staff: svg('<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/>'),
-    drivers: svg('<rect x="3" y="5" width="18" height="11" rx="2"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M3 11h18"/>'),
-    collected: svg('<path d="M20 6 9 17l-5-5"/>'),
-    pending: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
-    bank: svg('<path d="M3 10 12 4l9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>'),
-    expense: svg('<path d="M12 3v18M17 7.5C17 5.6 14.8 4.5 12 4.5S7 5.6 7 7.5s2.2 3 5 3.5 5 1.6 5 3.5-2.2 3-5 3-5-1.1-5-3"/>'),
-};
-
 const quickActions = [
-    { label: 'Add student', to: '/people/students?add=1' },
-    { label: 'Collect fee', to: '/fee-management/pay-fee' },
-    { label: 'Fee due', to: '/fee-management/fee-due' },
-    { label: 'Import Excel', to: '/import-export' },
-    { label: 'Admit cards', to: '/exam-management/admit-cards' },
+    { label: 'Add student', to: '/people/students?add=1', icon: 'user-plus' },
+    { label: 'Collect fee', to: '/fee-management/pay-fee', icon: 'wallet' },
+    { label: 'Fee due', to: '/fee-management/fee-due', icon: 'clock' },
+    { label: 'Fee receipt', to: '/fee-management/fee-receipt', icon: 'receipt' },
+    { label: 'Import Excel', to: '/import-export', icon: 'upload' },
+    { label: 'Admit cards', to: '/exam-management/admit-cards', icon: 'id-card' },
 ];
 </script>
 
@@ -429,13 +498,14 @@ const quickActions = [
     font-family: var(--erp-font, 'Manrope', ui-sans-serif, system-ui, sans-serif);
     color: var(--erp-cream, #f3efe6);
 }
+.min { min-width: 0; }
 
+/* ── Hero ── */
 .dash-hero {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    padding: 0.25rem 0 0.5rem;
-    border-bottom: 1px solid var(--erp-border, rgba(198, 167, 94, 0.16));
+    padding: 0.25rem 0 0.25rem;
 }
 @media (min-width: 640px) {
     .dash-hero {
@@ -444,7 +514,6 @@ const quickActions = [
         justify-content: space-between;
     }
 }
-
 .dash-kicker {
     margin: 0 0 0.2rem;
     font-size: 0.68rem;
@@ -456,17 +525,17 @@ const quickActions = [
 .dash-title {
     margin: 0;
     font-family: var(--erp-font-display, 'Cormorant Garamond', Georgia, serif);
-    font-size: clamp(1.85rem, 3vw, 2.35rem);
-    font-weight: 600;
+    font-size: clamp(1.7rem, 3vw, 2.15rem);
+    font-weight: 650;
+    letter-spacing: -0.015em;
     line-height: 1.15;
     color: var(--erp-heading, var(--erp-cream, #f3efe6));
 }
 .dash-sub {
-    margin: 0.4rem 0 0;
+    margin: 0.35rem 0 0;
     font-size: 0.875rem;
     color: var(--erp-muted, #9a958c);
 }
-
 .dash-actions {
     display: flex;
     flex-wrap: wrap;
@@ -475,26 +544,29 @@ const quickActions = [
 .dash-btn {
     display: inline-flex;
     align-items: center;
-    padding: 0.5rem 0.9rem;
-    border-radius: 8px;
+    gap: 0.45rem;
+    padding: 0.55rem 0.95rem;
+    border-radius: 10px;
     border: 1px solid var(--erp-btn2-border, var(--erp-border, rgba(198, 167, 94, 0.28)));
     background: var(--erp-btn2-bg, transparent);
     color: var(--erp-btn2-text, var(--erp-cream, #f3efe6));
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
     text-decoration: none;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    box-shadow: var(--erp-shadow-xs, none);
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 .dash-btn:hover {
     border-color: var(--erp-gold, #c6a75e);
     background: var(--erp-btn2-hover-bg, transparent);
     color: var(--erp-gold-soft, #e2c98a);
+    transform: translateY(-1px);
 }
 .dash-btn--primary {
-    background: linear-gradient(135deg, var(--erp-gold, #c6a75e), var(--erp-brand-to, #a8883f));
+    background: linear-gradient(180deg, var(--erp-brand-from, #c6a75e), var(--erp-brand-to, #a8883f));
     border-color: transparent;
     color: var(--erp-brand-ink, #14120e);
+    box-shadow: var(--sg-shadow-brand, none);
 }
 .dash-btn--primary:hover {
     color: var(--erp-brand-ink-hover, #0b0a08);
@@ -523,14 +595,14 @@ const quickActions = [
 .dash-skel {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
+    gap: 0.9rem;
 }
-@media (min-width: 640px) {
+@media (min-width: 1024px) {
     .dash-skel { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .dash-skel__card {
-    height: 5.5rem;
-    border-radius: 12px;
+    height: 7rem;
+    border-radius: var(--erp-radius-card, 14px);
     background: linear-gradient(90deg, var(--erp-skeleton, rgba(255,255,255,0.04)), var(--erp-skeleton-shine, rgba(255,255,255,0.08)), var(--erp-skeleton, rgba(255,255,255,0.04)));
     background-size: 200% 100%;
     animation: dash-pulse 1.4s ease-in-out infinite;
@@ -540,82 +612,335 @@ const quickActions = [
     100% { background-position: -100% 0; }
 }
 
-.dash-stats {
+/* ── Summary cards ── */
+.dash-kpis {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 0.9rem;
 }
-@media (min-width: 640px) {
-    .dash-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (min-width: 560px) {
+    .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.dash-stat {
+@media (min-width: 1200px) {
+    .dash-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.dash-kpi {
+    --kpi: var(--erp-stat-icon, var(--erp-gold, #c6a75e));
+    --kpi-bg: var(--erp-stat-icon-bg, rgba(198, 167, 94, 0.12));
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 1.05rem 1.15rem 1rem;
     border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
-    background: var(--erp-surface, rgba(18, 19, 24, 0.92));
     border-radius: var(--erp-radius-card, 14px);
-    padding: 1rem 1.1rem;
+    background: var(--erp-surface, rgba(18, 19, 24, 0.92));
     box-shadow: var(--erp-shadow, 0 10px 28px rgba(0, 0, 0, 0.18));
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.dash-stat::after {
+/* Restrained accent: a thin top rule in the card's tone. */
+.dash-kpi::before {
     content: '';
     position: absolute;
-    inset: auto -20% -40% auto;
-    width: 90px;
-    height: 90px;
-    border-radius: 50%;
-    background: radial-gradient(circle, var(--erp-glow, rgba(198, 167, 94, 0.16)), transparent 70%);
-    pointer-events: none;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: var(--kpi);
+    opacity: 0.85;
 }
-.dash-stat--accent::after {
-    background: radial-gradient(circle, var(--erp-glow-strong, rgba(198, 167, 94, 0.28)), transparent 70%);
+.dash-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--erp-shadow-raised, var(--erp-shadow, 0 10px 28px rgba(0, 0, 0, 0.18)));
 }
-.dash-stat__icon {
-    display: var(--erp-stat-icon-display, none);
-    float: right;
-    width: 2.25rem;
-    height: 2.25rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9999px;
-    background: var(--erp-stat-icon-bg, transparent);
-    color: var(--erp-stat-icon, currentColor);
+/* Card tones come from the template (--erp-kpi-*); the fallbacks are School Green's. */
+.dash-kpi.is-teal { --kpi: var(--erp-kpi-2, #0D9488); --kpi-bg: var(--erp-kpi-2-bg, rgb(13 148 136 / 0.12)); }
+.dash-kpi.is-emerald { --kpi: var(--erp-kpi-3, #059669); --kpi-bg: var(--erp-kpi-3-bg, rgb(5 150 105 / 0.12)); }
+.dash-kpi.is-amber { --kpi: var(--erp-kpi-4, #D97706); --kpi-bg: var(--erp-kpi-4-bg, rgb(217 119 6 / 0.12)); }
+:global(.dark) .dash-kpi.is-teal { --kpi: var(--erp-kpi-2, #2DD4BF); --kpi-bg: var(--erp-kpi-2-bg, rgb(45 212 191 / 0.12)); }
+:global(.dark) .dash-kpi.is-emerald { --kpi: var(--erp-kpi-3, #34D399); --kpi-bg: var(--erp-kpi-3-bg, rgb(52 211 153 / 0.12)); }
+:global(.dark) .dash-kpi.is-amber { --kpi: var(--erp-kpi-4, #FBBF24); --kpi-bg: var(--erp-kpi-4-bg, rgb(251 191 36 / 0.12)); }
+.dash-kpi__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
-.dash-stat__icon :deep(svg) {
-    width: 1.1rem;
-    height: 1.1rem;
-}
-.dash-stat__label {
-    margin: 0;
-    font-size: 0.7rem;
+.dash-kpi__label {
+    margin: 0.2rem 0 0;
+    font-size: 0.75rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--erp-muted, #9a958c);
 }
-.dash-stat__value {
-    margin: 0.45rem 0 0;
+.dash-kpi__icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 2.6rem;
+    height: 2.6rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--kpi-bg);
+    color: var(--kpi);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 4px 10px -6px var(--kpi);
+}
+.dash-kpi__value {
+    margin: 0;
     font-family: var(--erp-font-display, 'Cormorant Garamond', Georgia, serif);
-    font-size: 1.85rem;
-    font-weight: 600;
-    line-height: 1.1;
+    font-size: clamp(1.55rem, 2.4vw, 1.9rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
     color: var(--erp-heading, var(--erp-cream, #f3efe6));
 }
-.dash-stats--money .dash-stat__value {
-    color: var(--erp-heading, var(--erp-gold-soft, #e2c98a));
+.dash-kpi__bar {
+    height: 6px;
+    margin-top: 0.2rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--erp-chart-track, rgba(255, 255, 255, 0.08));
+    box-shadow: var(--erp-chart-track-shadow, none);
+}
+.dash-kpi__bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--kpi);
+    transition: width 0.4s ease;
+}
+.dash-kpi__sub {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--erp-muted, #9a958c);
 }
 
+/* ── Secondary strip ── */
+.dash-strip {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+@media (min-width: 560px) {
+    .dash-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1200px) {
+    .dash-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.dash-strip__item {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
+    border-radius: 12px;
+    background: var(--erp-tint, rgba(255, 255, 255, 0.03));
+}
+.dash-strip__icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background: var(--erp-surface, rgba(18, 19, 24, 0.92));
+    color: var(--erp-stat-icon, var(--erp-gold, #c6a75e));
+    box-shadow: var(--erp-shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.15));
+}
+.dash-strip__label {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--erp-muted, #9a958c);
+}
+.dash-strip__value {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.92rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
+}
+
+/* ── Grids ── */
 .dash-grid {
     display: grid;
     gap: 1rem;
+    grid-template-columns: 1fr;
 }
-.dash-grid--2 { grid-template-columns: 1fr; }
-.dash-grid--3 { grid-template-columns: 1fr; }
 @media (min-width: 1024px) {
     .dash-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dash-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dash-grid--wide { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 }
 
+/* ── Fee collection chart ── */
+.dash-fee__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.5rem;
+    margin-bottom: 1rem;
+}
+.dash-fee__total {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.dash-fee__total strong {
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
+}
+.leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--erp-muted, #9a958c);
+}
+.leg::before {
+    content: '';
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 3px;
+}
+.leg.is-collected::before { background: var(--erp-chart-1-solid, #34d399); }
+.leg.is-due::before { background: var(--erp-chart-2-solid, #f43f5e); }
+.leg.is-rate::before { background: var(--erp-border, rgba(255, 255, 255, 0.2)); }
+.dash-chart {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+.dash-chart__plot {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    min-width: 100%;
+    height: 15rem;
+    padding: 0.5rem 0.25rem 0;
+    position: relative;
+}
+/* Full-width gridlines every 25%, spanning the bar area (between the amount and class labels). */
+.dash-chart__plot::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 1.8rem;
+    bottom: 1.85rem;
+    background-image: linear-gradient(to bottom, var(--erp-line, rgba(255, 255, 255, 0.06)) 1px, transparent 1px);
+    background-size: 100% 25%;
+    border-bottom: 1px solid var(--erp-border, rgba(255, 255, 255, 0.1));
+    pointer-events: none;
+}
+/* Bar area: bar heights are a % of this. */
+.dash-chart__track {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    align-items: flex-end;
+    justify-content: center;
+}
+.dash-chart__col {
+    display: flex;
+    flex: 1 0 2.6rem;
+    max-width: 4.5rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    height: 100%;
+}
+.dash-chart__amt {
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--erp-muted, #9a958c);
+}
+.dash-chart__bar {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 2.6rem;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 8px 8px 4px 4px;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 6px 14px -8px rgb(0 0 0 / 0.35);
+    transition: height 0.4s ease;
+}
+.dash-chart__bar .seg {
+    display: block;
+    flex-basis: 0;
+    min-height: 0;
+}
+.dash-chart__bar .seg.is-collected { background: var(--erp-chart-1, linear-gradient(180deg, #34d399, #15803d)); }
+.dash-chart__bar .seg.is-due { background: var(--erp-chart-2, linear-gradient(180deg, #fb7185, #be123c)); }
+.dash-chart__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-top: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--erp-cream, #f3efe6);
+}
+
+/* ── Quick actions ── */
+.dash-quick {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+.dash-quick__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.9rem 0.5rem;
+    border-radius: 12px;
+    border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
+    background: var(--erp-surface-quiet, rgba(255, 255, 255, 0.02));
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    box-shadow: var(--erp-shadow-xs, none);
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dash-quick__icon {
+    display: inline-flex;
+    width: 2.4rem;
+    height: 2.4rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: var(--erp-stat-icon-bg, rgba(198, 167, 94, 0.12));
+    color: var(--erp-stat-icon, var(--erp-gold, #c6a75e));
+}
+.dash-quick__item:hover {
+    border-color: var(--erp-hover-border, var(--erp-gold, #c6a75e));
+    background: var(--erp-tint-strong, rgba(198, 167, 94, 0.1));
+    color: var(--erp-gold-soft, #e2c98a);
+    transform: translateY(-2px);
+    box-shadow: var(--erp-shadow-raised, none);
+}
+
+/* ── Today ── */
 .dash-rows {
     display: flex;
     flex-direction: column;
@@ -649,7 +974,7 @@ const quickActions = [
 }
 .dash-row--split .mode i {
     font-style: normal;
-    opacity: 0.8;
+    opacity: 0.85;
 }
 .dash-row--split .mode strong {
     font-size: 0.92rem;
@@ -679,11 +1004,12 @@ const quickActions = [
 .is-girl { color: var(--erp-girl, #e8a0c8); }
 .sep { color: var(--erp-sep, rgba(243, 239, 230, 0.35)); }
 .hint {
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     font-weight: 500;
     color: var(--erp-muted, #9a958c);
 }
 
+/* ── Pending tasks ── */
 .dash-list {
     list-style: none;
     margin: 0;
@@ -694,9 +1020,9 @@ const quickActions = [
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.55rem 0.4rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
+    padding: 0.6rem 0.55rem;
+    border-radius: 9px;
+    font-size: 0.86rem;
     color: var(--erp-cream, #f3efe6);
     text-decoration: none;
     transition: background 0.15s ease;
@@ -705,11 +1031,11 @@ const quickActions = [
     background: var(--erp-hover, rgba(198, 167, 94, 0.08));
 }
 .dash-badge {
-    min-width: 1.5rem;
-    padding: 0.15rem 0.45rem;
+    min-width: 1.6rem;
+    padding: 0.15rem 0.5rem;
     border-radius: 999px;
     text-align: center;
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     font-weight: 700;
     background: var(--erp-badge-bg, rgba(255, 255, 255, 0.06));
     color: var(--erp-muted, #9a958c);
@@ -719,35 +1045,49 @@ const quickActions = [
     color: var(--erp-warn-text, var(--erp-gold-soft, #e2c98a));
 }
 
-.dash-quick {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* ── Upcoming events ── */
+.dash-events {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
     gap: 0.5rem;
 }
-.dash-quick__item {
+.dash-events li {
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 0.7rem 0.5rem;
+    gap: 0.7rem;
+    padding: 0.55rem 0.6rem;
     border-radius: 10px;
-    border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.18));
-    background: var(--erp-surface-quiet, rgba(255, 255, 255, 0.02));
-    color: var(--erp-heading, var(--erp-cream, #f3efe6));
-    font-size: 0.72rem;
+    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
+    background: var(--erp-tint, rgba(255, 255, 255, 0.03));
+}
+.dash-events__date {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background: var(--erp-stat-icon-bg, rgba(198, 167, 94, 0.12));
+    color: var(--erp-stat-icon, var(--erp-gold, #c6a75e));
+}
+.dash-events .name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.86rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
-    text-align: center;
-    text-decoration: none;
-    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+    color: var(--erp-cream, #f3efe6);
 }
-.dash-quick__item:hover {
-    border-color: var(--erp-gold, #c6a75e);
-    background: var(--erp-tint-strong, rgba(198, 167, 94, 0.1));
-    color: var(--erp-gold-soft, #e2c98a);
-}
+.dash-events .hint { display: block; }
 
+/* ── Tables ── */
 .dash-scroll {
-    max-height: 18rem;
+    max-height: 19rem;
     overflow: auto;
     padding-right: 0.15rem;
 }
@@ -758,7 +1098,7 @@ const quickActions = [
 }
 .dash-table--tight {
     table-layout: fixed;
-    font-size: 0.78rem;
+    font-size: 0.8rem;
 }
 .dash-table--tight th:first-child,
 .dash-table--tight td:first-child {
@@ -771,31 +1111,37 @@ const quickActions = [
 .dash-table th {
     position: sticky;
     top: 0;
-    background: var(--erp-surface-solid, #121318);
-    padding: 0 0.5rem 0.55rem 0;
-    font-size: 0.62rem;
+    z-index: 1;
+    background: var(--erp-tint, var(--erp-surface-solid, #121318));
+    padding: 0.55rem 0.6rem;
+    font-size: 0.66rem;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--erp-muted, #9a958c);
     text-align: left;
 }
+.dash-table th:first-child { border-radius: 8px 0 0 8px; }
+.dash-table th:last-child { border-radius: 0 8px 8px 0; }
 .dash-table td {
-    padding: 0.45rem 0.5rem 0.45rem 0;
+    padding: 0.55rem 0.6rem;
     border-top: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
     color: var(--erp-muted, #9a958c);
 }
-.dash-table th:last-child,
-.dash-table td:last-child {
-    padding-right: 0;
+.dash-table tbody tr:first-child td { border-top: 0; }
+.dash-table tbody tr {
+    transition: background 0.12s ease;
+}
+.dash-table tbody tr:hover {
+    background: var(--erp-hover, rgba(255, 255, 255, 0.04));
 }
 .dash-table .name,
-.dash-fee .name,
 .dash-feed .name,
 .dash-cat__title .name {
     color: var(--erp-cream, #f3efe6);
     font-weight: 600;
 }
+.dash-table .mono { font-variant-numeric: tabular-nums; }
 .dash-table .num { text-align: right; }
 .dash-table .total { color: var(--erp-heading, var(--erp-gold-soft, #e2c98a)); font-weight: 700; }
 .dash-table .is-new { color: var(--erp-new, #c6b4f0); }
@@ -804,105 +1150,39 @@ const quickActions = [
     bottom: 0;
 }
 .dash-table__summary td {
-    padding-top: 0.55rem;
-    padding-bottom: 0.55rem;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
     border-top: 1px solid var(--erp-border, rgba(198, 167, 94, 0.28));
     background: var(--erp-surface-solid, #121318);
-    font-weight: 800;
+    font-weight: 700;
 }
 .dash-table__summary .name { color: var(--erp-gold, #c6a75e); }
-.dash-table__summary .total { color: var(--erp-heading, var(--erp-gold-soft, #e2c98a)); }
-
-.dash-fee {
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-}
-.dash-fee__legend {
-    display: flex;
-    gap: 1.1rem;
-    margin-bottom: 0.2rem;
-}
-.dash-fee__legend .leg {
+.dash-person {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--erp-muted, #9a958c);
-}
-.dash-fee__legend .leg::before {
-    content: '';
-    width: 0.6rem;
-    height: 0.6rem;
-    border-radius: 3px;
-}
-.dash-fee__legend .is-collected::before { background: var(--erp-chart-1, #34d399); box-shadow: var(--erp-chart-1-glow, 0 0 8px rgba(52, 211, 153, 0.55)); }
-.dash-fee__legend .is-due::before { background: var(--erp-chart-2, #f43f5e); box-shadow: var(--erp-chart-2-glow, 0 0 8px rgba(244, 63, 94, 0.55)); }
-.dash-fee__row {
+    gap: 0.6rem;
     min-width: 0;
-    padding: 0.6rem 0.75rem;
-    border-radius: 0.7rem;
-    background: var(--erp-tint, rgba(255, 255, 255, 0.035));
-    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
-    transition: background 0.2s ease, border-color 0.2s ease;
 }
-.dash-fee__row:hover {
-    background: var(--erp-hover, rgba(255, 255, 255, 0.065));
-    border-color: var(--erp-hover-border, rgba(198, 167, 94, 0.3));
-}
-.dash-fee__head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.35rem;
-    font-size: 0.8rem;
-}
-.dash-fee__head .name {
-    font-size: 0.98rem;
-    font-weight: 700;
-}
-.dash-fee__amts {
+.dash-avatar {
     display: inline-flex;
-    gap: 0.7rem;
-    font-size: 0.85rem;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-}
-.dash-fee__amts .is-collected { color: var(--erp-chart-1-text, #34d399); }
-.dash-fee__amts .is-due { color: var(--erp-chart-2-text, #f43f5e); }
-.dash-fee__stack {
-    display: flex;
-    height: 0.65rem;
-    overflow: hidden;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
     border-radius: 999px;
-    background: var(--erp-chart-track, rgba(255, 255, 255, 0.08));
-    box-shadow: var(--erp-chart-track-shadow, inset 0 1px 2px rgba(0, 0, 0, 0.3));
-}
-.dash-fee__stack .seg {
-    display: block;
-    height: 100%;
-    min-width: 0;
-    transition: width 0.35s ease;
-}
-.dash-fee__stack .seg.is-collected {
-    background: var(--erp-chart-1, linear-gradient(90deg, #15803d, #34d399));
-}
-.dash-fee__stack .seg.is-due {
-    background: var(--erp-chart-2, linear-gradient(90deg, #be123c, #f43f5e));
-    box-shadow: var(--erp-chart-2-glow, 0 0 10px rgba(244, 63, 94, 0.35));
+    background: var(--erp-stat-icon-bg, rgba(198, 167, 94, 0.12));
+    color: var(--erp-stat-icon, var(--erp-gold, #c6a75e));
+    font-size: 0.7rem;
+    font-weight: 700;
 }
 
+/* ── Category chips ── */
 .dash-cat__summary {
     display: flex;
     flex-wrap: wrap;
     gap: 0.6rem;
     margin-bottom: 0.75rem;
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid var(--erp-border, rgba(198, 167, 94, 0.2));
 }
 .dash-cat__summary-item {
     display: inline-flex;
@@ -911,7 +1191,7 @@ const quickActions = [
     padding: 0.35rem 0.75rem;
     border-radius: 999px;
     font-size: 0.85rem;
-    font-weight: 800;
+    font-weight: 700;
     background: var(--erp-tint, rgba(255, 255, 255, 0.045));
     border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.25));
 }
@@ -929,7 +1209,6 @@ const quickActions = [
     border-color: var(--erp-gold, #c6a75e);
 }
 .dash-cat__summary-item.is-rte em { color: var(--erp-gold-soft, #e2c98a); }
-
 .dash-cat {
     display: grid;
     grid-template-columns: 1fr;
@@ -939,9 +1218,6 @@ const quickActions = [
 }
 @media (min-width: 768px) {
     .dash-cat { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 1280px) {
-    .dash-cat { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .dash-cat__class {
     padding: 0.55rem 0.65rem;
@@ -986,43 +1262,32 @@ const quickActions = [
 }
 .dash-cat__chip.is-rte em { color: var(--erp-gold-soft, #e2c98a); }
 
-.dash-feed,
+/* ── Recent activity (timeline) ── */
 .dash-activity {
     list-style: none;
     margin: 0;
-    padding: 0;
-}
-.dash-feed li {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.65rem 0;
-    border-top: 1px solid var(--erp-line, rgba(255, 255, 255, 0.05));
-    font-size: 0.85rem;
-}
-.dash-feed li:first-child { border-top: 0; padding-top: 0.15rem; }
-.dash-feed .min { min-width: 0; }
-.dash-feed .name {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.dash-feed .hint { margin: 0.15rem 0 0; flex-shrink: 0; }
-
-.dash-activity {
+    padding: 0 0 0 0.9rem;
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.7rem;
+    border-left: 2px solid var(--erp-line, rgba(255, 255, 255, 0.06));
 }
 .dash-activity li {
-    padding: 0.6rem 0.75rem;
-    border-radius: 10px;
-    background: var(--erp-tint, rgba(255, 255, 255, 0.03));
-    border: 1px solid var(--erp-line, rgba(255, 255, 255, 0.04));
+    position: relative;
     font-size: 0.85rem;
-    color: var(--erp-muted, #9a958c);
+    line-height: 1.45;
+    color: var(--erp-cream, #f3efe6);
+}
+.dash-activity li::before {
+    content: '';
+    position: absolute;
+    left: calc(-0.9rem - 6px);
+    top: 0.35rem;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--erp-surface, #121318);
+    border: 2px solid var(--erp-stat-icon, var(--erp-gold, #c6a75e));
 }
 
 .dash-empty {
@@ -1033,5 +1298,18 @@ const quickActions = [
 .dash-empty.center {
     text-align: center;
     padding: 1.75rem 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dash-kpi,
+    .dash-btn,
+    .dash-quick__item {
+        transition: none;
+    }
+    .dash-kpi:hover,
+    .dash-btn:hover,
+    .dash-quick__item:hover {
+        transform: none;
+    }
 }
 </style>

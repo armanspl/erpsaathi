@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Erp\FeeManagement;
 
 use App\Http\Controllers\Controller;
 use App\Models\AcademicSession;
+use App\Models\ErpFeeSetting;
+use App\Models\SchoolSetting;
 use App\Services\DocumentDataBuilder;
 use App\Services\StudRecSumReport;
 use App\Support\TabularExport;
@@ -41,7 +43,9 @@ class DemandSlipController extends Controller
             'session' => $session?->only(['id', 'name']),
             'period' => $this->period($session),
             'tab_counts' => $this->tabCounts,
-            'school' => ['name' => $school['school_name'], 'address' => $school['school_address'], 'phone' => $school['school_phone']],
+            // logo as a URL, not schoolContext()'s data URI — the slip print repeats it on every slip.
+            'school' => ['name' => $school['school_name'], 'address' => $school['school_address'], 'phone' => $school['school_phone'], 'logo' => SchoolSetting::current()->logo_url],
+            'slip_note' => (string) ErpFeeSetting::current()->demand_slip_note,
             'vehicles' => $vehicles,
             'columns' => collect(StudRecSumReport::COLUMNS)->map(fn ($label, $key) => [
                 'key' => $key,
@@ -51,6 +55,16 @@ class DemandSlipController extends Controller
             'rows' => $rows,
             'totals' => $this->totals($rows),
         ]);
+    }
+
+    /** The note printed on every demand slip (above the "Please pay" line). Empty = no note. */
+    public function updateNote(Request $request)
+    {
+        $data = $request->validate(['slip_note' => 'nullable|string|max:500']);
+        $settings = ErpFeeSetting::current();
+        $settings->update(['demand_slip_note' => trim((string) ($data['slip_note'] ?? ''))]);
+
+        return response()->json(['success' => true, 'slip_note' => (string) $settings->demand_slip_note]);
     }
 
     public function export(Request $request): StreamedResponse

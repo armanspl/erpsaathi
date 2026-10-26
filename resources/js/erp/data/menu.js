@@ -32,17 +32,30 @@ const rawMenu = [
     {
         label: 'Academics',
         icon: '🎓',
+        // One sidebar link; the children open as tabs on the Academics page (AcademicsHub).
+        // The list is still used for permission checks and the active-section highlight.
+        tabbed: true,
         children: ['Branches', 'Academic Sessions', 'Classes & Sections', 'Subjects', 'Subject Enrollment', 'Class Routine', 'Homework', 'Academic Calendar'],
     },
     {
         label: 'Admissions',
         icon: '📝',
+        tabbed: true, // one sidebar link; pages open as tabs on AdmissionsHub
         children: ['Enquiry', 'Registration', 'Admission', 'Admission Settings'],
     },
     {
         label: 'People',
         icon: '👥',
         children: ['Users', 'Students', 'Parents', 'Teachers', 'Staff', 'Drivers', 'Visitor Records', 'UDISE+ S02', 'UDISE+ S03', 'Employee Master Import'],
+        // What the sidebar shows (children above still drive permissions / route guards).
+        // An object entry is one link covering several pages, shown as tabs on that page.
+        sidebarItems: [
+            { label: 'People Directory', children: ['Students', 'Parents', 'Teachers', 'Staff', 'Drivers'] },
+            'Users',
+            'Visitor Records',
+            { label: 'UDISE+', children: ['UDISE+ S02', 'UDISE+ S03'] },
+            'Employee Master Import',
+        ],
     },
     {
         label: 'Attendance',
@@ -56,11 +69,25 @@ const rawMenu = [
         label: 'Fee Management',
         icon: '💰',
         children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Month-wise Fee Collection', 'Demand Slip', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
+        // Sidebar grouping only (children above still drive permissions / route guards).
+        sidebarItems: [
+            { label: 'Fee Setup', children: ['Fee Structure', 'Fee Settings'] },
+            { label: 'Fee Collection', children: ['Fee Due', 'Fee Paid', 'Fee Receipt'] },
+            { label: 'Fee Reports', children: ['Fee History', 'Month-wise Fee Collection', 'Demand Slip'] },
+            'Tally Accounting',
+        ],
     },
     {
         label: 'Finance & Payroll',
         icon: '🏦',
         children: ['Office Expenses', 'Salary Slips', 'Salary Sheet', 'Salary History', 'Book Store', 'Book Expenses', 'Bank Accounts', 'Bank Transactions'],
+        // Sidebar grouping only (children above still drive permissions / route guards).
+        sidebarItems: [
+            { label: 'Salary & Payroll', children: ['Salary Sheet', 'Salary Slips', 'Salary History'] },
+            { label: 'Expenses', children: ['Office Expenses', 'Book Expenses'] },
+            'Book Store',
+            { label: 'Banking', children: ['Bank Accounts', 'Bank Transactions'] },
+        ],
     },
     {
         label: 'Transport Management',
@@ -105,6 +132,24 @@ const rawMenu = [
     },
 ];
 
+// Line icon per sidebar section (AppIcon names); the emoji `icon` stays as a fallback.
+const GROUP_ICONS = {
+    dashboard: 'dashboard',
+    'import-and-export': 'transfer',
+    academics: 'graduation',
+    admissions: 'clipboard',
+    people: 'users',
+    attendance: 'calendar-check',
+    'fee-management': 'wallet',
+    'finance-and-payroll': 'bank',
+    'transport-management': 'bus',
+    'exam-management': 'book',
+    reports: 'chart',
+    documents: 'file',
+    settings: 'settings',
+    account: 'user',
+};
+
 export const menu = rawMenu.map((group) => {
     const groupSlug = slugify(group.label);
     const children = (group.children || []).map((label, index) => {
@@ -125,6 +170,7 @@ export const menu = rawMenu.map((group) => {
     return {
         ...group,
         key: groupSlug,
+        svg: GROUP_ICONS[groupSlug] || null,
         path: group.path || null,
         children,
     };

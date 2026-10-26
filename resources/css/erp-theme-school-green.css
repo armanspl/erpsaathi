@@ -1,15 +1,11 @@
 /*
- * School Green — ERP design tokens.
+ * School Green — tokens for the default ERP template (light + night mode).
  *
- * Single source of truth for the theme. Components never hard-code these hex values:
- *  - Tailwind utilities (bg-slate-*, text-primary-*, bg-emerald-* …) resolve through the
- *    --color-* ramps that are re-pointed at these tokens below while the template is active.
- *  - Hand-written component CSS reads the --erp-* shell variables, which this file sets.
- *  - New code can use the semantic utilities registered in @theme (bg-brand, text-ink-muted,
- *    bg-accent-light, text-success-text …) directly.
- *
- * The page-wide overrides only apply on html[data-erp-template='school-green'] in light
- * mode, so the other UI templates (and dark mode) keep their existing look.
+ * This file only defines School Green's values: the --sg-* tokens and its neutral (slate) ramps.
+ * The shared design system in erp-theme-system.css turns tokens into the sidebar, header,
+ * cards, buttons, inputs, tables, modals, Tailwind palette ramps and --erp-* shell variables;
+ * the other templates provide the same tokens in erp-theme-palettes.css.
+ * The :root block keeps the --rng-* tokens the login / welcome pages use.
  */
 
 :root {
@@ -117,373 +113,238 @@
     --color-info-text: var(--rng-info-text);
 }
 
-/* ───────────────────────── Tailwind ramps → tokens ─────────────────────────
-   Existing markup uses Tailwind's palette classes; re-pointing the ramps recolours every
-   page consistently without touching 180+ components. Status ramps map to the status
-   tokens; decorative ramps (indigo, violet, teal, purple, pink) fold into the navy ramp so
-   status colours are never used as decoration. */
-/* Re-assert School Green tokens when this template is selected. */
+/* ═════════════════════════ 1. Design tokens ═════════════════════════ */
+
+/* Light mode — clean white / soft off-white with forest + emerald green. */
 html[data-erp-template='school-green'] {
-    --brand-50: #DCFCE7;
-    --brand-500: #16A34A;
-    --brand-600: #15803D;
-    --brand-700: #166534;
-    --brand-950: #052E16;
-    --rng-primary: var(--brand-600);
-    --rng-primary-hover: var(--brand-700);
-    --rng-primary-light: var(--brand-50);
-    --rng-brand-500: var(--brand-500);
+    --sg-brand-50: #ECFDF3;
+    --sg-brand-100: #D1FADF;
+    --sg-brand-200: #A6EFC3;
+    --sg-brand-300: #6CDD9D;
+    --sg-brand-400: #34C27A;
+    --sg-brand-500: #16A34A;
+    --sg-brand-600: #15803D;
+    --sg-brand-700: #166534;
+    --sg-brand-800: #14532D;
+    --sg-brand-900: #0F3D22;
+    --sg-brand-950: #052E16;
+    --sg-emerald: #10B981;
+
+    --sg-canvas: #F3F6F4;
+    --sg-canvas-glow: rgb(22 163 74 / 0.07);
+    --sg-surface: #FFFFFF;
+    --sg-surface-2: #F7FAF8;
+    --sg-surface-3: #EEF4F0;
+    --sg-input-bg: #FFFFFF;
+    --sg-border: #E3EAE6;
+    --sg-border-strong: #CDD9D2;
+
+    --sg-text: #102019;
+    --sg-text-muted: #4B5D54;
+    --sg-text-subtle: #7A8B83;
+    --sg-heading: #0B1A13;
+    --sg-link: var(--sg-brand-600);
+
+    --sg-sidebar-bg: #FFFFFF;
+    --sg-nav-text: #46554D;
+    --sg-nav-icon: #7A8B83;
+    --sg-nav-hover-bg: #F1F6F3;
+    --sg-nav-active-bg: #E9F8EF;
+    --sg-nav-active-text: #14532D;
+    --sg-nav-active-bar: #16A34A;
+
+    --sg-thead-bg: #F1F7F3;
+    --sg-thead-text: #3E5247;
+    --sg-row-hover: #F5FAF7;
+
+    --sg-btn-from: #1A9A4B;
+    --sg-btn-to: #15803D;
+    --sg-btn-hover-from: #178A43;
+    --sg-btn-hover-to: #126E34;
+    --sg-btn-text: #FFFFFF;
+
+    --sg-ring: rgb(22 163 74 / 0.22);
+    --sg-scroll: #C6D3CB;
+
+    --sg-shadow-xs: 0 1px 2px rgb(16 32 25 / 0.06);
+    --sg-shadow-card:
+        inset 0 1px 0 rgb(255 255 255 / 0.9),
+        0 1px 2px rgb(16 32 25 / 0.04),
+        0 4px 10px -4px rgb(16 32 25 / 0.07),
+        0 14px 30px -18px rgb(16 32 25 / 0.14);
+    --sg-shadow-raised:
+        inset 0 1px 0 rgb(255 255 255 / 0.9),
+        0 2px 4px rgb(16 32 25 / 0.05),
+        0 10px 24px -10px rgb(16 32 25 / 0.16);
+    --sg-shadow-pop: 0 4px 10px -2px rgb(16 32 25 / 0.08), 0 18px 40px -14px rgb(16 32 25 / 0.22);
+    --sg-shadow-modal: 0 8px 20px -8px rgb(16 32 25 / 0.14), 0 30px 70px -20px rgb(16 32 25 / 0.32);
+    --sg-shadow-brand:
+        inset 0 1px 0 rgb(255 255 255 / 0.2),
+        inset 0 -1px 0 rgb(0 0 0 / 0.12),
+        0 1px 2px rgb(21 128 61 / 0.3),
+        0 6px 14px -6px rgb(21 128 61 / 0.5);
+    --sg-shadow-inset: inset 0 1px 2px rgb(16 32 25 / 0.05);
+
+    --sg-radius-control: 10px;
+    --sg-radius-card: 16px;
+    --sg-radius-modal: 20px;
+    --sg-font: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+    /* Values previously written inline in the component rules */
+    --sg-accent-strong: var(--sg-brand-700);
+    --sg-icon-accent: var(--sg-brand-600);
+    --sg-outline-hover-border: var(--sg-brand-300);
+    --sg-backdrop: rgb(6 30 18 / 0.42);
+    --sg-shadow-sidebar: 1px 0 0 var(--sg-border), 8px 0 24px -20px rgb(16 32 25 / 0.25);
+    --sg-shadow-topbar: 0 1px 0 var(--sg-border), 0 6px 18px -16px rgb(16 32 25 / 0.35);
+    --sg-chart-1-from: #22B35B;
+    --sg-chart-1-to: var(--sg-brand-600);
+    --sg-chart-2-from: #FBBF24;
+    --sg-chart-2-to: #F59E0B;
+    --sg-chart-2-text: #B45309;
+
+    /* Bridge for the shared --rng-* tokens */
+    --brand-50: var(--sg-brand-50);
+    --brand-500: var(--sg-brand-500);
+    --brand-600: var(--sg-brand-600);
+    --brand-700: var(--sg-brand-700);
+    --brand-950: var(--sg-brand-950);
+    --rng-primary: var(--sg-brand-600);
+    --rng-primary-hover: var(--sg-brand-700);
+    --rng-primary-light: var(--sg-brand-50);
+    --rng-brand-500: var(--sg-brand-500);
     --rng-accent: var(--highlight, #F59E0B);
-    --rng-bg: #F8FAFC;
-    --rng-surface: #FFFFFF;
-    --rng-border: #E2E8F0;
-    --rng-text: #0F172A;
-    --rng-text-muted: #475569;
-    --rng-navy-deep: var(--brand-950);
+    --rng-bg: var(--sg-canvas);
+    --rng-surface: var(--sg-surface);
+    --rng-border: var(--sg-border);
+    --rng-row-hover: var(--sg-row-hover);
+    --rng-text: var(--sg-text);
+    --rng-text-muted: var(--sg-text-muted);
+    --rng-navy-deep: var(--sg-brand-950);
     --rng-navy-mid: #0A3D1F;
+
+    color-scheme: light;
+    scrollbar-color: var(--sg-scroll) transparent;
 }
 
+/* Night mode — dark green-tinted charcoal, lighter layered surfaces, emerald accents. */
+html[data-erp-template='school-green'].dark {
+    --sg-brand-50: #0F2A1D;
+    --sg-brand-100: #133524;
+    --sg-brand-200: #1A4A33;
+    --sg-brand-300: #6EE7B7;
+    --sg-brand-400: #34D399;
+    --sg-brand-500: #10B981;
+    --sg-brand-600: #0B7F4E;
+    --sg-brand-700: #096842;
+    --sg-brand-800: #075236;
+    --sg-brand-900: #053D28;
+    --sg-brand-950: #03271A;
+    --sg-emerald: #34D399;
+
+    --sg-canvas: #0A110D;
+    --sg-canvas-glow: rgb(16 185 129 / 0.06);
+    --sg-surface: #111B16;
+    --sg-surface-2: #16221C;
+    --sg-surface-3: #1C2A23;
+    --sg-input-bg: #0D1612;
+    --sg-border: #22312A;
+    --sg-border-strong: #2E4037;
+
+    --sg-text: #E4ECE7;
+    --sg-text-muted: #A7B8AF;
+    --sg-text-subtle: #7C8E85;
+    --sg-heading: #F2F7F4;
+    --sg-link: #34D399;
+
+    --sg-sidebar-bg: #0D1612;
+    --sg-nav-text: #A7B8AF;
+    --sg-nav-icon: #7C8E85;
+    --sg-nav-hover-bg: #16221C;
+    --sg-nav-active-bg: rgb(16 185 129 / 0.13);
+    --sg-nav-active-text: #6EE7B7;
+    --sg-nav-active-bar: #34D399;
+
+    --sg-thead-bg: #16221C;
+    --sg-thead-text: #A7B8AF;
+    --sg-row-hover: #16221C;
+
+    --sg-btn-from: #0E9461;
+    --sg-btn-to: #0B7F4E;
+    --sg-btn-hover-from: #0FA36A;
+    --sg-btn-hover-to: #0C8B55;
+    --sg-btn-text: #FFFFFF;
+
+    --sg-ring: rgb(52 211 153 / 0.28);
+    --sg-scroll: #2E4037;
+
+    --sg-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
+    --sg-shadow-card:
+        inset 0 1px 0 rgb(255 255 255 / 0.035),
+        0 1px 2px rgb(0 0 0 / 0.35),
+        0 12px 28px -16px rgb(0 0 0 / 0.65);
+    --sg-shadow-raised:
+        inset 0 1px 0 rgb(255 255 255 / 0.05),
+        0 2px 4px rgb(0 0 0 / 0.35),
+        0 14px 30px -14px rgb(0 0 0 / 0.7);
+    --sg-shadow-pop: 0 6px 14px -4px rgb(0 0 0 / 0.5), 0 22px 44px -16px rgb(0 0 0 / 0.75);
+    --sg-shadow-modal: 0 10px 24px -8px rgb(0 0 0 / 0.55), 0 34px 80px -24px rgb(0 0 0 / 0.85);
+    --sg-shadow-brand:
+        inset 0 1px 0 rgb(255 255 255 / 0.16),
+        inset 0 -1px 0 rgb(0 0 0 / 0.2),
+        0 1px 2px rgb(0 0 0 / 0.4),
+        0 6px 16px -6px rgb(16 185 129 / 0.35);
+    --sg-shadow-inset: inset 0 1px 2px rgb(0 0 0 / 0.35);
+
+    --sg-accent-strong: #6EE7B7;
+    --sg-icon-accent: #34D399;
+    --sg-outline-hover-border: #2F6B4E;
+    --sg-backdrop: rgb(2 8 5 / 0.7);
+    --sg-chart-1-from: #34D399;
+    --sg-chart-1-to: #0E9461;
+    --sg-chart-2-text: #FCD34D;
+
+    --rng-primary: #34D399;
+    --rng-primary-hover: #6EE7B7;
+    --rng-primary-light: var(--sg-brand-50);
+    --rng-surface: var(--sg-surface);
+    --rng-bg: var(--sg-canvas);
+    --rng-border: var(--sg-border);
+    --rng-text: var(--sg-text);
+    --rng-text-muted: var(--sg-text-muted);
+
+    color-scheme: dark;
+}
+
+/* ═════════════════════ 2. Neutral ramps ═════════════════════
+   Light: near-neutral with a faint green cast. */
 html[data-erp-template='school-green']:not(.dark) {
-    --font-sans: var(--rng-font);
-    --font-weight-bold: 600;
-    --font-weight-extrabold: 600;
-    --font-weight-black: 600;
-
-    --color-slate-50: var(--rng-row-hover);
-    --color-slate-100: #F1F5F9;
-    --color-slate-200: var(--rng-border);
-    --color-slate-300: #CBD5E1;
-    --color-slate-400: #94A3B8;
-    --color-slate-500: var(--rng-text-muted);
-    --color-slate-600: #475569;
-    --color-slate-700: #334155;
-    --color-slate-800: var(--rng-text);
-    --color-slate-900: var(--rng-text);
-    --color-slate-950: var(--brand-950);
-
-    /* Brand green. 500 = links/icons; 600 = CTA buttons; 700 = hover. */
-    --color-primary-50: var(--brand-50);
-    --color-primary-100: #BBF7D0;
-    --color-primary-200: #86EFAC;
-    --color-primary-300: #4ADE80;
-    --color-primary-400: #22C55E;
-    --color-primary-500: var(--brand-500);
-    --color-primary-600: var(--brand-600);
-    --color-primary-700: var(--brand-700);
-    --color-primary-800: var(--brand-700);
-    --color-primary-900: var(--brand-950);
-    --color-primary-950: var(--brand-950);
-
-    --color-indigo-50: var(--color-primary-50);
-    --color-indigo-100: var(--color-primary-100);
-    --color-indigo-200: var(--color-primary-200);
-    --color-indigo-300: var(--color-primary-300);
-    --color-indigo-400: var(--color-primary-400);
-    --color-indigo-500: var(--color-primary-500);
-    --color-indigo-600: var(--color-primary-600);
-    --color-indigo-700: var(--color-primary-700);
-    --color-violet-50: var(--color-primary-50);
-    --color-violet-100: var(--color-primary-100);
-    --color-violet-500: var(--color-primary-500);
-    --color-violet-600: var(--color-primary-600);
-    --color-violet-700: var(--color-primary-700);
-    --color-purple-50: var(--color-primary-50);
-    --color-purple-600: var(--color-primary-600);
-    --color-purple-700: var(--color-primary-700);
-    --color-teal-50: var(--color-primary-50);
-    --color-teal-100: var(--color-primary-100);
-    --color-teal-500: var(--color-primary-500);
-    --color-teal-600: var(--color-primary-600);
-    --color-teal-700: var(--color-primary-700);
-    --color-pink-50: var(--color-primary-50);
-    --color-pink-600: var(--color-primary-600);
-
-    /* Success (present, paid, approved) */
-    --color-emerald-50: var(--rng-success-bg);
-    --color-emerald-100: var(--rng-success-bg);
-    --color-emerald-200: #BBF7D0;
-    --color-emerald-300: #86EFAC;
-    --color-emerald-400: #4ADE80;
-    --color-emerald-500: var(--rng-success);
-    --color-emerald-600: var(--rng-success-text);
-    --color-emerald-700: var(--rng-success-text);
-    --color-emerald-800: #166534;
-    --color-emerald-900: #14532D;
-
-    /* Danger (absent, overdue, rejected). 600 stays the spec red: white-on-#DC2626 buttons pass AA. */
-    --color-rose-50: var(--rng-danger-bg);
-    --color-rose-100: var(--rng-danger-bg);
-    --color-rose-200: #FECACA;
-    --color-rose-300: #FCA5A5;
-    --color-rose-400: #F87171;
-    --color-rose-500: var(--rng-danger);
-    --color-rose-600: var(--rng-danger);
-    --color-rose-700: var(--rng-danger-text);
-    --color-rose-800: #991B1B;
-    --color-rose-900: #7F1D1D;
-
-    /* Warning (pending, on leave, due soon) */
-    --color-amber-50: var(--rng-warning-bg);
-    --color-amber-100: var(--rng-warning-bg);
-    --color-amber-200: #FDE68A;
-    --color-amber-300: #FCD34D;
-    --color-amber-400: #FBBF24;
-    --color-amber-500: var(--rng-warning);
-    --color-amber-600: var(--rng-warning-text);
-    --color-amber-700: var(--rng-warning-text);
-    --color-amber-800: #92400E;
-    --color-amber-900: #78350F;
-
-    /* Info (notices, announcements) */
-    --color-sky-50: var(--rng-info-bg);
-    --color-sky-100: var(--rng-info-bg);
-    --color-sky-200: #BFDBFE;
-    --color-sky-300: #93C5FD;
-    --color-sky-400: #60A5FA;
-    --color-sky-500: var(--rng-info);
-    --color-sky-600: var(--rng-info);
-    --color-sky-700: var(--rng-info-text);
-    --color-sky-800: #1E40AF;
-    --color-blue-50: var(--rng-info-bg);
-    --color-blue-600: var(--rng-info);
-    --color-blue-700: var(--rng-info-text);
-
-    background: var(--rng-bg);
+    --color-slate-50: #F6F9F7;
+    --color-slate-100: #EEF3F0;
+    --color-slate-200: #E2E9E5;
+    --color-slate-300: #CAD5CF;
+    --color-slate-400: #94A39B;
+    --color-slate-500: #5B6B63;
+    --color-slate-600: #46554D;
+    --color-slate-700: #334139;
+    --color-slate-800: #1B2922;
+    --color-slate-900: #102019;
+    --color-slate-950: #052E16;
 }
 
-/* Very soft shadows only — every shadow-* utility picks up the navy-tinted colour. */
-html[data-erp-template='school-green']:not(.dark) .erp-shell * {
-    --tw-shadow-color: rgba(15, 23, 42, 0.06);
-}
-
-/* ───────────────────────── Shell variables (hand-written component CSS) ───────────────────────── */
-.erp-shell[data-template='school-green'].erp-shell-light {
-    --erp-bg: var(--rng-bg);
-    --erp-surface: var(--rng-surface);
-    --erp-surface-solid: var(--rng-surface);
-    --erp-border: var(--rng-border);
-    /* --erp-gold is the shell's link/heading accent; on white it must be navy (gold text on
-       white fails contrast). Gold itself is applied explicitly where it belongs. */
-    --erp-gold: var(--rng-primary);
-    --erp-gold-soft: var(--rng-primary-hover);
-    --erp-cream: var(--rng-text);
-    --erp-muted: var(--rng-text-muted);
-    --erp-brand-from: var(--rng-primary-hover);
-    --erp-brand-to: var(--rng-primary);
-    --erp-brand-ink: var(--rng-text-on-dark);
-
-    --erp-font: var(--rng-font);
-    --erp-font-display: var(--rng-font);
-    --erp-shadow: var(--rng-shadow);
-    --erp-heading: var(--rng-primary);
-    --erp-tint: var(--rng-row-hover);
-    --erp-tint-strong: var(--rng-primary-light);
-    --erp-line: var(--rng-border);
-    --erp-ok: var(--rng-success-text);
-    --erp-bad: var(--rng-danger-text);
-    --erp-ok-bg: var(--rng-success-bg);
-    --erp-info: var(--rng-info-text);
-    --erp-info-bg: var(--rng-info-bg);
-    --erp-total-bg: var(--rng-primary-light);
-    --erp-boy: var(--rng-primary);
-    --erp-girl: var(--rng-chart-3);
-    --erp-new: var(--rng-primary-hover);
-    --erp-sep: var(--rng-border);
-    --erp-glow: transparent;
-    --erp-glow-strong: transparent;
-    --erp-hover: var(--rng-row-hover);
-    --erp-badge-bg: var(--brand-50);
-    --erp-warn-bg: var(--rng-warning-bg);
-    --erp-warn-text: var(--rng-warning-text);
-    --erp-alert-bg: var(--rng-danger-bg);
-    --erp-alert-border: #FECACA;
-    --erp-alert-text: var(--rng-danger-text);
-    --erp-chart-1: var(--rng-chart-1);
-    --erp-chart-2: var(--rng-chart-2);
-    --erp-chart-track: #F1F5F9;
-    --erp-chart-1-text: var(--rng-primary);
-    --erp-chart-2-text: var(--rng-text);
-    --erp-chip-bg: var(--rng-primary-light);
-    --erp-chip-border: transparent;
-    --erp-chip-label: var(--rng-primary);
-    --erp-skeleton: #F1F5F9;
-    --erp-skeleton-shine: #F8FAFC;
-    --erp-stat-icon-display: flex;
-    --erp-stat-icon-bg: var(--brand-50);
-    --erp-stat-icon: var(--brand-600);
-    --erp-radius-card: var(--rng-radius-card);
-    --erp-backdrop: none;
-    --erp-card-title-size: 1rem;
-    --erp-surface-quiet: var(--rng-surface);
-    --erp-hover-border: var(--rng-border);
-    /* Buttons: primary = navy → primary-hover; secondary = white with navy border + text */
-    --erp-btn1-hover-bg: var(--rng-primary-hover);
-    --erp-btn1-hover-filter: none;
-    --erp-brand-ink-hover: var(--rng-text-on-dark);
-    --erp-btn2-bg: var(--rng-surface);
-    --erp-btn2-border: var(--rng-primary);
-    --erp-btn2-text: var(--rng-primary);
-    --erp-btn2-hover-bg: var(--rng-primary-light);
-    --erp-chart-1-glow: none;
-    --erp-chart-2-glow: none;
-    --erp-chart-track-shadow: none;
-}
-/* Dark mode: brand-950 surfaces with light green accents. */
-.erp-shell[data-template='school-green'].erp-shell-dark {
-    --erp-bg: var(--brand-950);
-    --erp-surface: rgba(10, 61, 31, 0.94);
-    --erp-surface-solid: #0A3D1F;
-    --erp-border: rgba(74, 222, 128, 0.22);
-    --erp-gold: #4ADE80;
-    --erp-gold-soft: #86EFAC;
-    --erp-cream: #F8FAFC;
-    --erp-muted: #BBF7D0;
-    --erp-brand-from: #4ADE80;
-    --erp-brand-to: var(--brand-500);
-    --erp-brand-ink: var(--brand-950);
-    --erp-font: var(--rng-font);
-    --erp-font-display: var(--rng-font);
-}
-
-/* ───────────────────────── Layout ───────────────────────── */
-html[data-erp-template='school-green'] .erp-shell {
-    font-family: var(--rng-font);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-shell {
-    background: var(--rng-bg);
-    color: var(--rng-text);
-    line-height: 1.5;
-}
-
-/* Sidebar: brand-950, active = brand-700 + green bar. */
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar {
-    background: var(--brand-950);
-    border-color: var(--brand-950);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar__head,
-html[data-erp-template='school-green']:not(.dark) .erp-nav-children {
-    border-color: rgb(255 255 255 / 0.1);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar__mark {
-    background: rgb(255 255 255 / 0.1);
-    color: #4ADE80;
-    box-shadow: none;
-}
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar__title {
-    font-family: var(--rng-font);
-    font-size: 0.95rem;
-    color: var(--rng-text-on-dark);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar__pin {
-    color: var(--rng-text-on-dark-muted);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar__pin:hover,
-html[data-erp-template='school-green']:not(.dark) .erp-sidebar__pin.is-pinned {
-    background: rgb(255 255 255 / 0.1);
-    color: var(--rng-text-on-dark);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-nav-item,
-html[data-erp-template='school-green']:not(.dark) .erp-nav-child {
-    color: var(--rng-text-on-dark-muted);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-nav-item svg {
-    color: rgb(255 255 255 / 0.6);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-nav-item:hover,
-html[data-erp-template='school-green']:not(.dark) .erp-nav-child:hover {
-    background: rgb(255 255 255 / 0.06);
-    color: var(--rng-text-on-dark);
-}
-/* Inset shadow instead of border-left so the rail icons don't shift by 3px. */
-html[data-erp-template='school-green']:not(.dark) .erp-nav-item.is-active {
-    background: var(--brand-700);
-    color: var(--rng-text-on-dark);
-    box-shadow: inset 3px 0 0 #4ADE80;
-}
-html[data-erp-template='school-green']:not(.dark) .erp-nav-item.is-active svg {
-    color: #4ADE80;
-}
-html[data-erp-template='school-green']:not(.dark) .erp-nav-child.is-active {
-    background: var(--brand-700);
-    color: var(--rng-text-on-dark);
-    box-shadow: none;
-}
-html[data-erp-template='school-green']:not(.dark) .erp-nav-child--danger {
-    color: var(--rng-danger-on-dark);
-}
-
-/* Top header: white surface, bottom border. */
-html[data-erp-template='school-green']:not(.dark) .erp-topbar {
-    background: var(--rng-surface);
-    border-color: var(--rng-border);
-    backdrop-filter: none;
-}
-html[data-erp-template='school-green']:not(.dark) .erp-topbar .erp-brand-name {
-    font-family: var(--rng-font);
-    font-size: 0.95rem;
-    color: var(--rng-primary);
-}
-html[data-erp-template='school-green']:not(.dark) .erp-topbar .erp-brand-mark,
-html[data-erp-template='school-green']:not(.dark) .erp-avatar {
-    background: var(--rng-primary);
-    color: var(--rng-text-on-dark);
-    box-shadow: none;
-}
-
-/* ───────────────────────── Components ───────────────────────── */
-/* Primary button = navy (from the ramp). Secondary = white with navy border and text. */
-html[data-erp-template='school-green']:not(.dark) .btn-outline {
-    border-color: var(--rng-primary);
-    color: var(--rng-primary);
-    background: var(--rng-surface);
-}
-html[data-erp-template='school-green']:not(.dark) .btn-outline:hover {
-    background: var(--rng-primary-light);
-}
-html[data-erp-template='school-green']:not(.dark) .btn-primary,
-html[data-erp-template='school-green']:not(.dark) .btn-outline {
-    border-radius: var(--rng-radius-control);
-    box-shadow: none;
-}
-
-/* Inputs: white, token border, navy focus ring at 20%. */
-html[data-erp-template='school-green']:not(.dark) .erp-shell .form-input,
-html[data-erp-template='school-green']:not(.dark) .erp-shell .form-input:focus {
-    color: var(--rng-text);
-    -webkit-text-fill-color: var(--rng-text);
-    caret-color: var(--rng-text);
-}
-html[data-erp-template='school-green']:not(.dark) .form-input {
-    border-color: var(--rng-border);
-    border-radius: var(--rng-radius-control);
-}
-html[data-erp-template='school-green']:not(.dark) .form-input:focus,
-html[data-erp-template='school-green']:not(.dark) .erp-shell input:focus-visible,
-html[data-erp-template='school-green']:not(.dark) .erp-shell select:focus-visible,
-html[data-erp-template='school-green']:not(.dark) .erp-shell textarea:focus-visible {
-    border-color: var(--brand-500);
-    --tw-ring-color: rgb(220 252 231 / 1);
-}
-
-/* Tables: header row primary-light with navy text; hover #FAF8F3 comes from slate-50.
-   Print/receipt pages are excluded so printed documents keep their own styling. */
-html[data-erp-template='school-green']:not(.dark) .erp-shell:not(.print-page-shell) main table > thead > tr > th {
-    background-color: var(--rng-primary-light);
-    color: var(--rng-primary);
-}
-
-html[data-erp-template='school-green']:not(.dark) .stat-card__icon {
-    border-radius: 9999px;
-    background: var(--brand-50);
-    color: var(--brand-600);
-}
-html[data-erp-template='school-green']:not(.dark) .stat-card__value {
-    color: var(--brand-600);
-}
-html[data-erp-template='school-green']:not(.dark) .stat-card__label {
-    color: var(--rng-text-muted);
-}
-
-html[data-erp-template='school-green']:not(.dark) .erp-shell .bg-slate-900\/50 {
-    background-color: rgb(5 46 22 / 0.5);
+/* Night neutrals: green-tinted charcoal instead of Tailwind's navy slate.
+   dark:bg-slate-900 (cards) → #121C17, dark:bg-slate-800 (inputs, hovers) → #1B2822,
+   dark:border-slate-700/800 → soft green-grey lines, dark:text-slate-100…400 → readable greys. */
+html[data-erp-template='school-green'].dark {
+    --color-slate-50: #F1F6F3;
+    --color-slate-100: #E4ECE7;
+    --color-slate-200: #CBD8D0;
+    --color-slate-300: #A9BAB0;
+    --color-slate-400: #8A9C92;
+    --color-slate-500: #6E8077;
+    --color-slate-600: #4D5F56;
+    --color-slate-700: #2B3B33;
+    --color-slate-800: #1B2822;
+    --color-slate-900: #121C17;
+    --color-slate-950: #0A110D;
 }
