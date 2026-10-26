@@ -265,7 +265,7 @@ class ClassRoutineExcelExporter
         $serial = 1;
         foreach ($teachers as $teacher) {
             $ws->setCellValue('A'.$row, $serial);
-            $ws->setCellValue('B'.$row, $this->shortTeacherName((string) $teacher->name));
+            $this->setTeacherName($ws, 'B'.$row, $teacher->name);
             $ws->setCellValue('C'.$row, $periodCounts[(int) $teacher->id] ?? 0);
             if ($teacher->color) {
                 $this->fillCell($ws, 'B'.$row, $teacher->color);
@@ -324,7 +324,7 @@ class ClassRoutineExcelExporter
                     $ws->setCellValue($col.$subRow, $this->shortLabel((string) $subjectText, 12));
                 }
                 if ($teacherText) {
-                    $ws->setCellValue($col.$teachRow, $this->shortTeacherName((string) $teacherText));
+                    $this->setTeacherName($ws, $col.$teachRow, $teacherText);
                     $color = $entry->color ?? $teacherModel?->color ?? $entry->teacher?->color;
                     if ($color) {
                         $this->fillCell($ws, $col.$teachRow, $color);
@@ -370,7 +370,7 @@ class ClassRoutineExcelExporter
                     if (isset($busyByPeriod[$p][(int) $teacher->id])) {
                         continue;
                     }
-                    $freeByPeriod[$p][] = $this->shortTeacherName((string) $teacher->name);
+                    $freeByPeriod[$p][] = (string) $teacher->name;
                 }
                 $maxFree = max($maxFree, count($freeByPeriod[$p]));
             }
@@ -389,7 +389,7 @@ class ClassRoutineExcelExporter
                         ->setVertical(Alignment::VERTICAL_CENTER);
                     $name = $freeByPeriod[$p][$i] ?? null;
                     if ($name !== null) {
-                        $ws->setCellValue($col.$r, $name);
+                        $this->setTeacherName($ws, $col.$r, $name);
                         $ws->getStyle($col.$r)->getFont()
                             ->setName(self::FONT)
                             ->setSize(7)
@@ -662,7 +662,7 @@ class ClassRoutineExcelExporter
             $subRow = $row;
             $classRow = $row + 1;
 
-            $ws->setCellValue('A'.$subRow, $this->shortTeacherName((string) $teacher->name));
+            $this->setTeacherName($ws, 'A'.$subRow, $teacher->name);
             $ws->mergeCells('A'.$subRow.':A'.$classRow);
             $ws->getStyle('A'.$subRow)->getFont()->setName(self::FONT)->setBold(true)->setSize(self::FONT_SIZE);
             $ws->getStyle('A'.$subRow.':A'.$classRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
@@ -771,6 +771,16 @@ class ClassRoutineExcelExporter
         }
 
         return $parts[0].' '.mb_substr($parts[count($parts) - 1], 0, 1).'.';
+    }
+
+    /**
+     * Writes a teacher's full name into $addr with Excel's "Shrink to fit" on, so a long name
+     * shrinks its font to fit the cell instead of being cut or abbreviated.
+     */
+    private function setTeacherName(Worksheet $ws, string $addr, ?string $name): void
+    {
+        $ws->setCellValue($addr, preg_replace('/\s+/u', ' ', mb_strtoupper(trim((string) $name))) ?? '');
+        $ws->getStyle($addr)->getAlignment()->setWrapText(false)->setShrinkToFit(true);
     }
 
     /** NURSERY → NUR; LKG / UKG / numbered classes kept compact. */

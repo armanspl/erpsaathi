@@ -144,6 +144,24 @@ function teacherNameOf(e) {
     if (e.teacher_id) return e.teacher?.name || props.teachers.find((t) => t.id === e.teacher_id)?.name || `Teacher #${e.teacher_id}`;
     return (e.teacher_label || '').trim();
 }
+// Full name, shrunk only when it won't fit a cell: middle names to initials, then first name +
+// last initial, then cut with "…". (The Excel export writes the full name and uses shrink-to-fit.)
+const TEACHER_NAME_MAX = 16;
+function fitTeacherName(name) {
+    const full = String(name || '').trim().replace(/\s+/g, ' ');
+    if (full.length <= TEACHER_NAME_MAX) return full;
+    const parts = full.split(' ');
+    if (parts.length > 2) {
+        const initials = [parts[0], ...parts.slice(1, -1).map((w) => `${w[0]}.`), parts[parts.length - 1]].join(' ');
+        if (initials.length <= TEACHER_NAME_MAX) return initials;
+    }
+    const short = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : full;
+    return short.length <= TEACHER_NAME_MAX ? short : `${short.slice(0, TEACHER_NAME_MAX - 1)}…`;
+}
+/** Shrunk name for a cell, with the full name on hover. */
+function nameHtml(name) {
+    return `<span title="${esc(name)}">${esc(fitTeacherName(name))}</span>`;
+}
 function badgeStyle(e) {
     const color = e?.color || e?.teacher?.color || props.teachers.find((t) => t.id === e?.teacher_id)?.color;
     return color ? { background: color, color: contrastColor(color) } : { background: '#e2e8f0', color: '#1e293b' };
@@ -247,7 +265,7 @@ function classWiseHtml(group) {
     const ps = periods.value;
     const roster = rosterFor(group);
     const teachers = `<table class="teachers"><thead><tr><th>#</th><th>TEACHERS</th><th>PERIOD</th></tr></thead><tbody>${
-        roster.map((t, i) => `<tr><td>${i + 1}</td><td>${esc(t.name)}</td><td class="c">${countFor(group, t.key)}</td></tr>`).join('')
+        roster.map((t, i) => `<tr><td>${i + 1}</td><td>${nameHtml(t.name)}</td><td class="c">${countFor(group, t.key)}</td></tr>`).join('')
     }</tbody><tfoot><tr><td></td><td>TOTAL</td><td class="c">${totalPeriods(group)}</td></tr></tfoot></table>`;
 
     const rows = routineClasses.value.map((c) => {
@@ -256,7 +274,7 @@ function classWiseHtml(group) {
             const e = slot(group, c.id, p);
             if (!teacherKeyOf(e)) return '<td></td>';
             const st = badgeStyle(e);
-            return `<td class="c teach" style="background:${st.background};color:${st.color}">${esc(teacherNameOf(e))}</td>`;
+            return `<td class="c teach" style="background:${st.background};color:${st.color}">${nameHtml(teacherNameOf(e))}</td>`;
         }).join('');
         return `<tr><td rowspan="2" class="cls">${esc(c.name)}</td><td class="lbl">SUB</td>${subs}<td rowspan="2">${esc(remarksOf(c.id))}</td></tr>
             <tr class="sep"><td class="lbl">TEACH</td>${teach}</tr>`;
@@ -267,7 +285,7 @@ function classWiseHtml(group) {
     const freeByPeriod = ps.map((p) => freeTeachers(group, p).map((t) => t.name));
     const maxFree = Math.max(1, ...freeByPeriod.map((list) => list.length));
     const leisureBody = Array.from({ length: maxFree }, (_, i) => {
-        const cells = freeByPeriod.map((list) => `<td class="c">${list[i] ? esc(list[i]) : ''}</td>`).join('');
+        const cells = freeByPeriod.map((list) => `<td class="c">${list[i] ? nameHtml(list[i]) : ''}</td>`).join('');
         if (i === 0) {
             return `<tr><td class="lbl" rowspan="${maxFree}">LEISURE<br><span class="free-lbl">FREE</span></td>${cells}</tr>`;
         }
@@ -283,7 +301,7 @@ function teacherWiseHtml(group) {
     const rows = rosterFor(group).map((t) => {
         const cells = ps.map((p) => teacherCell(group, t.key, p));
         const cls = (c) => (c.clash ? ' clash' : c.free ? ' free' : '');
-        return `<tr><td rowspan="2" class="cls">${esc(t.name)}</td><td class="lbl">SUB</td>${cells.map((c) => `<td class="c sub${cls(c)}">${esc(c.sub)}</td>`).join('')}<td rowspan="2" class="c">${countFor(group, t.key)}</td></tr>
+        return `<tr><td rowspan="2" class="cls">${nameHtml(t.name)}</td><td class="lbl">SUB</td>${cells.map((c) => `<td class="c sub${cls(c)}">${esc(c.sub)}</td>`).join('')}<td rowspan="2" class="c">${countFor(group, t.key)}</td></tr>
             <tr class="sep"><td class="lbl">CLASS</td>${cells.map((c) => `<td class="c${cls(c)}">${esc(c.cls)}</td>`).join('')}</tr>`;
     }).join('');
     return `<section>${header(`TEACHER WISE — ${group.label}`)}<table class="grid"><thead><tr><th>TEACHER</th><th>PERIOD</th>${ps.map((p) => `<th>${p}</th>`).join('')}<th>PERIODS</th></tr></thead><tbody>${rows}</tbody></table></section>`;

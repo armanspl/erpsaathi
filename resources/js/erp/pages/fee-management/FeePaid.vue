@@ -74,6 +74,33 @@
                     <label class="form-label">Search</label>
                     <input v-model="filters.search" type="search" class="form-input" placeholder="Name / admission (auto)" />
                 </div>
+                <div>
+                    <label class="form-label">Paid on</label>
+                    <select v-model="filters.paid_mode" class="form-input">
+                        <option value="">Any date</option>
+                        <option value="date">A date</option>
+                        <option value="month">A month</option>
+                        <option value="range">Between dates</option>
+                    </select>
+                </div>
+                <div v-if="filters.paid_mode === 'date'">
+                    <label class="form-label">Date</label>
+                    <input v-model="filters.paid_date" type="date" class="form-input" />
+                </div>
+                <div v-else-if="filters.paid_mode === 'month'">
+                    <label class="form-label">Month</label>
+                    <input v-model="filters.paid_month" type="month" class="form-input" />
+                </div>
+                <template v-else-if="filters.paid_mode === 'range'">
+                    <div>
+                        <label class="form-label">From</label>
+                        <input v-model="filters.paid_from" type="date" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">To</label>
+                        <input v-model="filters.paid_to" type="date" class="form-input" :min="filters.paid_from || undefined" />
+                    </div>
+                </template>
             </div>
         </div>
 
@@ -83,8 +110,8 @@
                 <p class="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{{ summary.students }}</p>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total collected</p>
-                <p class="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">₹{{ money(summary.collected) }}</p>
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ paidRange ? `Collected ${paidRange.label}` : 'Total collected' }}</p>
+                <p class="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">₹{{ money(paidRange ? summary.range_collected : summary.collected) }}</p>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Outstanding (till now)</p>
@@ -125,6 +152,7 @@
                         {{ viewMeta.title }}
                     </h2>
                     <p class="text-xs text-slate-400">{{ viewMeta.hint }}</p>
+                    <p v-if="paidRange" class="mt-0.5 text-xs font-medium text-primary-600 dark:text-primary-400">Only students who paid {{ paidRange.label }} — receipt, date and amount are from that period.</p>
                 </div>
                 <div class="flex items-center gap-3">
                     <div class="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
@@ -190,12 +218,12 @@
                                     <span class="truncate">{{ r.last_receipt_no }}</span>
                                 </button>
                                 <span v-else class="text-slate-400">—</span>
-                                <p v-if="r.receipts_count > 1" class="mt-0.5 text-[11px] text-slate-400">+{{ r.receipts_count - 1 }} more</p>
+                                <p v-if="receiptsShown(r) > 1" class="mt-0.5 text-[11px] text-slate-400">+{{ receiptsShown(r) - 1 }} more</p>
                             </div>
                             <span class="text-slate-600 dark:text-slate-300">{{ fmtDate(r.last_paid_date) }}</span>
                             <div class="text-right">
                                 <p class="font-semibold text-emerald-600 dark:text-emerald-400">₹ {{ money2(r.last_paid_amount) }}</p>
-                                <p v-if="r.receipts_count > 1" class="text-[11px] text-slate-400">Total ₹ {{ money2(r.session_paid) }}</p>
+                                <p v-if="receiptsShown(r) > 1" class="text-[11px] text-slate-400">Total ₹ {{ money2(paidShown(r)) }}</p>
                             </div>
                             <div class="flex min-w-0 flex-wrap items-center gap-1">
                                 <template v-if="view === 'paid_any'">
@@ -409,7 +437,7 @@ const viewMeta = computed(() => ({
         hint: 'Students with payments applied to months after the current month.',
     },
 }[view.value]));
-const summary = reactive({ students: 0, charged: 0, paid: 0, concession: 0, advance_paid: 0, collected: 0, due: 0, cleared: 0, partial: 0 });
+const summary = reactive({ students: 0, charged: 0, paid: 0, concession: 0, advance_paid: 0, collected: 0, due: 0, cleared: 0, partial: 0, range_collected: 0 });
 
 const branches = ref([]);
 const classes = ref([]);
@@ -423,7 +451,40 @@ const filters = reactive({
     search: '',
     vehicle: '',
     dues: 'all',
+    // Paid on: '' any date, 'date' one day, 'month' one month, 'range' between two dates.
+    paid_mode: '',
+    paid_date: '',
+    paid_month: '',
+    paid_from: '',
+    paid_to: '',
 });
+
+/** The Paid-on filter as { from, to, label } (Y-m-d), or null when off / not filled in yet. */
+const paidRange = computed(() => {
+    const short = (d) => fmtDate(d);
+    if (filters.paid_mode === 'date' && filters.paid_date) {
+        return { from: filters.paid_date, to: filters.paid_date, label: `on ${short(filters.paid_date)}` };
+    }
+    if (filters.paid_mode === 'month' && filters.paid_month) {
+        const [y, m] = filters.paid_month.split('-').map(Number);
+        const last = new Date(y, m, 0).getDate();
+        const label = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+        return { from: `${filters.paid_month}-01`, to: `${filters.paid_month}-${String(last).padStart(2, '0')}`, label: `in ${label}` };
+    }
+    if (filters.paid_mode === 'range' && (filters.paid_from || filters.paid_to)) {
+        const { paid_from: from, paid_to: to } = filters;
+        const label = from && to ? `${short(from)} – ${short(to)}` : from ? `from ${short(from)}` : `till ${short(to)}`;
+        return { from: from || null, to: to || null, label };
+    }
+    return null;
+});
+// With a Paid-on filter, the row's receipts / total are the ones in that period.
+function receiptsShown(r) {
+    return paidRange.value ? r.range_receipts : r.receipts_count;
+}
+function paidShown(r) {
+    return paidRange.value ? r.range_paid : r.session_paid;
+}
 
 const perPageOptions = [10, 25, 50, 100, 'all'];
 const perPageSelection = ref(25);
@@ -538,6 +599,8 @@ function currentParams() {
     if (filters.vehicle) p.vehicle = filters.vehicle;
     if (filters.dues !== 'all') p.dues = filters.dues;
     if (filters.search.trim()) p.search = filters.search.trim();
+    if (paidRange.value?.from) p.paid_from = paidRange.value.from;
+    if (paidRange.value?.to) p.paid_to = paidRange.value.to;
     return p;
 }
 
@@ -592,15 +655,17 @@ function printPaid() {
     const sum = (key) => list.reduce((s, r) => s + (Number(r[key]) || 0), 0);
     const advance = view.value === 'advance';
     const all = view.value === 'paid_any';
-    const title = viewMeta.value.title;
+    const range = paidRange.value;
+    const paidKey = range ? 'range_paid' : 'session_paid';
+    const title = range ? `${viewMeta.value.title} — Paid ${range.label}` : viewMeta.value.title;
     const head = '<tr><th>#</th><th>Name</th><th>Adm. No.</th><th>Class / Sec</th><th>Last Receipt</th><th>Paid Date</th>'
-        + `<th class="num">Total Paid</th>${all ? '<th class="num">Outstanding</th>' : ''}<th>${advance ? 'Advance months' : 'Paid through'}</th></tr>`;
+        + `<th class="num">${range ? 'Paid in Period' : 'Total Paid'}</th>${all ? '<th class="num">Outstanding</th>' : ''}<th>${advance ? 'Advance months' : 'Paid through'}</th></tr>`;
     const body = list.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.name)}</b>${r.student_status && r.student_status !== 'Active' ? ' (left)' : ''}</td><td>${esc(r.admission_no)}</td>
         <td>${esc([r.school_class, r.section].filter(Boolean).join(' / ') || '—')}</td>
         <td>${esc(r.last_receipt_no || '—')}</td><td>${esc(fmtDate(r.last_paid_date))}</td>
-        ${amt(r.session_paid, 'paid')}${all ? amt(r.due) : ''}
+        ${amt(r[paidKey], 'paid')}${all ? amt(r.due) : ''}
         <td>${esc((advance ? r.advance_months_label : r.paid_through_label) || '—')}</td></tr>`).join('');
-    const foot = `<tr><td></td><td colspan="5">TOTAL (${list.length} students)</td>${amt(sum('session_paid'), 'paid')}${all ? amt(sum('due')) : ''}<td></td></tr>`;
+    const foot = `<tr><td></td><td colspan="5">TOTAL (${list.length} students)</td>${amt(sum(paidKey), 'paid')}${all ? amt(sum('due')) : ''}<td></td></tr>`;
 
     const win = window.open('', '_blank');
     if (!win) {

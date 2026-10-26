@@ -38,6 +38,8 @@ class FeePaidController extends Controller
                 'due' => round($rows->sum('due'), 2),
                 'cleared' => $rows->where('payment_status', 'cleared')->count(),
                 'partial' => $rows->where('payment_status', 'partial')->count(),
+                // Received between paid_from and paid_to (only when that filter is on).
+                'range_collected' => round($rows->sum('range_paid'), 2),
             ],
         ]);
     }
@@ -52,6 +54,7 @@ class FeePaidController extends Controller
         $view = $data['view'] ?? 'till_current';
 
         $rows = $this->buildRows($request);
+        $range = $this->paidRange($request);
 
         if ($view === 'paid_any') {
             $header = [
@@ -87,6 +90,13 @@ class FeePaidController extends Controller
             $title = 'Fee Paid (Till Current Month)';
         }
 
+        // Paid-on filter: what each student paid in that period, and the period in the title.
+        if ($range) {
+            $header[] = 'Paid in Period';
+            $table = array_map(fn (array $line, array $r) => [...$line, $r['range_paid']], $table, $rows->all());
+            $title .= ' — Paid '.$this->rangeLabel($range);
+        }
+
         return TabularExport::stream($header, $table, 'fee-paid-'.$view, $title, $format);
     }
 
@@ -106,6 +116,7 @@ class FeePaidController extends Controller
         ]);
 
         $view = $data['view'] ?? 'till_current';
+        $range = $this->paidRange($request);
 
         $all = AcademicSession::requestWantsAll($request);
         $sessions = $all
@@ -146,6 +157,15 @@ class FeePaidController extends Controller
                 $w->where('name', 'like', "%{$q}%")
                     ->orWhere('admission_no', 'like', "%{$q}%");
             });
+        }
+        // Paid on a date / in a month / between dates: only students with a receipt in that period.
+        if ($range) {
+            $query->whereIn('id', FeePayment::query()
+                ->where('status', '!=', 'Rolled Back')
+                ->when(! $all, fn ($q) => $q->touchingSessions($sessions->pluck('id')->all()))
+                ->whereDate('payment_date', '>=', $range[0])
+                ->whereDate('payment_date', '<=', $range[1])
+                ->select('student_id'));
         }
 
         $students = $query->orderBy('name')->get();
@@ -321,7 +341,50 @@ class FeePaidController extends Controller
             $rows = $rows->filter(fn (array $r) => $dues === 'due' ? $r['due'] > 0.0001 : $r['due'] <= 0.0001)->values();
         }
 
-        return $this->withLatestReceipts($rows, $all ? null : $sessions->pluck('id')->all());
+        return $this->withLatestReceipts($rows, $all ? null : $sessions->pluck('id')->all(), $range);
+    }
+
+    /**
+     * The Paid-on filter as [from, to] dates (Y-m-d), or null when it's off. A single date or
+     * a month arrives as a from/to pair from the page.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private function paidRange(Request $request): ?array
+    {
+        $data = $request->validate([
+            'paid_from' => 'nullable|date',
+            'paid_to' => 'nullable|date',
+        ]);
+        $from = ! empty($data['paid_from']) ? Carbon::parse($data['paid_from'])->toDateString() : null;
+        $to = ! empty($data['paid_to']) ? Carbon::parse($data['paid_to'])->toDateString() : null;
+        if (! $from && ! $to) {
+            return null;
+        }
+        $range = [$from ?? '1900-01-01', $to ?? '9999-12-31'];
+        sort($range);
+
+        return $range;
+    }
+
+    /** "on 05 Oct 2026", "in Oct 2026", "05 Oct 2026 to 20 Oct 2026" — for export titles. */
+    private function rangeLabel(array $range): string
+    {
+        [$from, $to] = [Carbon::parse($range[0]), Carbon::parse($range[1])];
+        if ($from->isSameDay($to)) {
+            return 'on '.$from->format('d M Y');
+        }
+        if ($from->isSameDay($from->copy()->startOfMonth()) && $to->isSameDay($from->copy()->endOfMonth())) {
+            return 'in '.$from->format('M Y');
+        }
+        if ($range[0] === '1900-01-01') {
+            return 'till '.$to->format('d M Y');
+        }
+        if ($range[1] === '9999-12-31') {
+            return 'from '.$from->format('d M Y');
+        }
+
+        return $from->format('d M Y').' to '.$to->format('d M Y');
     }
 
     /**
@@ -443,10 +506,14 @@ class FeePaidController extends Controller
      * Adds each student's latest receipt (in the selected sessions) for the collapsed row.
      *
      * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $rows
+     * With the Paid-on filter, the "latest receipt" is the latest one in that period, and
+     * range_receipts / range_paid count only that period's receipts.
+     *
      * @param  list<int>|null  $sessionIds  null = all sessions
+     * @param  array{0: string, 1: string}|null  $range  Paid-on filter (Y-m-d from / to)
      * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
-    private function withLatestReceipts(\Illuminate\Support\Collection $rows, ?array $sessionIds): \Illuminate\Support\Collection
+    private function withLatestReceipts(\Illuminate\Support\Collection $rows, ?array $sessionIds, ?array $range = null): \Illuminate\Support\Collection
     {
         if ($rows->isEmpty()) {
             return $rows;
@@ -461,9 +528,16 @@ class FeePaidController extends Controller
             ->get(['id', 'student_id', 'receipt_no', 'payment_date', 'academic_session_id', 'multi_session', 'items', 'amount', 'discount_amount', 'fine_amount', 'session_fines', 'refunded_amount']);
         // Session totals count only the selected session's share of a multi-session receipt.
         $byStudent = ($sessionIds !== null ? FeePayment::slicesFor($payments, $sessionIds) : $payments)->groupBy('student_id');
-        return $rows->map(function (array $r) use ($byStudent) {
+        return $rows->map(function (array $r) use ($byStudent, $range) {
             $list = $byStudent->get($r['student_id'], collect());
-            $last = $list->first();
+            $inRange = $range
+                ? $list->filter(function (FeePayment $p) use ($range) {
+                    $date = $p->payment_date?->format('Y-m-d');
+
+                    return $date !== null && $date >= $range[0] && $date <= $range[1];
+                })->values()
+                : $list;
+            $last = $inRange->first();
             $received = round((float) $list->sum(fn (FeePayment $p) => (float) $p->amount - (float) $p->refunded_amount), 2);
             // Received = counted toward dues + months outside the session + fines + the rest.
             $fine = (float) $list->sum(fn (FeePayment $p) => (float) $p->fine_amount);
@@ -479,6 +553,8 @@ class FeePaidController extends Controller
                 'last_receipt_no' => $last?->receipt_no,
                 'last_paid_date' => $last?->payment_date?->format('Y-m-d'),
                 'last_paid_amount' => $last ? round((float) $last->amount, 2) : null,
+                'range_receipts' => $inRange->count(),
+                'range_paid' => round((float) $inRange->sum(fn (FeePayment $p) => (float) $p->amount - (float) $p->refunded_amount), 2),
             ];
         });
     }
