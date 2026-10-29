@@ -11,7 +11,7 @@
                 </p>
             </div>
             <div class="dash-actions">
-                <RouterLink to="/fee-management/pay-fee" class="dash-btn dash-btn--primary">
+                <RouterLink to="/fee-management/fee-receipt" class="dash-btn dash-btn--primary">
                     <AppIcon name="wallet" class="h-4 w-4" /> Collect fee
                 </RouterLink>
                 <RouterLink to="/people/students?add=1" class="dash-btn">
@@ -482,7 +482,7 @@ watch(
 
 const quickActions = [
     { label: 'Add student', to: '/people/students?add=1', icon: 'user-plus' },
-    { label: 'Collect fee', to: '/fee-management/pay-fee', icon: 'wallet' },
+    { label: 'Collect fee', to: '/fee-management/fee-receipt', icon: 'wallet' },
     { label: 'Fee due', to: '/fee-management/fee-due', icon: 'clock' },
     { label: 'Fee receipt', to: '/fee-management/fee-receipt', icon: 'receipt' },
     { label: 'Import Excel', to: '/import-export', icon: 'upload' },
