@@ -348,17 +348,44 @@ class FeePaymentController extends Controller
             'remarks' => 'nullable|string|max:255',
             'reference_no' => 'nullable|string|max:100',
             'transport_fee' => 'nullable|numeric|min:0',
+            'transport_discount' => 'nullable|numeric|min:0',
             'transport_charge' => 'nullable|numeric|min:0',
             'transport_route_id' => 'nullable|integer',
             'transport_stop_id' => 'nullable|integer',
             'backdate' => 'nullable|boolean',
             'receipt_no' => 'nullable|string|max:50',
+            // Fee Receipt form totals at submission — checked against the saved lines below.
+            'snapshot' => 'nullable|array',
+            'snapshot.base_fee' => 'required_with:snapshot|numeric|min:0',
+            'snapshot.individual_discount' => 'required_with:snapshot|numeric|min:0',
+            'snapshot.overall_discount' => 'required_with:snapshot|numeric|min:0',
+            'snapshot.lines' => 'nullable|array',
+            'snapshot.lines.*.fee_head_id' => 'nullable',
+            'snapshot.lines.*.name' => 'nullable|string|max:100',
+            'snapshot.lines.*.fee' => 'numeric|min:0',
+            'snapshot.lines.*.individual_discount' => 'numeric|min:0',
+            'snapshot.lines.*.overall_discount' => 'numeric|min:0',
+            'snapshot.lines.*.paid' => 'numeric|min:0',
+            'snapshot.unpaid' => 'nullable|array',
+            'snapshot.unpaid.*.fee_head_id' => 'nullable',
+            'snapshot.unpaid.*.name' => 'required_with:snapshot.unpaid|string|max:100',
+            'snapshot.unpaid.*.month' => 'nullable|string|max:7',
+            'snapshot.unpaid.*.amount' => 'required_with:snapshot.unpaid|numeric|min:0',
         ]);
 
         foreach ($data['items'] ?? [] as $i => $line) {
             if ((float) ($line['amount'] ?? 0) <= 0 && (float) ($line['discount'] ?? 0) <= 0) {
                 throw ValidationException::withMessages(["items.$i.amount" => 'Each fee line needs a paid amount or a discount.']);
             }
+            // A discount lowers the fee owed — it can't be more than the fee itself.
+            if (isset($line['charge']) && (float) ($line['discount'] ?? 0) > (float) $line['charge'] + 0.01) {
+                throw ValidationException::withMessages(["items.$i.discount" => 'A discount cannot be more than the fee it is on.']);
+            }
+        }
+        $transportFee = (float) ($data['transport_fee'] ?? 0);
+        $transportDiscount = (float) ($data['transport_discount'] ?? 0);
+        if ($transportDiscount > 0 && isset($data['transport_charge']) && $transportDiscount > (float) $data['transport_charge'] + 0.01) {
+            throw ValidationException::withMessages(['transport_discount' => 'The transport discount cannot be more than the transport fee.']);
         }
 
         // Back-date entry (Super Admin → per-school switch): past payment date + own receipt no.
@@ -386,11 +413,11 @@ class FeePaymentController extends Controller
             throw ValidationException::withMessages(['receipt_no' => "Receipt no. {$manualReceiptNo} already exists."]);
         }
 
-        if (empty($data['items']) && (float) ($data['transport_fee'] ?? 0) <= 0) {
+        if (empty($data['items']) && $transportFee <= 0 && $transportDiscount <= 0) {
             throw ValidationException::withMessages(['items' => 'Add at least one fee item or a transport fee.']);
         }
 
-        $session = AcademicSession::fromRequest($request, true);
+        $session =AcademicSession::fromRequest($request, true);
         if (! $session) {
             throw ValidationException::withMessages(['student_id' => 'No academic session is selected — pick one in the header or set a current session in Settings.']);
         }
@@ -457,13 +484,13 @@ class FeePaymentController extends Controller
             ], fn ($v) => $v !== null);
         })->values();
 
-        $transportFee = (float) ($data['transport_fee'] ?? 0);
-        if ($transportFee > 0) {
+        // Transport line: paid and/or discounted (a discount-only line is a transport waiver).
+        if ($transportFee > 0 || $transportDiscount > 0) {
             $transportHead ??= FeeHead::query()->firstOrCreate(
                 ['name' => 'Transport'],
                 ['description' => 'School transport fee']
             );
-            $transportCharge = (float) ($data['transport_charge'] ?? $transportFee);
+            $transportCharge = (float) ($data['transport_charge'] ?? ($transportFee + $transportDiscount));
             // Only the student's Transport Fee Months (old rule: on/after transport fee start).
             $balanceService = app(FeeBalanceService::class);
             $transportMonths = array_values(array_filter(
@@ -479,8 +506,8 @@ class FeePaymentController extends Controller
                 'fee_head_id' => $transportHead->id,
                 'fee_head_name' => 'Transport',
                 'amount' => $transportFee,
-                'charge' => max($transportCharge, $transportFee),
-                'discount' => 0.0,
+                'charge' => max($transportCharge, $transportFee + $transportDiscount),
+                'discount' => $transportDiscount,
                 'months' => $transportMonths ?: null,
                 'month' => $transportMonths[0] ?? null,
                 'transport_route_id' => $data['transport_route_id'] ?? null,
@@ -600,6 +627,9 @@ class FeePaymentController extends Controller
         }
 
         $amount = round((float) $items->sum('amount') + (float) ($data['fine_amount'] ?? 0), 2);
+        $totalsSnapshot = isset($data['snapshot']) && FeePayment::hasTotalsSnapshot()
+            ? $this->totalsSnapshot($data['snapshot'], $items, (float) ($data['fine_amount'] ?? 0))
+            : null;
         $remarks = $data['remarks'] ?? null;
         if ($amount <= 0 && blank($remarks)) {
             // Nothing received: a pure waiver receipt (100% discount) — say so on the receipt.
@@ -612,6 +642,7 @@ class FeePaymentController extends Controller
             'items' => $items->values()->all(),
             'amount' => $amount,
             'discount_amount' => $discountAmount,
+            ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot' => $totalsSnapshot] : []),
             'fine_amount' => $data['fine_amount'] ?? 0,
             'payment_mode' => $paymentMode,
             'payment_date' => $data['payment_date'] ?? now()->toDateString(),
@@ -641,6 +672,65 @@ class FeePaymentController extends Controller
         DashboardCache::forget();
 
         return response()->json($payment->load(['student:id,name,admission_no', 'collectedBy:id,name']), 201);
+    }
+
+    /**
+     * Receipt totals snapshot from the Fee Receipt form, re-derived from the lines being saved:
+     * received and total discount come from the lines themselves, and the form's base fee must
+     * equal the lines' fees plus the selected months left fully unpaid (which get no line). A
+     * mismatch means the form and the save disagree, so nothing is saved.
+     *
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $items
+     */
+    private function totalsSnapshot(array $snapshot, \Illuminate\Support\Collection $items, float $fine): array
+    {
+        $received = round((float) $items->sum(fn ($i) => (float) ($i['amount'] ?? 0)), 2);
+        $totalDiscount = round((float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0)), 2);
+        $lineFees = (float) $items->sum(fn ($i) => max((float) ($i['charge'] ?? 0), (float) ($i['amount'] ?? 0) + (float) ($i['discount'] ?? 0)));
+        $unpaid = collect($snapshot['unpaid'] ?? [])->map(fn ($u) => [
+            'fee_head_id' => isset($u['fee_head_id']) ? (int) $u['fee_head_id'] : null,
+            'name' => (string) $u['name'],
+            'month' => $u['month'] ?? null,
+            'amount' => round((float) $u['amount'], 2),
+        ])->filter(fn ($u) => $u['amount'] > 0)->values();
+
+        $base = round((float) $snapshot['base_fee'], 2);
+        $individual = round((float) $snapshot['individual_discount'], 2);
+        $overall = round((float) $snapshot['overall_discount'], 2);
+        $payable = round($base - $totalDiscount, 2);
+        $dueAfter = round($payable - $received, 2);
+
+        $mismatch = abs($base - round($lineFees + $unpaid->sum('amount'), 2)) > 0.01
+            || abs($individual + $overall - $totalDiscount) > 0.01
+            || $payable < -0.01
+            || $dueAfter < -0.01;
+        if ($mismatch) {
+            throw ValidationException::withMessages([
+                'items' => 'The receipt totals do not match its fee lines — reload the Fee Receipt page and enter the fee again.',
+            ]);
+        }
+
+        return [
+            'version' => 1,
+            'base_fee' => $base,
+            'individual_discount' => $individual,
+            'overall_discount' => $overall,
+            'total_discount' => $totalDiscount,
+            'payable' => $payable,
+            'received' => $received,
+            'fine' => round($fine, 2),
+            'due_after' => max(0.0, $dueAfter),
+            // Fee-wise split as entered on the form (which discount box each rupee came from).
+            'lines' => collect($snapshot['lines'] ?? [])->map(fn ($l) => [
+                'fee_head_id' => $l['fee_head_id'] ?? null,
+                'name' => (string) ($l['name'] ?? ''),
+                'fee' => round((float) ($l['fee'] ?? 0), 2),
+                'individual_discount' => round((float) ($l['individual_discount'] ?? 0), 2),
+                'overall_discount' => round((float) ($l['overall_discount'] ?? 0), 2),
+                'paid' => round((float) ($l['paid'] ?? 0), 2),
+            ])->values()->all(),
+            'unpaid' => $unpaid->all(),
+        ];
     }
 
     /** Printable deposit receipt for a collected fee payment. */
@@ -695,6 +785,7 @@ class FeePaymentController extends Controller
 
         $lines = [];
         $sno = 1;
+        $grossFees = 0.0;
         foreach ($payment->items ?? [] as $item) {
             $itemMonths = [];
             if (! empty($item['months']) && is_array($item['months'])) {
@@ -713,9 +804,13 @@ class FeePaymentController extends Controller
                 $duration = $monthsLabel;
             }
 
+            // Same math as the receipt PDF: the line's fee (stored charge) − discount = payable;
+            // payable − paid = dues left on it. Old lines without a charge fall back to paid + discount.
             $paid = (float) ($item['amount'] ?? 0);
             $itemDiscount = (float) ($item['discount'] ?? 0);
-            $itemPayable = round($paid + $itemDiscount, 2);
+            $itemFee = max((float) ($item['charge'] ?? 0), $paid + $itemDiscount);
+            $itemPayable = round($itemFee - $itemDiscount, 2);
+            $grossFees += $itemFee;
 
             $lines[] = [
                 'sno' => $sno++,
@@ -723,7 +818,7 @@ class FeePaymentController extends Controller
                 'duration' => $duration,
                 'payable' => $itemPayable,
                 'paid' => $paid,
-                'dues' => 0,
+                'dues' => round(max(0, $itemPayable - $paid), 2),
             ];
         }
 
@@ -735,6 +830,20 @@ class FeePaymentController extends Controller
                 'payable' => $payable,
                 'paid' => $paidNet,
                 'dues' => 0,
+            ];
+        }
+
+        // Receipts with a form snapshot: selected months left fully unpaid are listed too (₹0 paid),
+        // and the totals are the form's, so the receipt matches what was collected.
+        $snapshot = is_array($payment->totals_snapshot) ? $payment->totals_snapshot : null;
+        foreach ($snapshot['unpaid'] ?? [] as $u) {
+            $lines[] = [
+                'sno' => $sno++,
+                'fee_particulars' => (string) $u['name'],
+                'duration' => ! empty($u['month']) ? Carbon::createFromFormat('Y-m', (string) $u['month'])->format('F Y') : $monthsLabel,
+                'payable' => (float) $u['amount'],
+                'paid' => 0.0,
+                'dues' => (float) $u['amount'],
             ];
         }
 
@@ -776,9 +885,17 @@ class FeePaymentController extends Controller
                 'photo_url' => null,
             ],
             'lines' => $lines,
-            'amount_payable' => $payable,
-            'counter_discount' => $discount,
+            // Fees on this receipt before discount: the form snapshot when saved with one, else the
+            // lines (paid + discount for old receipts without a charge).
+            'amount_payable' => $snapshot
+                ? (float) $snapshot['base_fee']
+                : ($grossFees > 0 ? round(max($grossFees, $payable), 2) : $payable),
+            'counter_discount' => $snapshot ? (float) $snapshot['total_discount'] : $discount,
             'amount_paid' => $paidNet,
+            // Only known for snapshot receipts; refunds since then are counted (paid is net of them).
+            'balance_dues' => $snapshot
+                ? round(max(0, (float) $snapshot['payable'] + (float) ($snapshot['fine'] ?? 0) - $paidNet), 2)
+                : null,
             'payment_mode' => strtoupper((string) $payment->payment_mode),
             'paid_at' => ErpFeeSetting::current()->receipt_paid_at ?: 'SCHOOL',
             'remarks' => $payment->remarks,
@@ -914,7 +1031,7 @@ class FeePaymentController extends Controller
         }
         $discountAmount = (float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0));
 
-        $before = $payment->only(['items', 'amount', 'discount_amount', 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']);
+        $before = $payment->only(['items', 'amount', 'discount_amount', ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot'] : []), 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']);
 
         // A changed fine on a multi-session receipt can no longer be split reliably — it then
         // counts in the receipt's own session (session_fines cleared).
@@ -929,6 +1046,9 @@ class FeePaymentController extends Controller
                 'session_fines' => $sessionFines,
                 'amount' => $amount,
                 'discount_amount' => $discountAmount,
+                // The form snapshot described the receipt as first saved; after an edit the receipt
+                // prints from its edited lines (the audit entry keeps the old snapshot).
+                ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot' => null] : []),
                 'fine_amount' => $data['fine_amount'] ?? 0,
                 'payment_mode' => $data['payment_mode'],
                 'payment_date' => $data['payment_date'],

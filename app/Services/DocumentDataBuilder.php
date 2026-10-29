@@ -311,6 +311,14 @@ class DocumentDataBuilder
         $lateFee = (float) $payment->fine_amount;
         $adjustment = (float) ($payment->discount_amount ?: $itemsDiscount);
         $backDues = 0.0;
+        // Receipts saved with the Fee Receipt form's snapshot print its totals: the base fee
+        // includes selected months that got no payment (and so no line). Paid stays net of any
+        // refund since. Older receipts keep printing from their lines, as before.
+        $snapshot = is_array($payment->totals_snapshot) ? $payment->totals_snapshot : null;
+        if ($snapshot) {
+            $totalFees = round((float) $snapshot['base_fee'], 2);
+            $adjustment = round((float) $snapshot['total_discount'], 2);
+        }
         $grandTotal = round($totalFees + $backDues + $lateFee - $adjustment, 2);
         $balanceDues = max(0, round($grandTotal - $paidNet, 2));
 
@@ -385,6 +393,18 @@ class DocumentDataBuilder
                 mb_substr($feeForMonths, 0, 11),
                 number_format($paidNet, 2),
                 number_format($paidNet, 2)
+            );
+        }
+        // Selected months that got nothing on this receipt (snapshot receipts only): listed with
+        // ₹0 paid so the Amount column adds up to Total Fees and the balance is visible.
+        foreach ($snapshot['unpaid'] ?? [] as $u) {
+            $lines[] = sprintf(
+                '%-3s %-16s %-11s %10s %10s',
+                $sno++,
+                mb_substr((string) $u['name'], 0, 16),
+                $this->formatFeeDuration(! empty($u['month']) ? [$u['month']] : [], $feeForMonths),
+                number_format((float) $u['amount'], 2),
+                number_format(0, 2)
             );
         }
 

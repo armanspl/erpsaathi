@@ -9,6 +9,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FeePayment extends Model
 {
+    /** @var array<string, bool> database name => has the totals_snapshot column */
+    private static array $snapshotColumn = [];
+
+    /**
+     * Whether this school's database has the totals_snapshot column yet. Saving stays safe in a
+     * school whose migration hasn't run (the snapshot is simply not kept there).
+     */
+    public static function hasTotalsSnapshot(): bool
+    {
+        $model = new static;
+        $db = (string) $model->getConnection()->getDatabaseName();
+
+        return self::$snapshotColumn[$db] ??= \Illuminate\Support\Facades\Schema::connection($model->getConnectionName())
+            ->hasColumn($model->getTable(), 'totals_snapshot');
+    }
+
     protected $fillable = [
         'receipt_no',
         'student_id',
@@ -16,6 +32,7 @@ class FeePayment extends Model
         'items',
         'amount',
         'discount_amount',
+        'totals_snapshot',
         'fine_amount',
         'payment_mode',
         'payment_date',
@@ -47,6 +64,7 @@ class FeePayment extends Model
     {
         return [
             'items' => 'array',
+            'totals_snapshot' => 'array',
             'multi_session' => 'boolean',
             'session_fines' => 'array',
             'amount' => 'decimal:2',

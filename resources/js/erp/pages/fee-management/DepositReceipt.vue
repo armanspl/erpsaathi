@@ -109,6 +109,10 @@
                             <span>Amt Paid</span>
                             <span>₹{{ money(receipt.amount_paid) }}</span>
                         </div>
+                        <div v-if="receipt.balance_dues != null" class="flex items-center justify-between border-t border-slate-200 px-3 py-1.5">
+                            <span>Balance Dues</span>
+                            <strong>₹{{ money(receipt.balance_dues) }}</strong>
+                        </div>
                     </div>
                 </div>
 

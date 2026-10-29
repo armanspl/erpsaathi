@@ -172,9 +172,14 @@
                                     <p v-if="transportFare" class="mt-1 text-xs text-slate-400">₹{{ money(transportFare) }}/month</p>
                                 </div>
                                 <div>
-                                    <label class="form-label">Paid</label>
-                                    <input v-model.number="transport.fee" type="number" min="0" step="0.01" class="form-input" placeholder="0" />
+                                    <label class="form-label">Discount</label>
+                                    <input v-model.number="transport.discount" type="number" min="0" step="0.01" class="form-input" placeholder="0" @input="onTransportDiscountInput" />
                                 </div>
+                                <div>
+                                    <label class="form-label">Paid</label>
+                                    <input v-model.number="transport.fee" type="number" min="0" step="0.01" class="form-input" placeholder="0" @input="onTransportPaidInput" />
+                                </div>
+                                <p v-if="transportDue > 0" class="text-xs sm:col-span-2" :class="lineNote(transportLine).cls">{{ lineNote(transportLine).text }}</p>
                             </div>
                         </div>
 
@@ -201,36 +206,41 @@
                                     class="flex flex-col gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
                                 >
                                     <label class="flex min-w-0 flex-1 items-start gap-3">
-                                        <input v-model="selectedHeadIds" type="checkbox" class="mt-1 rounded border-slate-300 text-primary-600" :value="item.fee_head_id" @change="syncFeePaid(item)" />
+                                        <input v-model="selectedHeadIds" type="checkbox" class="mt-1 rounded border-slate-300 text-primary-600" :value="item.fee_head_id" @change="resyncAllPaid" />
                                         <span>
                                             <span class="block text-sm font-medium text-slate-800 dark:text-slate-100">{{ item.fee_head_name }}</span>
                                             <span class="text-xs text-slate-400">{{ frequencyLabel(item.frequency) }}<template v-if="item.months?.length"> ({{ monthsLabel(item.months) }})</template> · ₹{{ money(item.amount) }}</span>
                                             <span class="mt-0.5 block text-xs text-amber-600">{{ feeStatusLabel(item) }}</span>
                                         </span>
                                     </label>
-                                    <div class="flex flex-wrap items-end gap-3">
-                                        <div>
-                                            <label class="form-label !mb-1">Discount</label>
-                                            <input
-                                                v-model.number="discounts[item.fee_head_id]"
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                class="form-input w-28"
-                                                :disabled="!selectedHeadIds.includes(item.fee_head_id)"
-                                            />
+                                    <div class="flex flex-col items-start gap-1 sm:items-end">
+                                        <div class="flex flex-wrap items-end gap-3">
+                                            <div>
+                                                <label class="form-label !mb-1">Discount</label>
+                                                <input
+                                                    v-model.number="discounts[item.fee_head_id]"
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    class="form-input w-28"
+                                                    :disabled="!selectedHeadIds.includes(item.fee_head_id)"
+                                                    @input="onDiscountInput(item)"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="form-label !mb-1">Paid</label>
+                                                <input
+                                                    v-model.number="amounts[item.fee_head_id]"
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    class="form-input w-28"
+                                                    :disabled="!selectedHeadIds.includes(item.fee_head_id)"
+                                                    @input="onPaidInput(item)"
+                                                />
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label class="form-label !mb-1">Paid</label>
-                                            <input
-                                                v-model.number="amounts[item.fee_head_id]"
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                class="form-input w-28"
-                                                :disabled="!selectedHeadIds.includes(item.fee_head_id)"
-                                            />
-                                        </div>
+                                        <p v-if="selectedHeadIds.includes(item.fee_head_id)" class="text-xs" :class="lineNote(headLine(item)).cls">{{ lineNote(headLine(item)).text }}</p>
                                     </div>
                                 </div>
                             </div>
@@ -280,10 +290,51 @@
                                     <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
                                         <span>Base fee: ₹{{ money(summary.base) }}</span>
                                         <span class="text-emerald-600">Discount: -₹{{ money(summary.discount) }}</span>
-                                        <span class="text-primary-600">Applied now: ₹{{ money(summary.applied) }}</span>
+                                        <span>Payable after discount: ₹{{ money(summary.payable) }}</span>
+                                        <span class="text-primary-600">Received now: ₹{{ money(summary.applied) }}</span>
                                         <span>Total received: ₹{{ money(summary.received) }}</span>
                                     </div>
+                                    <!-- Whole-receipt entry: one discount and the amount actually collected, split onto the fee lines. -->
+                                    <div class="mt-3 flex flex-wrap items-end gap-3">
+                                        <div>
+                                            <label class="form-label !mb-1">Overall discount</label>
+                                            <input
+                                                v-model.number="overallDiscount"
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                class="form-input w-32"
+                                                placeholder="0"
+                                                :disabled="!summary.base"
+                                                @input="onOverallDiscountInput"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label class="form-label !mb-1">Received now</label>
+                                            <input
+                                                :value="summary.applied"
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                class="form-input w-32"
+                                                :disabled="!summary.base"
+                                                @input="onReceivedNowInput"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p class="mt-1 text-xs text-slate-400">
+                                        Overall discount is shared across the selected fees in proportion to what each owes; Received now fills the fees in the order listed.
+                                    </p>
                                     <p class="mt-2 text-sm font-medium text-rose-600">Due after payment: ₹{{ money(summary.dueAfter) }}</p>
+                                    <p v-if="summary.overallTooBig" class="mt-1 text-xs font-medium text-rose-600">
+                                        Overall discount is more than the payable after the fee-wise discounts (₹{{ money(summary.overallRoom) }}).
+                                    </p>
+                                    <p v-if="summary.overpaid" class="mt-1 text-xs font-medium text-rose-600">
+                                        Paid is more than the payable after discount on a fee — lower it before submitting.
+                                    </p>
+                                    <ul v-if="unpaidPreview.length" class="mt-2 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                                        <li v-for="u in unpaidPreview" :key="`${u.fee_head_id}-${u.month}`">{{ unpaidWarning(u) }}</li>
+                                    </ul>
                                 </div>
                                 <button type="button" class="btn-primary shrink-0" :disabled="!canSubmit || collecting" @click="collect">
                                     {{ collecting ? 'Submitting...' : 'Submit fee' }}
@@ -956,7 +1007,12 @@ const transport = reactive({
     route_id: null,
     stop_id: null,
     fee: 0,
+    discount: 0,
 });
+// Paid boxes the user typed into (fee_head_id, or 'transport'). Those hold money actually
+// received, so a discount / month change never overwrites them; the others follow
+// payable after discount automatically.
+const paidEdited = reactive(new Set());
 const transportHeadId = ref(null);
 const transportFeeStartMonth = ref(null);
 // People > Students Fee Months / Transport Fee Months as Y-m keys for the picker (null = not loaded, old start rule).
@@ -1116,8 +1172,169 @@ function transportBillableMonths(months) {
 }
 
 function syncTransportPaid() {
-    if (!transport.apply) return;
-    transport.fee = transportDue.value;
+    if (!transport.apply || paidEdited.has('transport')) return;
+    transport.fee = transportLine.value.net;
+}
+
+/** A money box's value: blank / invalid / negative all count as ₹0. */
+function amt(v) {
+    return Math.max(0, Number(v) || 0);
+}
+function round2(n) {
+    return Math.round(n * 100) / 100;
+}
+/** Clear a negative typed into a money box (min="0" doesn't stop typing "-"). */
+function clampInput(obj, key) {
+    if (obj[key] !== '' && obj[key] != null && Number(obj[key]) < 0) obj[key] = 0;
+}
+
+/**
+ * One fee line: Net payable = Fee − Discount; Remaining due = Net payable − Paid.
+ * A discount lowers what is owed; it is never counted as money received.
+ */
+function lineCalc(fee, discount, paid, overall = 0) {
+    const net = round2(Math.max(0, fee - discount));
+    return {
+        fee,
+        discount,
+        overall,
+        net,
+        paid,
+        remaining: round2(Math.max(0, net - paid)),
+        overDiscount: discount > fee + 0.0001,
+        overPaid: discount <= fee + 0.0001 && paid > net + 0.0001,
+    };
+}
+
+// Overall discount (summary box) — on top of the fee-wise discounts.
+const overallDiscount = ref(0);
+
+/** Selected lines in screen order (fee heads, then transport) with their fee-wise discount only. */
+function selectedBaseLines() {
+    const rows = chargeableBreakdown.value
+        .filter((item) => selectedHeadIds.value.includes(item.fee_head_id))
+        .map((item) => ({ key: item.fee_head_id, fee: feeBase(item), disc: amt(discounts[item.fee_head_id]) }));
+    if (transport.apply) rows.push({ key: 'transport', fee: transportDue.value, disc: amt(transport.discount) });
+    return rows;
+}
+
+/**
+ * Overall discount split onto the selected lines in proportion to what each still owes after its
+ * own discount, so every fee line — and so fee-wise balances, reports and the PDF — carries its
+ * share. key → ₹.
+ *
+ * Largest-remainder rounding: each line gets its share rounded down to a whole rupee, then the
+ * rupees left over go one by one to the lines with the biggest fractions (ties: screen order).
+ * The shares are whole rupees and add up to exactly the overall discount. If the discount or a
+ * line's amount itself has paise, the same method runs in paise so the totals stay exact.
+ */
+const overallAlloc = computed(() => {
+    const rows = selectedBaseLines().map((r) => ({ key: r.key, room: round2(Math.max(0, r.fee - r.disc)) }));
+    const roomTotal = rows.reduce((s, r) => s + r.room, 0);
+    const take = round2(Math.min(amt(overallDiscount.value), roomTotal));
+    const out = {};
+    if (take <= 0 || roomTotal <= 0) return out;
+
+    const isWhole = (v) => Math.abs(v - Math.round(v)) < 0.001;
+    const unit = isWhole(take) && rows.every((r) => isWhole(r.room)) ? 1 : 0.01;
+    const toUnits = (v) => Math.round(v / unit);
+    const takeUnits = toUnits(take);
+    const roomUnits = toUnits(roomTotal);
+
+    const shares = rows.map((r, i) => {
+        const exact = (takeUnits * toUnits(r.room)) / roomUnits;
+        return { r, i, units: Math.floor(exact), frac: exact - Math.floor(exact), cap: toUnits(r.room) };
+    });
+    let left = takeUnits - shares.reduce((s, x) => s + x.units, 0);
+    const byFraction = [...shares].sort((a, b) => b.frac - a.frac || a.i - b.i);
+    while (left > 0) {
+        const before = left;
+        for (const x of byFraction) {
+            if (left <= 0) break;
+            if (x.units < x.cap) { x.units++; left--; }
+        }
+        if (left === before) break; // every line is full (can't happen: take ≤ room)
+    }
+    shares.forEach((x) => { out[x.r.key] = round2(x.units * unit); });
+    return out;
+});
+
+function headLine(item) {
+    const overall = overallAlloc.value[item.fee_head_id] || 0;
+    return lineCalc(feeBase(item), amt(discounts[item.fee_head_id]) + overall, amt(amounts[item.fee_head_id]), overall);
+}
+const transportLine = computed(() => {
+    const overall = overallAlloc.value.transport || 0;
+    return lineCalc(transportDue.value, amt(transport.discount) + overall, amt(transport.fee), overall);
+});
+
+function lineNote(l) {
+    if (l.overDiscount) return { text: `Discount is more than the fee ₹${money(l.fee)}`, cls: 'text-rose-600' };
+    if (l.overPaid) return { text: `Paid is more than payable ₹${money(l.net)} (after discount)`, cls: 'text-rose-600' };
+    const share = l.overall > 0 ? ` (incl. ₹${money(l.overall)} of overall discount)` : '';
+    return {
+        text: `Payable ₹${money(l.net)}${share} · Remaining due ₹${money(l.remaining)}`,
+        cls: l.remaining > 0.0001 ? 'text-amber-600' : 'text-slate-400',
+    };
+}
+
+// Amount typed in the summary's Received now box (null = the Paid boxes are the source). Kept so a
+// later discount change re-spreads the same money instead of leaving a line over-paid.
+const receivedOverall = ref(null);
+
+/** Re-fill every Paid box the user hasn't typed into (a discount on one line moves the overall split). */
+function resyncAllPaid() {
+    chargeableBreakdown.value.forEach((item) => syncFeePaid(item));
+    syncTransportPaid();
+    if (receivedOverall.value != null) spreadReceived(receivedOverall.value);
+}
+
+function onDiscountInput(item) {
+    clampInput(discounts, item.fee_head_id);
+    resyncAllPaid();
+}
+function onPaidInput(item) {
+    clampInput(amounts, item.fee_head_id);
+    paidEdited.add(item.fee_head_id);
+    receivedOverall.value = null;
+}
+function onTransportDiscountInput() {
+    clampInput(transport, 'discount');
+    resyncAllPaid();
+}
+function onOverallDiscountInput() {
+    clampInput(overallDiscount, 'value');
+    resyncAllPaid();
+}
+
+/**
+ * Received now (summary box): the money actually collected, filled into the selected fees in
+ * screen order up to each one's payable; anything beyond the total lands on the last line, which
+ * is then flagged as over-paid. The Paid boxes count as typed, so a later discount keeps them.
+ */
+function onReceivedNowInput(e) {
+    if (Number(e.target.value) < 0) e.target.value = 0;
+    receivedOverall.value = amt(e.target.value);
+    spreadReceived(receivedOverall.value);
+}
+function spreadReceived(total) {
+    let left = amt(total);
+    const lines = chargeableBreakdown.value
+        .filter((item) => selectedHeadIds.value.includes(item.fee_head_id))
+        .map((item) => ({ key: item.fee_head_id, net: headLine(item).net }));
+    if (transport.apply) lines.push({ key: 'transport', net: transportLine.value.net });
+    lines.forEach((l, i) => {
+        const take = round2(i === lines.length - 1 ? left : Math.min(left, l.net));
+        left = round2(left - take);
+        if (l.key === 'transport') transport.fee = take;
+        else amounts[l.key] = take;
+        paidEdited.add(l.key);
+    });
+}
+function onTransportPaidInput() {
+    clampInput(transport, 'fee');
+    paidEdited.add('transport');
+    receivedOverall.value = null;
 }
 
 function isMonthWaived(key) {
@@ -1223,8 +1440,8 @@ function feeBase(item) {
 
 function feeStatusLabel(item) {
     const base = feeBase(item);
-    const paidNow = Number(amounts[item.fee_head_id]) || 0;
-    const discNow = Number(discounts[item.fee_head_id]) || 0;
+    const paidNow = amt(amounts[item.fee_head_id]);
+    const discNow = amt(discounts[item.fee_head_id]);
     const dueAmt = Math.max(0, base - discNow - paidNow);
     const freq = feeFrequency(item);
     const prior = (freq === 'annual' || freq === 'one_time')
@@ -1244,25 +1461,31 @@ const chargeableBreakdown = computed(() =>
     (due.value?.breakdown || []).filter((item) => feeBase(item) > 0.0001),
 );
 
+// Receipt totals = the sum of each line's own Fee / Discount / Payable / Paid / Remaining, so a
+// discount on one fee never lowers another fee's due, and is never counted as money received.
 const summary = computed(() => {
-    let base = 0;
-    let discount = 0;
-    let applied = 0;
-    for (const item of chargeableBreakdown.value) {
-        if (!selectedHeadIds.value.includes(item.fee_head_id)) continue;
-        base += feeBase(item);
-        discount += Number(discounts[item.fee_head_id]) || 0;
-        applied += Number(amounts[item.fee_head_id]) || 0;
-    }
-    if (transport.apply) {
-        base += transportDue.value;
-        applied += Number(transport.fee) || 0;
-    }
-    discount = Math.min(discount, base);
-    const payable = Math.max(0, base - discount);
-    const received = applied;
-    const dueAfter = Math.max(0, payable - received);
-    return { base, discount, payable, applied, received, dueAfter };
+    const lines = chargeableBreakdown.value
+        .filter((item) => selectedHeadIds.value.includes(item.fee_head_id))
+        .map(headLine);
+    if (transport.apply) lines.push(transportLine.value);
+    const sum = (key) => round2(lines.reduce((s, l) => s + l[key], 0));
+    const base = sum('fee');
+    // Each line's discount counts up to its own fee only.
+    const discount = round2(lines.reduce((s, l) => s + Math.min(l.discount, l.fee), 0));
+    const applied = sum('paid');
+    // What the overall discount can cover: payable after the fee-wise discounts.
+    const overallRoom = round2(selectedBaseLines().reduce((s, r) => s + Math.max(0, r.fee - r.disc), 0));
+    return {
+        base,
+        discount,
+        payable: sum('net'),
+        applied,
+        received: applied,
+        dueAfter: sum('remaining'),
+        overpaid: lines.some((l) => l.overPaid || l.overDiscount),
+        overallRoom,
+        overallTooBig: amt(overallDiscount.value) > overallRoom + 0.0001,
+    };
 });
 
 const canSubmit = computed(() => {
@@ -1271,15 +1494,15 @@ const canSubmit = computed(() => {
     if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value && hasCashReceived()) return false;
     // A fee line counts when something is paid OR discounted on it — a 100% discount with ₹0
     // paid is a waiver and is saved as a discount-only line (it settles the fee, not as income).
-    const hasFee = selectedHeadIds.value.some((id) => (Number(amounts[id]) || 0) > 0 || (Number(discounts[id]) || 0) > 0);
-    const hasTransport = transport.apply && (Number(transport.fee) || 0) > 0;
+    const hasFee = selectedHeadIds.value.some((id) => amt(amounts[id]) > 0 || amt(discounts[id]) > 0 || (overallAlloc.value[id] || 0) > 0);
+    const hasTransport = transport.apply && (amt(transport.fee) > 0 || transportLine.value.discount > 0);
     return hasFee || hasTransport;
 });
 
 /** Is any money actually received on this receipt (fee paid or transport)? */
 function hasCashReceived() {
-    const fee = selectedHeadIds.value.some((id) => (Number(amounts[id]) || 0) > 0);
-    return fee || (transport.apply && (Number(transport.fee) || 0) > 0);
+    const fee = selectedHeadIds.value.some((id) => amt(amounts[id]) > 0);
+    return fee || (transport.apply && amt(transport.fee) > 0);
 }
 
 const studentReceiptsAllSelected = computed(
@@ -1702,14 +1925,15 @@ function windowPrint() {
     window.print();
 }
 
+/** Paid box follows payable after discount — unless the user typed the amount actually received. */
 function syncFeePaid(item) {
     if (!selectedHeadIds.value.includes(item.fee_head_id)) {
         amounts[item.fee_head_id] = 0;
+        paidEdited.delete(item.fee_head_id);
         return;
     }
-    const base = feeBase(item);
-    const disc = Number(discounts[item.fee_head_id]) || 0;
-    amounts[item.fee_head_id] = Math.max(0, base - disc);
+    if (paidEdited.has(item.fee_head_id)) return;
+    amounts[item.fee_head_id] = headLine(item).net;
 }
 
 function sameIdSet(a, b) {
@@ -1731,12 +1955,9 @@ function refreshSelectedAmounts() {
         selectedHeadIds.value = nextIds;
     }
     for (const item of due.value?.breakdown || []) {
-        if (!chargeableSet.has(item.fee_head_id)) {
+        if (!chargeableSet.has(item.fee_head_id) || !selectedHeadIds.value.includes(item.fee_head_id)) {
             amounts[item.fee_head_id] = 0;
-            continue;
-        }
-        if (!selectedHeadIds.value.includes(item.fee_head_id)) {
-            amounts[item.fee_head_id] = 0;
+            paidEdited.delete(item.fee_head_id);
             continue;
         }
         syncFeePaid(item);
@@ -1836,6 +2057,9 @@ async function selectStudent(s) {
     selectedHeadIds.value = [];
     Object.keys(amounts).forEach((k) => delete amounts[k]);
     Object.keys(discounts).forEach((k) => delete discounts[k]);
+    paidEdited.clear();
+    overallDiscount.value = 0;
+    receivedOverall.value = null;
     selectedMonths.value = [];
     paidMonths.value = [];
     waivedMonths.value = [];
@@ -1855,6 +2079,7 @@ async function selectStudent(s) {
     transport.route_id = null;
     transport.stop_id = null;
     transport.fee = 0;
+    transport.discount = 0;
     transportHeadId.value = null;
     transportFeeStartMonth.value = null;
     transportStops.value = [];
@@ -1972,6 +2197,7 @@ function clearStudent() {
 async function onTransportRouteChange() {
     transport.stop_id = null;
     transport.fee = 0;
+    paidEdited.delete('transport');
     await loadTransportStops(transport.route_id);
     syncTransportPaid();
 }
@@ -2041,6 +2267,81 @@ function allocateHeadAcrossMonths(item, months, paidAmt, discountAmt) {
     return lines.filter((l) => l.amount > 0 || l.discount > 0);
 }
 
+/**
+ * Selected months this receipt leaves fully unpaid — no payment or discount reaches them, so they
+ * get no line on the receipt. Same earliest-month-first split as the save (fee heads above;
+ * transport mirrors FeeMonthAllocator on the server). They stay due on every fee screen.
+ */
+const unpaidPreview = computed(() => {
+    const months = unpaidSelectedMonths();
+    if (!months.length) return [];
+    const out = [];
+    for (const item of chargeableBreakdown.value) {
+        if (!selectedHeadIds.value.includes(item.fee_head_id)) continue;
+        const l = headLine(item);
+        const name = item.fee_head_name || 'Fee';
+        const freq = feeFrequency(item);
+        if (freq === 'annual' || freq === 'one_time') {
+            if (l.paid <= 0 && l.discount <= 0 && l.fee > 0) {
+                out.push({ fee_head_id: item.fee_head_id, name, month: feeOnly([...months].sort())[0] || null, amount: l.fee });
+            }
+            continue;
+        }
+        const covered = new Set(allocateHeadAcrossMonths(item, months, l.paid, l.discount).flatMap((x) => x.months));
+        const amount = Number(item.amount) || 0;
+        for (const m of chargeMonthsFor(item, feeOnly([...months].sort()))) {
+            const unitDue = round2(Math.max(0, amount - alreadyPaidForHeadMonth(item, m)));
+            if (unitDue > 0.0001 && !covered.has(m)) out.push({ fee_head_id: item.fee_head_id, name, month: m, amount: unitDue });
+        }
+    }
+    if (transport.apply && transportDue.value > 0) {
+        const t = transportLine.value;
+        let discLeft = t.discount;
+        let paidLeft = t.paid;
+        for (const m of transportBillableMonths(months).sort()) {
+            const need = round2(Math.max(0, transportFare.value - alreadyPaidForHeadMonth({ fee_head_id: transportHeadId.value }, m)));
+            if (need <= 0.0001) continue;
+            const discTake = Math.min(discLeft, need);
+            discLeft -= discTake;
+            const paidTake = Math.min(paidLeft, need - discTake);
+            paidLeft -= paidTake;
+            if (discTake <= 0.0001 && paidTake <= 0.0001) out.push({ fee_head_id: transportHeadId.value, name: 'Transport', month: m, amount: need });
+        }
+    }
+    return out;
+});
+
+function monthName(key) {
+    if (!key) return '';
+    const [y, m] = key.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+}
+function unpaidWarning(u) {
+    return `${monthName(u.month)} ${u.name}: ₹${money(u.amount)} remains outstanding and will not appear as a paid line item on this receipt.`.trim();
+}
+
+/** The form's totals, saved with the receipt (the server re-checks them against the lines). */
+function receiptSnapshot() {
+    const lines = chargeableBreakdown.value
+        .filter((item) => selectedHeadIds.value.includes(item.fee_head_id))
+        .map((item) => ({ item, l: headLine(item), name: item.fee_head_name || 'Fee', id: item.fee_head_id }));
+    if (transport.apply) lines.push({ l: transportLine.value, name: 'Transport', id: transportHeadId.value });
+    return {
+        base_fee: summary.value.base,
+        individual_discount: round2(lines.reduce((s, x) => s + (x.l.discount - x.l.overall), 0)),
+        overall_discount: round2(lines.reduce((s, x) => s + x.l.overall, 0)),
+        lines: lines.map((x) => ({
+            fee_head_id: x.id,
+            name: x.name,
+            fee: x.l.fee,
+            individual_discount: round2(x.l.discount - x.l.overall),
+            overall_discount: x.l.overall,
+            paid: x.l.paid,
+        })),
+        unpaid: unpaidPreview.value,
+    };
+}
+
 async function collect() {
     if (!canSubmit.value) {
         if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value && hasCashReceived()) {
@@ -2050,11 +2351,22 @@ async function collect() {
         }
         return;
     }
-    const overDiscount = selectedHeadIds.value
+    // Discount can't exceed the fee, and the amount received can't exceed what's payable after
+    // discount — either would leave a negative due on the receipt.
+    const checks = selectedHeadIds.value
         .map((id) => (due.value?.breakdown || []).find((row) => row.fee_head_id === id))
-        .find((item) => item && (Number(discounts[item.fee_head_id]) || 0) > feeBase(item) + 0.0001);
-    if (overDiscount) {
-        pushToast(`Discount on ${overDiscount.fee_head_name} is more than its due ₹${money(feeBase(overDiscount))}.`, 'error');
+        .filter(Boolean)
+        .map((item) => ({ name: item.fee_head_name || 'Fee', line: headLine(item) }));
+    if (transport.apply) checks.push({ name: 'Transport', line: transportLine.value });
+    if (summary.value.overallTooBig) {
+        pushToast(`Overall discount is more than the payable after fee-wise discounts ₹${money(summary.value.overallRoom)}.`, 'error');
+        return;
+    }
+    const bad = checks.find((c) => c.line.overDiscount || c.line.overPaid);
+    if (bad) {
+        pushToast(bad.line.overDiscount
+            ? `Discount on ${bad.name} is more than its due ₹${money(bad.line.fee)}.`
+            : `Paid on ${bad.name} (₹${money(bad.line.paid)}) is more than its payable after discount ₹${money(bad.line.net)}.`, 'error');
         return;
     }
 
@@ -2070,8 +2382,8 @@ async function collect() {
     const headLines = selectedHeadIds.value
         .map((id) => {
             const item = (due.value?.breakdown || []).find((row) => row.fee_head_id === id);
-            const paidAmt = Number(amounts[id]) || 0;
-            const discAmt = Number(discounts[id]) || 0;
+            const paidAmt = amt(amounts[id]);
+            const discAmt = item ? headLine(item).discount : 0;
             if (!item || (paidAmt <= 0 && discAmt <= 0)) return null;
             if (paidAmt <= 0) return `${item.fee_head_name || 'Fee'}: waived (discount ₹${money(discAmt)})`;
             const disc = discAmt > 0 ? ` (disc ₹${money(discAmt)})` : '';
@@ -2079,7 +2391,8 @@ async function collect() {
         })
         .filter(Boolean);
 
-    const transportPaid = transport.apply ? (Number(transport.fee) || 0) : 0;
+    const transportPaid = transport.apply ? amt(transport.fee) : 0;
+    const transportDisc = transport.apply ? transportLine.value.discount : 0;
     const s = summary.value;
 
     confirmSubmitSummary.value = [
@@ -2094,15 +2407,19 @@ async function collect() {
         { label: 'Class', value: studentPlaceLabel.value },
         { label: 'Months', value: monthLabels.join(', ') || '—' },
         { label: 'Fee heads', value: headLines.length ? headLines.join(' · ') : '—' },
-        ...(transportPaid > 0 ? [{ label: 'Transport', value: `₹${money(transportPaid)}` }] : []),
+        ...(transportPaid > 0 || transportDisc > 0
+            ? [{ label: 'Transport', value: `₹${money(transportPaid)}${transportDisc > 0 ? ` (disc ₹${money(transportDisc)})` : ''}` }]
+            : []),
         { label: 'Base fee', value: `₹${money(s.base)}` },
         ...(s.discount > 0 ? [{ label: 'Discount', value: `-₹${money(s.discount)}` }] : []),
+        ...(amt(overallDiscount.value) > 0 ? [{ label: 'of which overall discount', value: `₹${money(amt(overallDiscount.value))}` }] : []),
         { label: 'Payment mode', value: paymentMode.value },
         { label: 'Payment date', value: paymentDate.value || '—' },
         ...(referenceNo.value ? [{ label: 'Reference', value: referenceNo.value }] : []),
         { label: 'Total payable', value: `₹${money(s.payable)}` },
         { label: 'Submitting now', value: `₹${money(s.received)}`, emphasis: true },
         { label: 'Due after payment', value: `₹${money(s.dueAfter)}` },
+        ...unpaidPreview.value.map((u) => ({ label: 'Stays unpaid', value: unpaidWarning(u) })),
     ];
     confirmSubmitOpen.value = true;
 }
@@ -2116,16 +2433,18 @@ async function submitFeeConfirmed() {
         const items = [];
         for (const id of selectedHeadIds.value) {
             const item = (due.value?.breakdown || []).find((row) => row.fee_head_id === id);
-            const paidAmt = Number(amounts[id]) || 0;
-            const discAmt = Number(discounts[id]) || 0;
+            const paidAmt = amt(amounts[id]);
+            // Fee-wise discount + this fee's share of the overall discount.
+            const discAmt = item ? headLine(item).discount : 0;
             // Discount-only lines (₹0 paid) are kept — they are the waiver record for that fee.
             if ((paidAmt <= 0 && discAmt <= 0) || !item) continue;
             items.push(...allocateHeadAcrossMonths(item, months, paidAmt, discAmt));
         }
 
-        const transportFee = transport.apply ? (Number(transport.fee) || 0) : 0;
-        const transportCharge = transport.apply ? Math.max(transportDue.value, transportFee) : 0;
-        if (!items.length && transportFee <= 0) {
+        const transportFee = transport.apply ? amt(transport.fee) : 0;
+        const transportDiscount = transport.apply ? transportLine.value.discount : 0;
+        const transportCharge = transport.apply ? Math.max(transportDue.value, transportFee + transportDiscount) : 0;
+        if (!items.length && transportFee <= 0 && transportDiscount <= 0) {
             pushToast('Enter amounts for selected fee types.', 'error');
             return;
         }
@@ -2143,9 +2462,11 @@ async function submitFeeConfirmed() {
             reference_no: referenceNo.value || null,
             remarks: remarks.value || null,
             transport_fee: transportFee,
+            transport_discount: transportDiscount,
             transport_charge: transportCharge,
             transport_route_id: transport.apply ? transport.route_id : null,
             transport_stop_id: transport.apply ? transport.stop_id : null,
+            snapshot: receiptSnapshot(),
         });
 
         pushToast(`Receipt ${data.receipt_no || ''} generated.`.replace('  ', ' '), 'success');
@@ -2270,7 +2591,7 @@ function printSelected() {
 
 watch(selectedMonths, () => {
     refreshSelectedAmounts();
-    syncTransportPaid();
+    resyncAllPaid();
 }, { deep: true });
 watch(applyAllMonths, () => refreshSelectedAmounts());
 watch(() => backdate.on, (on) => {
@@ -2282,15 +2603,14 @@ watch(() => backdate.on, (on) => {
 watch(
     () => transport.apply,
     (on) => {
-        if (on) {
-            ensureTransportRoutes();
-            syncTransportPaid();
-        }
+        if (on) ensureTransportRoutes();
+        // Transport joining / leaving the receipt moves the overall-discount split.
+        resyncAllPaid();
     },
 );
 watch(
     () => transport.stop_id,
-    () => syncTransportPaid(),
+    () => resyncAllPaid(),
 );
 
 watch(activeTab, (tab) => {
