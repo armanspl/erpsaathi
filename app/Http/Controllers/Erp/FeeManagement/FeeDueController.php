@@ -31,7 +31,7 @@ class FeeDueController extends Controller
 {
     /**
      * Automatic dues — computed from fee structure − discounts − payments.
-     * Filters: branch_id, school_class_id, section_id, search, scope=till_current|current_month.
+     * Filters: branch_id, school_class_id, section_id, search, scope=till_current|till_next_month|month (+ month=Y-m).
      */
     public function index(Request $request)
     {
@@ -56,10 +56,11 @@ class FeeDueController extends Controller
             'school_class_id' => 'nullable|exists:school_classes,id',
             'section_id' => 'nullable|exists:sections,id',
             'search' => 'nullable|string|max:100',
-            'scope' => 'nullable|in:till_current,current_month,till_next_month',
+            'scope' => 'nullable|in:till_current,current_month,till_next_month,month',
+            'month' => 'nullable|date_format:Y-m',
         ]);
 
-        $scope = $data['scope'] ?? 'till_current';
+        $scope = $this->resolveScope($data);
 
         $query = Student::with([
             'schoolClass:id,name',
@@ -428,9 +429,10 @@ class FeeDueController extends Controller
     public function automaticReceipt(Request $request, Student $student)
     {
         $data = $request->validate([
-            'scope' => 'nullable|in:till_current,current_month,till_next_month',
+            'scope' => 'nullable|in:till_current,current_month,till_next_month,month',
+            'month' => 'nullable|date_format:Y-m',
         ]);
-        $scope = $data['scope'] ?? 'till_current';
+        $scope = $this->resolveScope($data);
 
         $session = AcademicSession::fromRequest($request, true);
         if (! $session) {
@@ -469,7 +471,7 @@ class FeeDueController extends Controller
             }
 
             if ($freq === 'monthly') {
-                $keys = $scope === 'current_month'
+                $keys = $scope === 'month'
                     ? (count($monthKeys) ? [end($monthKeys)] : [])
                     : $monthKeys;
                 foreach ($keys as $key) {
@@ -528,7 +530,7 @@ class FeeDueController extends Controller
 
         if ($transportFare > 0 && $transportHeadId) {
             $headKey = (string) $transportHeadId;
-            $keys = $scope === 'current_month'
+            $keys = $scope === 'month'
                 ? (count($monthKeys) ? [end($monthKeys)] : [])
                 : $monthKeys;
             foreach ($keys as $key) {
@@ -647,9 +649,10 @@ class FeeDueController extends Controller
     public function automaticDetail(Request $request, Student $student)
     {
         $data = $request->validate([
-            'scope' => 'nullable|in:till_current,current_month,till_next_month',
+            'scope' => 'nullable|in:till_current,current_month,till_next_month,month',
+            'month' => 'nullable|date_format:Y-m',
         ]);
-        $scope = $data['scope'] ?? 'till_current';
+        $scope = $this->resolveScope($data);
 
         $session = AcademicSession::fromRequest($request, true);
         if (! $session) {
@@ -807,7 +810,7 @@ class FeeDueController extends Controller
             };
 
             if ($freq === 'monthly' || $freq === 'quarterly' || $freq === 'half_yearly') {
-                $keys = $scope === 'current_month'
+                $keys = $scope === 'month'
                     ? (count($monthKeys) ? [end($monthKeys)] : [])
                     : $monthKeys;
                 foreach ($keys as $key) {
@@ -826,7 +829,7 @@ class FeeDueController extends Controller
 
         if ($transportFare > 0 && $transportHeadId) {
             $headKey = (string) $transportHeadId;
-            $keys = $scope === 'current_month'
+            $keys = $scope === 'month'
                 ? (count($monthKeys) ? [end($monthKeys)] : [])
                 : $monthKeys;
             foreach ($keys as $key) {
@@ -1048,7 +1051,7 @@ class FeeDueController extends Controller
             $amount = (float) ($item['amount'] ?? 0);
             $freq = strtolower((string) ($item['frequency'] ?? 'one_time'));
             $total += match ($freq) {
-                'monthly' => $amount * ($scope === 'current_month' ? min(1, $months) : $months),
+                'monthly' => $amount * ($scope === 'month' ? min(1, $months) : $months),
                 'quarterly' => $amount * max(1, (int) ceil($months / 3)),
                 'annual', 'one_time' => $months > 0 ? $amount : 0,
                 default => $months > 0 ? $amount : 0,
@@ -1063,6 +1066,25 @@ class FeeDueController extends Controller
         return count($this->monthKeysInScope($session, $scope));
     }
 
+    /** Month (Y-m) picked for the "month" scope — set by resolveScope(). */
+    private ?string $scopeMonth = null;
+
+    /**
+     * Scope from the request: till_current | till_next_month | month (one chosen month, ?month=Y-m,
+     * default this month). The older "current_month" means month = this month.
+     */
+    private function resolveScope(array $data): string
+    {
+        $scope = $data['scope'] ?? 'till_current';
+        if ($scope === 'current_month' || $scope === 'month') {
+            $this->scopeMonth = $scope === 'month' && ! empty($data['month']) ? $data['month'] : now()->format('Y-m');
+
+            return 'month';
+        }
+
+        return $scope;
+    }
+
     /** @return list<string> Y-m keys */
     private function monthKeysInScope(AcademicSession $session, string $scope): array
     {
@@ -1074,12 +1096,14 @@ class FeeDueController extends Controller
         $end = $session->end_date->copy()->startOfMonth();
         $now = now()->startOfMonth();
 
-        if ($scope === 'current_month') {
-            if ($now < $start || $now > $end) {
+        if ($scope === 'month') {
+            // Only the chosen month — and only if it's one of this session's months.
+            $month = Carbon::createFromFormat('!Y-m', $this->scopeMonth ?? $now->format('Y-m'));
+            if ($month < $start || $month > $end) {
                 return [];
             }
 
-            return [$now->format('Y-m')];
+            return [$month->format('Y-m')];
         }
 
         if ($now < $start) {
@@ -1125,8 +1149,8 @@ class FeeDueController extends Controller
         if (! $session->start_date || ! $session->end_date) {
             return '';
         }
-        if ($scope === 'current_month') {
-            return 'Only '.now()->format('M Y');
+        if ($scope === 'month') {
+            return 'Only '.Carbon::createFromFormat('!Y-m', $this->scopeMonth ?? now()->format('Y-m'))->format('M Y');
         }
         $till = now()->startOfMonth();
         $end = $session->end_date->copy()->startOfMonth();

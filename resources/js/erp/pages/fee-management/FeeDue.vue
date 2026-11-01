@@ -81,8 +81,19 @@
                 <div class="mt-3 flex flex-wrap gap-2">
                     <button type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium transition" :class="scope === 'till_current' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'" @click="setScope('till_current')">Till current month</button>
                     <button type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium transition" :class="scope === 'till_next_month' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'" @click="setScope('till_next_month')">Till next month</button>
-                    <button type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium transition" :class="scope === 'current_month' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'" @click="setScope('current_month')">Current month only</button>
+                    <button type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium transition" :class="scope === 'month' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'" @click="setScope('month')">Month wise ▾</button>
+                    <select
+                        v-if="scope === 'month'"
+                        v-model="dueMonth"
+                        class="form-input !w-auto !py-1.5 !text-sm"
+                        aria-label="Month"
+                        @change="setScope('month')"
+                    >
+                        <option v-if="!monthOptions.length" value="">Loading months…</option>
+                        <option v-for="m in monthOptions" :key="m.key" :value="m.key">{{ m.label }}</option>
+                    </select>
                 </div>
+                <p v-if="scope === 'month'" class="mt-2 text-xs text-slate-400">Showing only the dues of {{ dueMonthLabel }} — fees charged in that month that are still unpaid.</p>
             </div>
 
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -753,8 +764,36 @@ function switchTab(id) {
     scheduleReload(0);
 }
 
-function setScope(value) {
+// "Month wise" scope: dues of one chosen month (session months from /due/meta).
+const dueMonth = ref('');
+const monthOptions = ref([]);
+const dueMonthLabel = computed(() => monthOptions.value.find((m) => m.key === dueMonth.value)?.label || dueMonth.value);
+
+async function loadMonthOptions() {
+    if (monthOptions.value.length) return;
+    try {
+        const { data } = await client.get('/fee-management/due/meta');
+        monthOptions.value = data.current_session?.months || [];
+    } catch {
+        monthOptions.value = [];
+    }
+    if (!dueMonth.value) {
+        const now = new Date();
+        const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const keys = monthOptions.value.map((m) => m.key);
+        // This month when it's in the session, else the session's last month (or first, before it starts).
+        dueMonth.value = keys.includes(thisMonth) ? thisMonth : (keys.length && thisMonth > keys[keys.length - 1] ? keys[keys.length - 1] : keys[0] || thisMonth);
+    }
+}
+
+function scopeParams() {
+    return scope.value === 'month' ? { scope: 'month', month: dueMonth.value } : { scope: scope.value };
+}
+const scopeKey = computed(() => (scope.value === 'month' ? `month:${dueMonth.value}` : scope.value));
+
+async function setScope(value) {
     scope.value = value;
+    if (value === 'month') await loadMonthOptions();
     expandedAutoId.value = null;
     Object.keys(autoDetailCache).forEach((k) => delete autoDetailCache[k]);
     if (activeTab.value === 'automatic') reload();
@@ -784,7 +823,7 @@ async function reload() {
     loading.value = true;
     try {
         if (activeTab.value === 'automatic') {
-            const { data } = await client.get('/fee-management/due', { params: { ...filterParams(), scope: scope.value } });
+            const { data } = await client.get('/fee-management/due', { params: { ...filterParams(), ...scopeParams() } });
             autoRows.value = data.rows || [];
             autoPage.value = 1;
             Object.assign(summary, data.summary || { students: 0, charged: 0, paid: 0, due: 0 });
@@ -809,7 +848,7 @@ function openDueReceipt(studentId, type = 'manual') {
     const path = type === 'automatic'
         ? `/fee-management/due/automatic/${studentId}/pdf`
         : `/fee-management/due/manual/${studentId}/pdf`;
-    const params = type === 'automatic' ? { scope: scope.value } : {};
+    const params = type === 'automatic' ? scopeParams() : {};
     downloadPdf(path, `fee-due-${studentId}.pdf`, params).catch(() => pushToast('Could not open due receipt PDF.', 'error'));
 }
 
@@ -819,15 +858,15 @@ async function toggleAutoExpand(studentId) {
         return;
     }
     expandedAutoId.value = studentId;
-    if (autoDetailCache[studentId]?.scope === scope.value) {
+    if (autoDetailCache[studentId]?.scopeKey === scopeKey.value) {
         return;
     }
     autoDetailLoadingId.value = studentId;
     try {
         const { data } = await client.get(`/fee-management/due/automatic/${studentId}/detail`, {
-            params: { scope: scope.value },
+            params: scopeParams(),
         });
-        autoDetailCache[studentId] = { ...data, scope: scope.value };
+        autoDetailCache[studentId] = { ...data, scopeKey: scopeKey.value };
     } catch {
         delete autoDetailCache[studentId];
         expandedAutoId.value = null;
@@ -1079,7 +1118,7 @@ async function exportDues(kind, format) {
     try {
         const path = kind === 'automatic' ? '/fee-management/due/automatic/export' : '/fee-management/due/manual/export';
         const params = { ...filterParams(), format };
-        if (kind === 'automatic') params.scope = scope.value;
+        if (kind === 'automatic') Object.assign(params, scopeParams());
 
         const response = await client.get(path, { params, responseType: 'blob' });
         const disposition = response.headers['content-disposition'] || '';
@@ -1118,7 +1157,7 @@ function printDues(kind) {
 
     if (kind === 'automatic') {
         const rows = sortedAutoRows.value;
-        title = `Fee Due — Automatic (${SCOPE_LABELS[scope.value] || scope.value})`;
+        title = `Fee Due — Automatic (${scope.value === 'month' ? `Only ${dueMonthLabel.value}` : SCOPE_LABELS[scope.value] || scope.value})`;
         head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Mother</th><th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th class="num">Due</th></tr>';
         body = rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
             <td>${esc([r.school_class, r.section].filter(Boolean).join(' / '))}</td><td>${esc(r.roll_no || '—')}</td>
