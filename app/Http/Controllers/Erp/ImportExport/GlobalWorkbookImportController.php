@@ -3153,7 +3153,7 @@ class GlobalWorkbookImportController extends Controller
             $key = $this->expenseKey($date, $title, $amount, trim((string) ($row['part1'] ?? '')) ?: 'General',
                 (string) ($row['part2'] ?? ''), (string) ($row['part3'] ?? ''), (string) ($row['remarks'] ?? ''));
             // The sheet's RCPT no. is the expense's stable identity (a repeated RCPT only counts once).
-            $rcpt = $this->expenseRcptVoucher($row, $date);
+            $rcpt = $this->expenseRcptVoucher($row, $date, $byVoucher);
             if ($rcpt !== null && isset($rcptSeen[$rcpt])) {
                 $rcpt = null;
             }
@@ -3235,7 +3235,10 @@ class GlobalWorkbookImportController extends Controller
             [$from, $to] = [min($dates), max($dates)];
             foreach ($byVoucher as $voucher => $existing) {
                 $d = substr((string) $existing['date'], 0, 10);
-                if (! isset($claimed[$existing['id']]) && str_starts_with($voucher, 'EXP-IMP-') && $d >= $from && $d <= $to) {
+                // Imported vouchers: older EXP-IMP-… ones and RCPT ones (EXP-17, EXP-17/2027-28) —
+                // not the Expenses screen's zero-padded auto numbers (EXP-00012).
+                $imported = str_starts_with($voucher, 'EXP-IMP-') || preg_match('#^EXP-[1-9]\d*(/\d{4}-\d{2})?$#', $voucher);
+                if (! isset($claimed[$existing['id']]) && $imported && $d >= $from && $d <= $to) {
                     $cache['flagged'][] = [
                         'type' => 'expense_not_in_excel',
                         'voucher_no' => $voucher,
@@ -3250,12 +3253,14 @@ class GlobalWorkbookImportController extends Controller
     }
 
     /**
-     * Voucher for an EXPENSES row's RCPT no.: "EXP-IMP-<year>-R<rcpt>" (RCPT restarts every
-     * year, so the year — the YEAR cell, else the April–March year of the date — keeps them
-     * apart, and the IMP- part keeps them clear of expenses typed in on the Expenses screen).
-     * An RCPT exported by the ERP ("IMP-2026-27-R15") is already a voucher and is used as is.
+     * Voucher for an EXPENSES row's RCPT no. — saved exactly as the sheet has it, the same way
+     * the Expenses screen saves a typed receipt no.: RCPT 17 → "EXP-17" (shown and exported as
+     * 17). RCPT restarts every year, so EXP-17 already used by another April–March year makes
+     * this one "EXP-17/2027-28". An RCPT exported by the ERP is read back the same way.
+     *
+     * @param  array<string, array<string, mixed>>  $byVoucher  saved expenses by voucher_no
      */
-    private function expenseRcptVoucher(array $row, string $date): ?string
+    private function expenseRcptVoucher(array $row, string $date, array $byVoucher): ?string
     {
         $rcpt = trim((string) ($row['receipt_no'] ?? ''));
         if (is_numeric($rcpt) && str_contains($rcpt, '.') && (float) $rcpt == (int) (float) $rcpt) {
@@ -3264,21 +3269,29 @@ class GlobalWorkbookImportController extends Controller
         if ($rcpt === '' || $this->looksLikeFormula($rcpt) || mb_strlen($rcpt) > 60) {
             return null;
         }
-        if (str_starts_with(strtoupper($rcpt), 'IMP-')) {
-            return 'EXP-'.$rcpt;
-        }
-        if (str_starts_with(strtoupper($rcpt), 'EXP-')) {
-            return $rcpt;
+        $voucher = str_starts_with(strtoupper($rcpt), 'EXP-') ? $rcpt : 'EXP-'.$rcpt;
+        if (str_contains($voucher, '/')) {
+            return $voucher; // already year-qualified (exported from a later year)
         }
 
         $year = trim((string) ($row['year'] ?? ''));
         if (! preg_match('/^\d{4}-\d{2}$/', $year)) {
-            $y = (int) substr($date, 0, 4);
-            $start = (int) substr($date, 5, 2) >= 4 ? $y : $y - 1;
-            $year = sprintf('%04d-%02d', $start, ($start + 1) % 100);
+            $year = $this->fiscalYearOf($date);
         }
+        $taken = $byVoucher[$voucher] ?? null;
 
-        return 'EXP-IMP-'.$year.'-R'.$rcpt;
+        return $taken && $this->fiscalYearOf(substr((string) $taken['date'], 0, 10)) !== $year
+            ? $voucher.'/'.$year
+            : $voucher;
+    }
+
+    /** April–March year of a Y-m-d date, e.g. 2026-05-10 → "2026-27". */
+    private function fiscalYearOf(string $date): string
+    {
+        $y = (int) substr($date, 0, 4);
+        $start = (int) substr($date, 5, 2) >= 4 ? $y : $y - 1;
+
+        return sprintf('%04d-%02d', $start, ($start + 1) % 100);
     }
 
     private function expenseKey(string $date, string $title, float $amount, string $part1, string $part2, string $part3, string $remarks): string
