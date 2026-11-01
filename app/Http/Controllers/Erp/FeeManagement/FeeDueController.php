@@ -105,10 +105,8 @@ class FeeDueController extends Controller
             $scopeLabel = null;
             foreach ($sessions as $session) {
                 $calc = FeeCalculator::forStudent($student, $session);
-                $monthKeys = $this->monthKeysInScope($session, $scope);
-                $monthKeys = $balance->filterMonthsFromFeeStart($student, $monthKeys);
                 $paidInfo = $balance->paidByHead($student, $session);
-                $remaining = $balance->remainingForMonths($student, $session, $monthKeys, $calc, $paidInfo);
+                $remaining = $this->remainingInScope($balance, $student, $session, $scope, $calc, $paidInfo);
 
                 $totalFee += $remaining['charge'];
                 $totalDiscount += $remaining['discount'];
@@ -669,7 +667,14 @@ class FeeDueController extends Controller
         $balance = app(FeeBalanceService::class);
         $monthKeys = $balance->filterMonthsFromFeeStart($student, $this->monthKeysInScope($session, $scope));
         $paidInfo = $balance->paidByHead($student, $session);
-        $monthRows = $balance->monthRows($student, $session, $monthKeys, $calc, $paidInfo);
+        // One chosen month: work through the session up to it (so a session-wide concession is
+        // used up by the earlier months first, as in "Till current month"), then keep that month.
+        $monthRows = $scope === 'month'
+            ? array_values(array_filter(
+                $balance->monthRows($student, $session, $this->sessionMonthsThrough($session, $monthKeys), $calc, $paidInfo),
+                fn (array $r) => in_array($r['month_key'] ?? null, $monthKeys, true)
+            ))
+            : $balance->monthRows($student, $session, $monthKeys, $calc, $paidInfo);
 
         $totalCharge = round(array_sum(array_column($monthRows, 'charge')), 2);
         $totalConcession = round(array_sum(array_column($monthRows, 'concession')), 2);
@@ -1083,6 +1088,55 @@ class FeeDueController extends Controller
         }
 
         return $scope;
+    }
+
+    /**
+     * Charge / paid / discount / due for the scope. For one chosen month it is (session start →
+     * that month) minus (session start → the month before): a session-wide concession is used up
+     * month by month from the start, so the chosen month gets only what is left of it — the
+     * months then add up to "Till current month".
+     *
+     * @return array{charge: float, paid: float, discount: float, due: float}
+     */
+    private function remainingInScope(FeeBalanceService $balance, Student $student, AcademicSession $session, string $scope, array $calc, array $paidInfo): array
+    {
+        $monthKeys = $this->monthKeysInScope($session, $scope);
+        if ($scope !== 'month') {
+            return $balance->remainingForMonths($student, $session, $balance->filterMonthsFromFeeStart($student, $monthKeys), $calc, $paidInfo);
+        }
+
+        $through = $this->sessionMonthsThrough($session, $monthKeys);
+        $upTo = $balance->remainingForMonths($student, $session, $through, $calc, $paidInfo);
+        $before = $balance->remainingForMonths($student, $session, array_slice($through, 0, -1), $calc, $paidInfo);
+        $out = [];
+        foreach (['charge', 'paid', 'discount', 'due'] as $k) {
+            $out[$k] = round(max(0, (float) ($upTo[$k] ?? 0) - (float) ($before[$k] ?? 0)), 2);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Session months from the start through the (single) month in $monthKeys — [] when it isn't
+     * one of the session's months.
+     *
+     * @param  list<string>  $monthKeys
+     * @return list<string>
+     */
+    private function sessionMonthsThrough(AcademicSession $session, array $monthKeys): array
+    {
+        if ($monthKeys === [] || ! $session->start_date) {
+            return [];
+        }
+        $keys = [];
+        $cursor = $session->start_date->copy()->startOfMonth();
+        $last = end($monthKeys);
+        while ($cursor->format('Y-m') <= $last) {
+            $keys[] = $cursor->format('Y-m');
+            $cursor->addMonth();
+        }
+
+        return $keys;
     }
 
     /** @return list<string> Y-m keys */

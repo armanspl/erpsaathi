@@ -56,7 +56,7 @@
 
         <div class="erp-nav-actions">
           <a :href="primaryHref" class="erp-nav-login">{{ primaryLabel }}</a>
-          <a :href="tryDemoUrl" class="erp-btn erp-btn-primary erp-btn-sm">{{ c.navRequestDemo }}</a>
+          <a href="#request-demo" @click.prevent="openDemoForm" class="erp-btn erp-btn-primary erp-btn-sm">{{ c.navRequestDemo }}</a>
         </div>
       </div>
 
@@ -66,7 +66,7 @@
             <a v-for="link in c.navLinks" :key="'m-' + link.href" :href="link.href" @click="mobileMenuOpen = false">{{ link.label }}</a>
             <a :href="primaryHref">{{ primaryLabel }}</a>
           </nav>
-          <a :href="tryDemoUrl" class="erp-btn erp-btn-primary erp-btn-block">{{ c.navRequestDemo }}</a>
+          <a href="#request-demo" @click.prevent="openDemoForm" class="erp-btn erp-btn-primary erp-btn-block">{{ c.navRequestDemo }}</a>
         </div>
       </Transition>
     </header>
@@ -84,7 +84,7 @@
             </h1>
             <p class="erp-hero-sub">{{ c.heroSub }}</p>
             <div class="erp-hero-actions">
-              <a :href="tryDemoUrl" class="erp-btn erp-btn-primary erp-btn-lg">
+              <a href="#request-demo" @click.prevent="openDemoForm" class="erp-btn erp-btn-primary erp-btn-lg">
                 {{ c.heroCtaPrimary }}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
               </a>
@@ -509,7 +509,7 @@
             </div>
           </div>
           <div class="erp-steps-cta" v-reveal>
-            <a :href="tryDemoUrl" class="erp-btn erp-btn-primary erp-btn-lg">{{ c.stepsCta }}</a>
+            <a href="#request-demo" @click.prevent="openDemoForm" class="erp-btn erp-btn-primary erp-btn-lg">{{ c.stepsCta }}</a>
           </div>
         </div>
       </section>
@@ -532,7 +532,7 @@
               <p class="erp-testimonial-quote">“{{ item.quote }}”</p>
               <footer>
                 <strong>{{ item.name }}</strong>
-                <span>{{ item.role }} · {{ item.school }}, {{ item.city }}</span>
+                <span>{{ item.role }} · {{ item.school }}<template v-if="item.city">, {{ item.city }}</template></span>
               </footer>
             </blockquote>
           </div>
@@ -577,7 +577,7 @@
             <p class="erp-cta-sub">{{ c.ctaSub }}</p>
           </div>
           <div class="erp-cta-actions">
-            <a :href="tryDemoUrl" class="erp-btn erp-btn-primary erp-btn-lg">{{ c.ctaPrimary }}</a>
+            <a href="#request-demo" @click.prevent="openDemoForm" class="erp-btn erp-btn-primary erp-btn-lg">{{ c.ctaPrimary }}</a>
             <a :href="whatsappUrl" target="_blank" rel="noopener" class="erp-btn erp-btn-outline-light erp-btn-lg">{{ c.ctaSecondary }}</a>
           </div>
         </div>
@@ -603,7 +603,7 @@
           <a href="#roles">{{ c.footerLinks.features }}</a>
           <a href="#modules">{{ c.footerLinks.modules }}</a>
           <a href="#contact">{{ c.footerLinks.contact }}</a>
-          <a :href="tryDemoUrl">{{ c.footerLinks.requestDemo }}</a>
+          <a href="#request-demo" @click.prevent="openDemoForm">{{ c.footerLinks.requestDemo }}</a>
         </nav>
 
         <nav class="erp-footer-col" aria-label="Product">
@@ -636,6 +636,42 @@
         <span>{{ c.footerSystemLabel }}</span>
       </div>
     </footer>
+
+    <!-- ============ Request a Demo form ============ -->
+    <transition name="erp-demo-fade">
+      <div v-if="demoFormOpen" class="erp-demo-backdrop" @click.self="closeDemoForm">
+        <div class="erp-demo-modal" role="dialog" aria-modal="true" aria-labelledby="erp-demo-title">
+          <button type="button" class="erp-demo-close" :aria-label="c.demoFormClose" @click="closeDemoForm">×</button>
+          <template v-if="!demoDone">
+            <p class="erp-eyebrow">ERPSaathi</p>
+            <h2 id="erp-demo-title" class="erp-demo-title">{{ c.demoFormTitle }}</h2>
+            <p class="erp-demo-sub">{{ c.demoFormSub }}</p>
+            <form class="erp-demo-form" novalidate @submit.prevent="submitDemo">
+              <label class="erp-demo-field">
+                <span>{{ c.demoFormSchool }}</span>
+                <input ref="demoSchoolInput" v-model.trim="demoForm.school_name" type="text" maxlength="150" autocomplete="organization" :placeholder="c.demoFormSchoolPh" required />
+              </label>
+              <label class="erp-demo-field">
+                <span>{{ c.demoFormPhone }}</span>
+                <input v-model.trim="demoForm.phone" type="tel" inputmode="tel" maxlength="18" autocomplete="tel" :placeholder="c.demoFormPhonePh" required />
+              </label>
+              <!-- Honeypot for bots; hidden from people and screen readers -->
+              <input v-model="demoForm.website" type="text" name="website" tabindex="-1" autocomplete="off" class="erp-demo-hp" aria-hidden="true" />
+              <p v-if="demoError" class="erp-demo-error" role="alert">{{ demoError }}</p>
+              <button type="submit" class="erp-btn erp-btn-primary erp-btn-lg erp-btn-block" :disabled="demoSending">
+                {{ demoSending ? c.demoFormSending : c.demoFormSubmit }}
+              </button>
+            </form>
+          </template>
+          <div v-else class="erp-demo-done">
+            <div class="erp-demo-done-icon" aria-hidden="true">✓</div>
+            <h2 class="erp-demo-title">{{ c.demoFormDoneTitle }}</h2>
+            <p class="erp-demo-sub">{{ demoDone }}</p>
+            <button type="button" class="erp-btn erp-btn-primary erp-btn-lg" @click="closeDemoForm">{{ c.demoFormClose }}</button>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- ============ WhatsApp floating button ============ -->
     <a class="erp-whatsapp-fab" :href="whatsappUrl" target="_blank" rel="noopener" aria-label="Chat with us on WhatsApp">
@@ -953,28 +989,25 @@ const CONTENT_EN = {
   stepsCta: 'Book a demo',
 
   testimonialsEyebrow: 'Schools like yours',
-  testimonialsTitle: 'What principals say',
+  testimonialsTitle: 'What school directors say',
   testimonials: [
     {
-      quote: 'Fee follow-ups used to take days. Now the office sees dues the same afternoon and collections are clearer.',
-      name: 'Mrs. Sunita Mehra',
-      role: 'Principal',
-      school: 'Green Valley Public School',
-      city: 'Jaipur',
+      quote: 'Fees, receipts and dues for every student are now in one place. Our office sees exactly who has paid and who is pending the same day, and parents get a proper receipt every time.',
+      name: 'Mr. Iqbalur Rahman',
+      role: 'Director',
+      school: 'Global Access School',
     },
     {
-      quote: 'Attendance, fees and report cards finally sit in one place. Teachers stopped re-entering the same student data.',
-      name: 'Mr. Rakesh Verma',
-      role: 'Principal',
-      school: 'St. Mary’s Academy',
-      city: 'Indore',
+      quote: 'Admissions, attendance and fee collection used to be spread across registers. With ERPSaathi our staff enter data once, and I can check the school’s position from my phone anytime.',
+      name: 'Mr. Raju Pandey',
+      role: 'Director',
+      school: 'B.D. Public School',
     },
     {
-      quote: 'UDISE forms no longer need a separate spreadsheet. Our office prepares S02 from the same student list.',
-      name: 'Mrs. Anjali Nair',
-      role: 'Principal',
-      school: 'Horizon English Medium School',
-      city: 'Pune',
+      quote: 'Exam results, report cards and the student portal have made life easier for teachers and parents alike. The ERPSaathi team set everything up quickly and supports us whenever we need.',
+      name: 'Mr. Dharmendra Singh',
+      role: 'Director',
+      school: 'Swami Vivekanand International School',
     },
   ],
 
@@ -996,11 +1029,25 @@ const CONTENT_EN = {
   ctaPrimary: 'Request a Demo',
   ctaSecondary: 'Chat on WhatsApp',
 
+  demoFormTitle: 'Request a Demo',
+  demoFormSub: 'Share your school name and phone number. Our team will call you to set up a free demo.',
+  demoFormSchool: 'School name',
+  demoFormSchoolPh: 'e.g. Green Valley Public School',
+  demoFormPhone: 'Phone number',
+  demoFormPhonePh: 'e.g. 98765 43210',
+  demoFormSubmit: 'Send request',
+  demoFormSending: 'Sending…',
+  demoFormDoneTitle: 'Request received',
+  demoFormClose: 'Close',
+  demoFormNeedSchool: 'Please enter your school name.',
+  demoFormNeedPhone: 'Please enter a valid phone number.',
+  demoFormFailed: 'Could not send your request right now. Please call or WhatsApp us.',
+
   footerTagline: 'One system for every school department.',
-  footerAddress: 'Jaipur, Rajasthan, India',
+  footerAddress: 'Siwan, Bihar, India',
   footerPhone: '+91 99428 82661',
   footerPhoneTel: '+919942882661',
-  footerEmail: 'hello@erpsaathi.com',
+  footerEmail: 'armanansari0757@gmail.com',
   footerLinksHeading: 'Quick links',
   footerLinks: { home: 'Home', features: 'For your team', modules: 'Modules', contact: 'Contact', requestDemo: 'Request Demo' },
   footerProductHeading: 'Product',
@@ -1205,28 +1252,25 @@ const CONTENT_HI = {
   stepsCta: 'डेमो बुक करें',
 
   testimonialsEyebrow: 'आप जैसे स्कूल',
-  testimonialsTitle: 'प्रिंसिपल क्या कहते हैं',
+  testimonialsTitle: 'स्कूल डायरेक्टर क्या कहते हैं',
   testimonials: [
     {
-      quote: 'फीस फॉलो-अप में पहले दिन लगते थे। अब ऑफिस उसी दोपहर बकाया देख लेता है और वसूली साफ़ रहती है।',
-      name: 'श्रीमती सुनीता मेहरा',
-      role: 'प्रिंसिपल',
-      school: 'ग्रीन वैली पब्लिक स्कूल',
-      city: 'जयपुर',
+      quote: 'हर छात्र की फीस, रसीद और बकाया अब एक ही जगह है। ऑफिस उसी दिन देख लेता है कि किसने भुगतान किया और किसका बाकी है, और अभिभावकों को हर बार सही रसीद मिलती है।',
+      name: 'श्री इक़बालुर रहमान',
+      role: 'डायरेक्टर',
+      school: 'ग्लोबल एक्सेस स्कूल',
     },
     {
-      quote: 'उपस्थिति, फीस और रिपोर्ट कार्ड अब एक जगह हैं। शिक्षकों को वही छात्र डेटा दोबारा नहीं भरना पड़ता।',
-      name: 'श्री राकेश वर्मा',
-      role: 'प्रिंसिपल',
-      school: 'सेंट मैरी अकादमी',
-      city: 'इंदौर',
+      quote: 'प्रवेश, उपस्थिति और फीस वसूली पहले अलग-अलग रजिस्टर में होती थी। ERPSaathi से स्टाफ़ एक बार डेटा भरता है, और मैं कभी भी फ़ोन से स्कूल की स्थिति देख लेता हूँ।',
+      name: 'श्री राजू पांडेय',
+      role: 'डायरेक्टर',
+      school: 'बी.डी. पब्लिक स्कूल',
     },
     {
-      quote: 'UDISE फॉर्म के लिए अलग स्प्रेडशीट नहीं चाहिए। ऑफिस उसी छात्र सूची से S02 तैयार करता है।',
-      name: 'श्रीमती अंजलि नायर',
-      role: 'प्रिंसिपल',
-      school: 'होराइज़न इंग्लिश मीडियम स्कूल',
-      city: 'पुणे',
+      quote: 'परीक्षा परिणाम, रिपोर्ट कार्ड और स्टूडेंट पोर्टल से शिक्षकों और अभिभावकों दोनों का काम आसान हुआ है। ERPSaathi टीम ने सब कुछ जल्दी सेट किया और ज़रूरत पड़ने पर हमेशा मदद करती है।',
+      name: 'श्री धर्मेंद्र सिंह',
+      role: 'डायरेक्टर',
+      school: 'स्वामी विवेकानंद इंटरनेशनल स्कूल',
     },
   ],
 
@@ -1248,11 +1292,25 @@ const CONTENT_HI = {
   ctaPrimary: 'डेमो के लिए अनुरोध करें',
   ctaSecondary: 'व्हाट्सऐप पर चैट करें',
 
+  demoFormTitle: 'डेमो के लिए अनुरोध करें',
+  demoFormSub: 'अपने स्कूल का नाम और फ़ोन नंबर दें। हमारी टीम मुफ़्त डेमो के लिए आपको कॉल करेगी।',
+  demoFormSchool: 'स्कूल का नाम',
+  demoFormSchoolPh: 'जैसे ग्रीन वैली पब्लिक स्कूल',
+  demoFormPhone: 'फ़ोन नंबर',
+  demoFormPhonePh: 'जैसे 98765 43210',
+  demoFormSubmit: 'अनुरोध भेजें',
+  demoFormSending: 'भेजा जा रहा है…',
+  demoFormDoneTitle: 'अनुरोध मिल गया',
+  demoFormClose: 'बंद करें',
+  demoFormNeedSchool: 'कृपया स्कूल का नाम लिखें।',
+  demoFormNeedPhone: 'कृपया सही फ़ोन नंबर लिखें।',
+  demoFormFailed: 'अभी अनुरोध नहीं भेजा जा सका। कृपया कॉल या व्हाट्सऐप करें।',
+
   footerTagline: 'हर स्कूल विभाग के लिए एक सिस्टम।',
-  footerAddress: 'जयपुर, राजस्थान, भारत',
+  footerAddress: 'सिवान, बिहार, भारत',
   footerPhone: '+91 99428 82661',
   footerPhoneTel: '+919942882661',
-  footerEmail: 'hello@erpsaathi.com',
+  footerEmail: 'armanansari0757@gmail.com',
   footerLinksHeading: 'क्विक लिंक',
   footerLinks: { home: 'होम', features: 'आपकी टीम के लिए', modules: 'मॉड्यूल', contact: 'संपर्क करें', requestDemo: 'डेमो का अनुरोध करें' },
   footerProductHeading: 'उत्पाद',
@@ -1311,6 +1369,11 @@ export default {
       headerHidden: false,
       lastScrollY: 0,
       mobileMenuOpen: false,
+      demoFormOpen: false,
+      demoForm: { school_name: '', phone: '', website: '' },
+      demoSending: false,
+      demoError: '',
+      demoDone: '',
       scrollTicking: false,
       scrollProgress: 0,
       heroIn: false,
@@ -1411,6 +1474,7 @@ export default {
     window.addEventListener('scroll', this.onScroll, { passive: true });
     this.onTourKeydown = (e) => {
       if (e.key === 'Escape' && this.tourLightboxIndex !== null) this.closeTourLightbox();
+      if (e.key === 'Escape' && this.demoFormOpen) this.closeDemoForm();
     };
     window.addEventListener('keydown', this.onTourKeydown);
     this.startHeroSlider();
@@ -1578,6 +1642,54 @@ export default {
     },
     toggleTheme() {
       this.isDark = !this.isDark;
+    },
+    openDemoForm() {
+      this.mobileMenuOpen = false;
+      this.demoError = '';
+      this.demoDone = '';
+      this.demoFormOpen = true;
+      this.$nextTick(() => this.$refs.demoSchoolInput?.focus());
+    },
+    closeDemoForm() {
+      if (this.demoSending) return;
+      this.demoFormOpen = false;
+      if (this.demoDone) this.demoForm = { school_name: '', phone: '', website: '' };
+    },
+    async submitDemo() {
+      this.demoError = '';
+      if (this.demoForm.school_name.length < 2) {
+        this.demoError = this.c.demoFormNeedSchool;
+        return;
+      }
+      if (!/^\+?[0-9][0-9 \-]{8,16}$/.test(this.demoForm.phone)) {
+        this.demoError = this.c.demoFormNeedPhone;
+        return;
+      }
+      this.demoSending = true;
+      try {
+        const res = await fetch('/demo-request', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(this.demoForm),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const first = data.errors ? Object.values(data.errors).flat()[0] : null;
+          this.demoError = res.status === 429 ? this.c.demoFormFailed : (first || data.message || this.c.demoFormFailed);
+          return;
+        }
+        this.demoDone = data.message || this.c.demoFormDoneTitle;
+      } catch (e) {
+        this.demoError = this.c.demoFormFailed;
+      } finally {
+        this.demoSending = false;
+      }
     },
     toggleLocale() {
       this.setLocale(this.locale === 'en' ? 'hi' : 'en');
@@ -3465,6 +3577,47 @@ h1, h2, h3, .erp-brand-word {
 .erp-footer-whatsapp:hover { color: var(--brand-600); }
 .erp-footer-phone { white-space: nowrap; }
 .erp-footer-bottom { display: flex; flex-direction: column; gap: 8px; padding-top: 22px; border-top: 1px solid var(--border-soft); font-size: 0.8rem; color: var(--text-dim); }
+
+/* ---------- Request a Demo form ---------- */
+.erp-demo-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgb(5 20 12 / 0.55); backdrop-filter: blur(4px);
+}
+.erp-demo-modal {
+  position: relative; width: min(440px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+  padding: 28px 26px 24px; border-radius: 18px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+.erp-demo-close {
+  position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border-radius: 9px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+.erp-demo-close:hover { color: var(--text); background: var(--surface-2); }
+.erp-demo-title { margin: 6px 0 6px; font-size: 1.4rem; font-weight: 750; letter-spacing: -0.02em; color: var(--text); }
+.erp-demo-sub { margin: 0 0 18px; font-size: 0.92rem; line-height: 1.55; color: var(--text-muted); }
+.erp-demo-form { display: flex; flex-direction: column; gap: 14px; }
+.erp-demo-field { display: flex; flex-direction: column; gap: 6px; }
+.erp-demo-field span { font-size: 0.8rem; font-weight: 650; color: var(--text); }
+.erp-demo-field input {
+  width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 0.95rem;
+  outline: none; transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.erp-demo-field input:focus { border-color: var(--brand-500); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-500) 18%, transparent); }
+.erp-demo-hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.erp-demo-error { margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 0.85rem; background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red); }
+.erp-demo-form .erp-btn:disabled { opacity: 0.65; cursor: not-allowed; }
+.erp-demo-done { text-align: center; padding: 8px 0 4px; }
+.erp-demo-done-icon {
+  width: 56px; height: 56px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 28px; font-weight: 800; color: #fff; background: var(--brand-600);
+}
+.erp-demo-done .erp-btn { margin-top: 4px; }
+.erp-demo-fade-enter-active, .erp-demo-fade-leave-active { transition: opacity 0.18s ease; }
+.erp-demo-fade-enter-from, .erp-demo-fade-leave-to { opacity: 0; }
 
 /* ---------- WhatsApp floating button ---------- */
 .erp-whatsapp-fab {

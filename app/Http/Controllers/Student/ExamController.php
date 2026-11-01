@@ -157,7 +157,8 @@ class ExamController extends Controller
      *
      * @return list<array<string, mixed>>
      */
-    private function publishedResultRows(Student $student, ?int $sessionId): array
+    /** Also used by the student dashboard's "Latest result" card. */
+    public function publishedResultRows(Student $student, ?int $sessionId): array
     {
         $rows = ExamResultCalculator::forStudent($student);
         if ($rows === []) {

@@ -1,5 +1,5 @@
 <template>
-    <div class="erp-shell flex min-h-screen" :class="studentStore.darkMode ? 'erp-shell-dark' : 'erp-shell-light'" data-template="midnight-gold">
+    <div class="erp-shell flex min-h-screen" :class="studentStore.darkMode ? 'erp-shell-dark' : 'erp-shell-light'" data-template="school-green">
         <StudentSidebar />
 
         <div class="flex min-h-screen min-w-0 flex-1 flex-col">
@@ -20,4 +20,5 @@ import StudentHeader from '../components/StudentHeader.vue';
 import ToastHost from '../../erp/components/common/ToastHost.vue';
 import { studentStore } from '../store';
 import '../../../css/erp-theme-shell.css';
+import '../../../css/student-portal.css';
 </script>

@@ -30,6 +30,11 @@ Route::get('/', function () {
     return view('welcome', ['welcome' => $welcome]);
 })->name('home');
 
+// Homepage "Request a Demo" form → email to the ERPSaathi team
+Route::post('/demo-request', [App\Http\Controllers\DemoRequestController::class, 'store'])
+    ->middleware('throttle:5,10')
+    ->name('demo-request.store');
+
 // Public legal pages (footer links)
 Route::get('/privacy-policy', function () {
     return view('legal.privacy-policy', ['updated' => 'September 2026']);

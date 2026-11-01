@@ -38,6 +38,8 @@ class SchoolController extends Controller
             'price' => ['nullable', 'numeric', 'min:0'],
             'renewal_charge' => ['nullable', 'numeric', 'min:0'],
             'billing_currency' => ['nullable', 'string', 'max:8'],
+            'creation_date' => ['nullable', 'date_format:Y-m-d'],
+            'renewal_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:creation_date'],
             'notes' => ['nullable', 'string'],
         ]);
 
@@ -53,6 +55,9 @@ class SchoolController extends Controller
 
         if (! empty($data['notes'])) {
             $school->update(['notes' => $data['notes']]);
+        }
+        if (School::hasSubscriptionDates()) {
+            $school->update($this->subscriptionDates($data['creation_date'] ?? null, $data['renewal_date'] ?? null));
         }
 
         return response()->json([
@@ -76,11 +81,16 @@ class SchoolController extends Controller
             'demo_settings.hidden_import_export' => ['sometimes', 'array'],
             'demo_settings.hidden_import_export.*' => ['string', 'max:80'],
             'allow_backdate_fee' => ['sometimes', 'boolean'],
+            'creation_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'renewal_date' => ['sometimes', 'nullable', 'date_format:Y-m-d', 'after_or_equal:creation_date'],
         ]);
 
         $school->fill(collect($data)->only([
             'name', 'admin_email', 'notes', 'price', 'renewal_charge', 'billing_currency', 'demo_settings', 'allow_backdate_fee',
         ])->all());
+        if (array_key_exists('creation_date', $data) && School::hasSubscriptionDates()) {
+            $school->fill($this->subscriptionDates($data['creation_date'], $data['renewal_date'] ?? null));
+        }
         if (isset($data['billing_currency'])) {
             $school->billing_currency = strtoupper(trim((string) $data['billing_currency'])) ?: 'INR';
         }
@@ -185,5 +195,16 @@ class SchoolController extends Controller
             'message' => 'School permanently deleted. Tenant database and domain mappings removed.',
             'db_dropped' => true,
         ]);
+    }
+
+    /** Creation defaults to today; renewal defaults to one year after creation. */
+    private function subscriptionDates(?string $creation, ?string $renewal): array
+    {
+        $created = $creation ? \Carbon\Carbon::createFromFormat('Y-m-d', $creation)->startOfDay() : now()->startOfDay();
+
+        return [
+            'creation_date' => $created->toDateString(),
+            'renewal_date' => $renewal ?: $created->copy()->addYearNoOverflow()->toDateString(),
+        ];
     }
 }

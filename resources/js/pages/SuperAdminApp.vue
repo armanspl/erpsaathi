@@ -68,14 +68,38 @@
 
         <!-- Dashboard -->
         <section v-if="page === 'dashboard'" class="sa-stack">
+          <div class="sa-hero">
+            <div>
+              <div class="sa-hero-kicker">{{ greeting }}</div>
+              <h2 class="sa-hero-title">{{ user?.name || 'Super Admin' }}</h2>
+              <p class="sa-hero-sub">
+                {{ stats.schools_active ?? 0 }} active of {{ stats.schools_total ?? 0 }} schools
+                <template v-if="renewalsSoon.length"> · {{ renewalsSoon.length }} renewal{{ renewalsSoon.length === 1 ? '' : 's' }} due in 30 days</template>
+              </p>
+            </div>
+            <div class="sa-hero-actions">
+              <button type="button" class="sa-btn sa-btn-light" @click="go('schools')">View schools</button>
+              <button type="button" class="sa-btn sa-btn-primary" @click="showCreate = true">+ Add school</button>
+            </div>
+          </div>
+
           <div class="sa-stat-grid">
-            <div v-for="card in dashboardCards" :key="card.label" class="sa-stat">
+            <div
+              v-for="(card, i) in dashboardCards"
+              :key="card.label"
+              class="sa-stat"
+              :style="{ '--tone': statTones[i % statTones.length] }"
+              @mousemove="tilt"
+              @mouseleave="untilt"
+            >
+              <div class="sa-stat-cube" aria-hidden="true"><i></i><i></i><i></i></div>
               <div class="sa-stat-label">{{ card.label }}</div>
               <div class="sa-stat-value">{{ card.value }}</div>
               <div v-if="card.hint" class="sa-stat-hint">{{ card.hint }}</div>
             </div>
           </div>
 
+          <div class="sa-dash-grid">
           <div class="sa-panel">
             <div class="sa-panel-head">
               <h2>Schools overview</h2>
@@ -89,25 +113,53 @@
                     <th>Status</th>
                     <th>Setup price</th>
                     <th>Renewal</th>
+                    <th>Renewal date</th>
                     <th>Domain</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-if="loading"><td colspan="5" class="sa-empty">Loading…</td></tr>
-                  <tr v-else-if="!schools.length"><td colspan="5" class="sa-empty">No schools yet.</td></tr>
+                  <tr v-if="loading"><td colspan="6" class="sa-empty">Loading…</td></tr>
+                  <tr v-else-if="!schools.length"><td colspan="6" class="sa-empty">No schools yet.</td></tr>
                   <tr v-for="s in schools.slice(0, 8)" :key="s.id">
                     <td>
-                      <div class="sa-strong">{{ s.name }}</div>
-                      <div class="sa-muted"><code>{{ s.slug }}</code></div>
+                      <div class="sa-school-cell">
+                        <div class="sa-school-avatar" :style="{ '--tone': avatarTone(s) }">{{ initials(s.name) }}</div>
+                        <div class="sa-min0">
+                          <div class="sa-strong">{{ s.name }}</div>
+                          <code class="sa-code">{{ s.slug }}</code>
+                        </div>
+                      </div>
                     </td>
-                    <td><span class="sa-pill" :class="statusClass(s.status)">{{ s.status }}</span></td>
+                    <td><span class="sa-pill sa-pill-dot" :class="statusClass(s.status)">{{ s.status }}</span></td>
                     <td>{{ money(s.price, s.billing_currency) }}</td>
                     <td>{{ money(s.renewal_charge, s.billing_currency) }}</td>
+                    <td><span class="sa-pill sa-pill-date" :class="renewalClass(s.renewal_date)">{{ fmtDate(s.renewal_date) }}</span></td>
                     <td class="sa-muted">{{ primaryDomain(s) }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div class="sa-panel">
+            <div class="sa-panel-head">
+              <h2>Upcoming renewals</h2>
+            </div>
+            <div class="sa-renew-list">
+              <div v-if="!upcomingRenewals.length" class="sa-empty">No renewal dates set yet.</div>
+              <div v-for="s in upcomingRenewals" :key="s.id" class="sa-renew-row">
+                <div class="sa-school-avatar sa-avatar-sm" :style="{ '--tone': avatarTone(s) }">{{ initials(s.name) }}</div>
+                <div class="sa-min0" style="flex:1">
+                  <div class="sa-strong sa-ellipsis">{{ s.name }}</div>
+                  <div class="sa-muted">{{ money(s.renewal_charge, s.billing_currency) }}</div>
+                </div>
+                <div class="sa-renew-when">
+                  <span class="sa-pill sa-pill-date" :class="renewalClass(s.renewal_date)">{{ fmtDate(s.renewal_date) }}</span>
+                  <div class="sa-muted sa-tiny">{{ daysLabel(s.renewal_date) }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
           </div>
         </section>
 
@@ -120,66 +172,106 @@
         <!-- Schools -->
         <section v-else class="sa-stack">
           <div class="sa-panel">
-            <div class="sa-panel-head">
-              <h2>All schools</h2>
-              <button type="button" class="sa-btn sa-btn-primary sa-btn-sm" @click="showCreate = true">Add school</button>
+            <div class="sa-panel-head sa-panel-head-wrap">
+              <div>
+                <h2>All schools</h2>
+                <p class="sa-panel-sub">{{ filteredSchools.length }} of {{ schools.length }} schools</p>
+              </div>
+              <div class="sa-toolbar">
+                <div class="sa-search">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                  <input v-model="schoolSearch" type="search" placeholder="Search name, slug, email, domain" />
+                </div>
+                <select v-model="schoolStatus" class="sa-select">
+                  <option value="">All status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="provisioning">Provisioning</option>
+                  <option value="failed">Failed</option>
+                </select>
+                <button type="button" class="sa-btn sa-btn-primary sa-btn-sm" @click="showCreate = true">+ Add school</button>
+              </div>
             </div>
             <div class="sa-table-wrap">
-              <table class="sa-table">
+              <table class="sa-table sa-table-schools">
                 <thead>
                   <tr>
                     <th>School</th>
                     <th>Slug / DB</th>
                     <th>Billing</th>
+                    <th>Subscription</th>
                     <th>Status</th>
                     <th>Domains</th>
-                    <th>Actions</th>
+                    <th class="sa-th-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-if="loading"><td colspan="6" class="sa-empty">Loading…</td></tr>
-                  <tr v-else-if="!schools.length"><td colspan="6" class="sa-empty">No schools yet.</td></tr>
-                  <tr v-for="s in schools" :key="s.id">
+                  <tr v-if="loading"><td colspan="7" class="sa-empty">Loading…</td></tr>
+                  <tr v-else-if="!filteredSchools.length"><td colspan="7" class="sa-empty">{{ schools.length ? 'No schools match your search.' : 'No schools yet.' }}</td></tr>
+                  <tr v-for="s in filteredSchools" :key="s.id">
                     <td>
-                      <div class="sa-strong">{{ s.name }}</div>
-                      <div class="sa-muted">{{ s.admin_email }}</div>
+                      <div class="sa-school-cell">
+                        <div class="sa-school-avatar" :style="{ '--tone': avatarTone(s) }">{{ initials(s.name) }}</div>
+                        <div class="sa-min0">
+                          <div class="sa-strong">{{ s.name }}</div>
+                          <div class="sa-muted sa-ellipsis">{{ s.admin_email }}</div>
+                        </div>
+                      </div>
                     </td>
                     <td>
-                      <div><code>{{ s.slug }}</code></div>
-                      <div class="sa-muted">{{ s.db_name }}</div>
+                      <code class="sa-code">{{ s.slug }}</code>
+                      <div class="sa-muted sa-tiny">{{ s.db_name }}</div>
                     </td>
                     <td>
-                      <div>Setup: {{ money(s.price, s.billing_currency) }}</div>
-                      <div class="sa-muted">Renewal: {{ money(s.renewal_charge, s.billing_currency) }}</div>
+                      <div class="sa-kv"><span>Setup</span><b>{{ money(s.price, s.billing_currency) }}</b></div>
+                      <div class="sa-kv"><span>Renewal</span><b>{{ money(s.renewal_charge, s.billing_currency) }}</b></div>
                     </td>
                     <td>
-                      <span class="sa-pill" :class="statusClass(s.status)">{{ s.status }}</span>
+                      <div class="sa-kv"><span>Created</span><b>{{ fmtDate(s.creation_date) }}</b></div>
+                      <div class="sa-kv"><span>Renews</span><span class="sa-pill sa-pill-date" :class="renewalClass(s.renewal_date)">{{ fmtDate(s.renewal_date) }}</span></div>
+                    </td>
+                    <td>
+                      <span class="sa-pill sa-pill-dot" :class="statusClass(s.status)">{{ s.status }}</span>
                       <div v-if="s.is_first_school" class="sa-muted sa-tiny">first school</div>
                       <div class="sa-muted sa-tiny">Back-date fee: {{ s.allow_backdate_fee ? 'allowed' : 'off' }}</div>
                     </td>
                     <td class="sa-muted">
-                      <div v-for="d in s.domains || []" :key="d.id">{{ d.domain }}</div>
+                      <div v-for="d in s.domains || []" :key="d.id" class="sa-ellipsis">{{ d.domain }}</div>
                     </td>
                     <td>
-                      <div class="sa-actions">
-                        <button v-if="s.status === 'active'" type="button" class="sa-text-btn warn" @click="setStatus(s, 'inactive')">Deactivate</button>
-                        <button v-else-if="s.status !== 'provisioning'" type="button" class="sa-text-btn ok" @click="setStatus(s, 'active')">Activate</button>
-                        <button type="button" class="sa-text-btn" @click="openEdit(s)">Edit billing</button>
-                        <button
-                          type="button"
-                          class="sa-text-btn"
-                          :class="s.allow_backdate_fee ? 'warn' : 'ok'"
-                          @click="toggleBackdateFee(s)"
-                        >{{ s.allow_backdate_fee ? 'Disallow back-date fee' : 'Allow back-date fee' }}</button>
-                        <button
-                          v-if="isDemoSchool(s)"
-                          type="button"
-                          class="sa-text-btn"
-                          @click="openDemoIe(s)"
-                        >Demo Import/Export</button>
-                        <button type="button" class="sa-text-btn" @click="resetAdmin(s)">Reset admin</button>
-                        <button v-if="s.status !== 'provisioning'" type="button" class="sa-text-btn" @click="openDatabases(s.id)">Manage database</button>
-                        <button type="button" class="sa-text-btn danger" @click="openDelete(s)">Delete</button>
+                      <div class="sa-action-grid">
+                        <button type="button" class="sa-act sa-act-primary" title="Edit school" @click="openEdit(s)">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                          Edit
+                        </button>
+                        <button v-if="s.status === 'active'" type="button" class="sa-act sa-act-warn" title="Deactivate school" @click="setStatus(s, 'inactive')">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M9 9v6M15 9v6"/></svg>
+                          Deactivate
+                        </button>
+                        <button v-else-if="s.status !== 'provisioning'" type="button" class="sa-act sa-act-ok" title="Activate school" @click="setStatus(s, 'active')">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4Z"/></svg>
+                          Activate
+                        </button>
+                        <button v-if="s.status !== 'provisioning'" type="button" class="sa-act" title="Manage database" @click="openDatabases(s.id)">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+                          Database
+                        </button>
+                        <button type="button" class="sa-act" :class="{ 'sa-act-warn': s.allow_backdate_fee }" :title="s.allow_backdate_fee ? 'Disallow back-date fee' : 'Allow back-date fee'" @click="toggleBackdateFee(s)">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+                          {{ s.allow_backdate_fee ? 'Stop back-date' : 'Allow back-date' }}
+                        </button>
+                        <button type="button" class="sa-act" title="Reset admin password" @click="resetAdmin(s)">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3"/></svg>
+                          Reset admin
+                        </button>
+                        <button v-if="isDemoSchool(s)" type="button" class="sa-act" title="Demo Import/Export" @click="openDemoIe(s)">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 10l5-5 5 5M12 5v12M5 21h14"/></svg>
+                          Demo I/E
+                        </button>
+                        <button type="button" class="sa-act sa-act-danger" title="Delete school" @click="openDelete(s)">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/></svg>
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -225,6 +317,16 @@
               <input v-model="form.renewal_charge" type="number" min="0" step="0.01" placeholder="0.00" />
             </div>
           </div>
+          <div class="sa-grid-2">
+            <div class="sa-field">
+              <label>Creation date</label>
+              <input v-model="form.creation_date" type="date" required @change="form.renewal_date = plusOneYear(form.creation_date)" />
+            </div>
+            <div class="sa-field">
+              <label>Renewal date <span class="sa-label-hint">auto +1 year</span></label>
+              <input v-model="form.renewal_date" type="date" :min="form.creation_date" />
+            </div>
+          </div>
           <div class="sa-field">
             <label>School admin email</label>
             <input v-model="form.admin_email" type="email" required />
@@ -251,12 +353,39 @@
       </div>
     </div>
 
-    <!-- Edit billing modal -->
+    <!-- Edit school modal -->
     <div v-if="editTarget" class="sa-modal-backdrop" @click.self="editTarget = null">
       <div class="sa-modal">
-        <h2>Edit billing — {{ editTarget.name }}</h2>
+        <div class="sa-modal-head">
+          <div class="sa-school-avatar" :style="{ '--tone': avatarTone(editTarget) }">{{ initials(editTarget.name) }}</div>
+          <div>
+            <h2>Edit school</h2>
+            <p class="sa-help" style="margin:0"><code class="sa-code">{{ editTarget.slug }}</code> · {{ editTarget.db_name }}</p>
+          </div>
+        </div>
         <form class="sa-form" @submit.prevent="saveBilling">
+          <div class="sa-form-section">School details</div>
+          <div class="sa-field">
+            <label>School name</label>
+            <input v-model="editForm.name" required maxlength="255" />
+          </div>
+          <div class="sa-field">
+            <label>School admin email</label>
+            <input v-model="editForm.admin_email" type="email" required maxlength="255" />
+          </div>
+          <div class="sa-form-section">Subscription</div>
           <div class="sa-grid-2">
+            <div class="sa-field">
+              <label>Creation date</label>
+              <input v-model="editForm.creation_date" type="date" @change="editForm.renewal_date = plusOneYear(editForm.creation_date)" />
+            </div>
+            <div class="sa-field">
+              <label>Renewal date <span class="sa-label-hint">auto +1 year</span></label>
+              <input v-model="editForm.renewal_date" type="date" :min="editForm.creation_date" />
+            </div>
+          </div>
+          <div class="sa-form-section">Billing</div>
+          <div class="sa-grid-3">
             <div class="sa-field">
               <label>Setup / charge price</label>
               <input v-model="editForm.price" type="number" min="0" step="0.01" />
@@ -265,14 +394,14 @@
               <label>Renewal charge</label>
               <input v-model="editForm.renewal_charge" type="number" min="0" step="0.01" />
             </div>
-          </div>
-          <div class="sa-field">
-            <label>Currency</label>
-            <input v-model="editForm.billing_currency" maxlength="8" />
+            <div class="sa-field">
+              <label>Currency</label>
+              <input v-model="editForm.billing_currency" maxlength="8" />
+            </div>
           </div>
           <div class="sa-modal-actions">
             <button type="button" class="sa-btn sa-btn-ghost" @click="editTarget = null">Cancel</button>
-            <button type="submit" class="sa-btn sa-btn-primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
+            <button type="submit" class="sa-btn sa-btn-primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
           </div>
         </form>
       </div>
@@ -337,17 +466,33 @@
 import DatabaseManager from './super-admin/DatabaseManager.vue';
 import WhatsAppConfig from './super-admin/WhatsAppConfig.vue';
 
-const emptyForm = () => ({
-  name: '',
-  slug: '',
-  admin_email: '',
-  admin_name: 'School Admin',
-  admin_password: '',
-  custom_domain: '',
-  price: '',
-  renewal_charge: '',
-  billing_currency: 'INR',
-});
+const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Same calendar day next year; 29 Feb falls back to 28 Feb. */
+const plusOneYear = (value) => {
+  if (!value) return '';
+  const [y, m, d] = value.split('-').map(Number);
+  const next = new Date(y + 1, m - 1, d);
+  if (next.getMonth() !== m - 1) next.setDate(0);
+  return isoDate(next);
+};
+
+const emptyForm = () => {
+  const today = isoDate(new Date());
+  return {
+    name: '',
+    slug: '',
+    admin_email: '',
+    admin_name: 'School Admin',
+    admin_password: '',
+    custom_domain: '',
+    price: '',
+    renewal_charge: '',
+    billing_currency: 'INR',
+    creation_date: today,
+    renewal_date: plusOneYear(today),
+  };
+};
 
 export default {
   name: 'SuperAdminApp',
@@ -368,7 +513,9 @@ export default {
       showCreate: false,
       form: emptyForm(),
       editTarget: null,
-      editForm: { price: '', renewal_charge: '', billing_currency: 'INR' },
+      editForm: { name: '', admin_email: '', price: '', renewal_charge: '', billing_currency: 'INR', creation_date: '', renewal_date: '' },
+      schoolSearch: '',
+      schoolStatus: '',
       demoIeTarget: null,
       demoIeVisible: {},
       demoIeCatalog: [
@@ -388,6 +535,7 @@ export default {
       deleting: false,
       dbSchoolId: null,
       year: new Date().getFullYear(),
+      statTones: ['#0f766e', '#059669', '#64748b', '#dc2626', '#4f46e5', '#d97706'],
     };
   },
   computed: {
@@ -422,6 +570,29 @@ export default {
           hint: `All schools: ${this.money(this.stats.billing_renewal_total, 'INR')}`,
         },
       ];
+    },
+    greeting() {
+      const h = new Date().getHours();
+      return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+    },
+    upcomingRenewals() {
+      return this.schools
+        .filter((s) => s.renewal_date)
+        .slice()
+        .sort((a, b) => String(a.renewal_date).localeCompare(String(b.renewal_date)))
+        .slice(0, 6);
+    },
+    renewalsSoon() {
+      return this.schools.filter((s) => s.renewal_date && this.daysUntil(s.renewal_date) <= 30);
+    },
+    filteredSchools() {
+      const q = this.schoolSearch.trim().toLowerCase();
+      return this.schools.filter((s) => {
+        if (this.schoolStatus && s.status !== this.schoolStatus) return false;
+        if (!q) return true;
+        return [s.name, s.slug, s.admin_email, s.db_name, ...(s.domains || []).map((d) => d.domain)]
+          .some((v) => String(v || '').toLowerCase().includes(q));
+      });
     },
     deleteConfirmPlaceholder() {
       if (!this.deleteTarget) return '';
@@ -460,6 +631,13 @@ export default {
     primaryDomain(school) {
       const domains = school.domains || [];
       return (domains.find((d) => d.is_primary) || domains[0])?.domain || '—';
+    },
+    initials(name) {
+      const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+      return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
+    },
+    avatarTone(school) {
+      return this.statTones[(Number(school?.id) || 0) % this.statTones.length];
     },
     statusClass(status) {
       return {
@@ -534,10 +712,44 @@ export default {
     openEdit(school) {
       this.editTarget = school;
       this.editForm = {
+        name: school.name || '',
+        admin_email: school.admin_email || '',
         price: school.price ?? '',
         renewal_charge: school.renewal_charge ?? '',
         billing_currency: school.billing_currency || 'INR',
+        creation_date: school.creation_date || '',
+        renewal_date: school.renewal_date || '',
       };
+    },
+    plusOneYear,
+    tilt(e) {
+      if (!window.matchMedia('(hover: hover)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const el = e.currentTarget;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--ry', `${(((e.clientX - r.left) / r.width) - 0.5) * 18}deg`);
+      el.style.setProperty('--rx', `${(0.5 - ((e.clientY - r.top) / r.height)) * 18}deg`);
+    },
+    untilt(e) {
+      e.currentTarget.style.setProperty('--rx', '0deg');
+      e.currentTarget.style.setProperty('--ry', '0deg');
+    },
+    fmtDate(value) {
+      if (!value) return '—';
+      const [y, m, d] = String(value).slice(0, 10).split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    },
+    daysUntil(value) {
+      return Math.round((new Date(`${String(value).slice(0, 10)}T00:00:00`) - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    },
+    daysLabel(value) {
+      const d = this.daysUntil(value);
+      if (d === 0) return 'today';
+      return d < 0 ? `${-d} day${d === -1 ? '' : 's'} overdue` : `in ${d} day${d === 1 ? '' : 's'}`;
+    },
+    renewalClass(value) {
+      if (!value) return 'muted';
+      const days = this.daysUntil(value);
+      return days < 0 ? 'danger' : days <= 30 ? 'warn' : 'ok';
     },
     isDemoSchool(school) {
       return String(school?.slug || '') === 'demo';
@@ -606,9 +818,14 @@ export default {
             price: this.editForm.price === '' ? null : this.editForm.price,
             renewal_charge: this.editForm.renewal_charge === '' ? null : this.editForm.renewal_charge,
             billing_currency: this.editForm.billing_currency || 'INR',
+            name: this.editForm.name.trim(),
+            admin_email: this.editForm.admin_email.trim(),
+            ...(this.editForm.creation_date
+              ? { creation_date: this.editForm.creation_date, renewal_date: this.editForm.renewal_date || null }
+              : {}),
           }),
         });
-        this.flash = `Billing updated for ${this.editTarget.name}.`;
+        this.flash = `Saved changes for ${this.editForm.name.trim() || this.editTarget.name}.`;
         this.editTarget = null;
         await this.refresh();
       } catch (e) {
@@ -689,8 +906,12 @@ export default {
   display: flex;
   background: var(--sa-bg);
   color: var(--sa-ink);
-  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
 }
+.sa-shell button, .sa-shell input, .sa-shell select { font-family: inherit; }
 
 .sa-overlay {
   position: fixed;
@@ -777,23 +998,50 @@ export default {
   .sa-stat-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
+/* 3D stat tiles: a raised slab with a coloured edge, tilting toward the pointer. */
+.sa-stat-grid { perspective: 900px; }
 .sa-stat {
-  background: var(--sa-panel);
+  --tone: var(--sa-accent);
+  position: relative;
+  background: linear-gradient(160deg, #ffffff 0%, #f8fafc 100%);
   border: 1px solid var(--sa-line);
   border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateZ(0);
+  transition: transform .2s ease-out, box-shadow .2s ease-out;
+  box-shadow:
+    0 5px 0 color-mix(in srgb, var(--tone) 75%, #000),
+    0 16px 26px -12px color-mix(in srgb, var(--tone) 55%, transparent);
 }
-.sa-stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sa-muted); }
-.sa-stat-value { margin-top: 8px; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+.sa-stat:hover {
+  box-shadow:
+    0 8px 0 color-mix(in srgb, var(--tone) 75%, #000),
+    0 26px 36px -14px color-mix(in srgb, var(--tone) 60%, transparent);
+}
+.sa-stat > :not(.sa-stat-cube) { transform: translateZ(26px); }
+.sa-stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sa-muted); padding-right: 30px; }
+.sa-stat-value { margin-top: 8px; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; color: var(--tone); }
 .sa-stat-hint { margin-top: 6px; font-size: 11px; color: #94a3b8; }
+
+/* Small isometric cube in each tile's corner */
+.sa-stat-cube {
+  position: absolute; top: 14px; right: 14px; width: 18px; height: 18px;
+  transform-style: preserve-3d; transform: translateZ(40px) rotateX(-30deg) rotateY(45deg);
+  animation: sa-cube 9s linear infinite;
+}
+.sa-stat-cube i { position: absolute; inset: 0; border-radius: 3px; }
+.sa-stat-cube i:nth-child(1) { background: var(--tone); transform: translateZ(9px); }
+.sa-stat-cube i:nth-child(2) { background: color-mix(in srgb, var(--tone) 70%, #000); transform: rotateY(90deg) translateZ(9px); }
+.sa-stat-cube i:nth-child(3) { background: color-mix(in srgb, var(--tone) 55%, #fff); transform: rotateX(90deg) translateZ(9px); }
+@keyframes sa-cube { to { transform: translateZ(40px) rotateX(-30deg) rotateY(405deg); } }
 
 .sa-panel {
   background: var(--sa-panel);
   border: 1px solid var(--sa-line);
   border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  box-shadow: 0 4px 0 #dbe3ea, 0 22px 40px -22px rgba(15, 23, 42, 0.35);
 }
 .sa-panel-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -822,6 +1070,8 @@ export default {
 .sa-pill.warn { background: #fffbeb; color: #b45309; }
 .sa-pill.danger { background: #fef2f2; color: #b91c1c; }
 .sa-pill.muted { background: #f1f5f9; color: #475569; }
+.sa-pill-date { text-transform: none; white-space: nowrap; }
+.sa-label-hint { text-transform: none; letter-spacing: 0; font-weight: 600; color: #0f766e; margin-left: 4px; }
 
 .sa-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sa-text-btn {
@@ -838,8 +1088,13 @@ export default {
   border: 1px solid transparent; cursor: pointer; text-decoration: none;
 }
 .sa-btn-sm { padding: 7px 12px; font-size: 12px; }
-.sa-btn-primary { background: var(--sa-accent); color: #fff; }
-.sa-btn-primary:hover { background: var(--sa-accent-deep); }
+.sa-btn-primary {
+  background: linear-gradient(180deg, #14b8a6, var(--sa-accent)); color: #fff;
+  box-shadow: 0 4px 0 #115e59, 0 10px 18px -8px rgba(15, 118, 110, .6);
+  transition: transform .08s, box-shadow .08s;
+}
+.sa-btn-primary:hover { background: linear-gradient(180deg, #0d9488, var(--sa-accent-deep)); }
+.sa-btn-primary:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #115e59, 0 4px 8px -4px rgba(15, 118, 110, .6); }
 .sa-btn-ghost { background: #fff; border-color: var(--sa-line); color: var(--sa-ink); }
 .sa-btn-ghost:hover { background: #f8fafc; }
 .sa-btn-danger { background: #dc2626; color: #fff; }
@@ -907,6 +1162,112 @@ export default {
 .sa-field input:focus { border-color: #5eead4; box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12); }
 .sa-modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
+/* Dashboard hero */
+.sa-hero {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 22px 24px; border-radius: 20px; color: #fff;
+  background:
+    radial-gradient(500px 220px at 85% -20%, rgba(94, 234, 212, .45), transparent 70%),
+    linear-gradient(120deg, #0b1220 0%, #134e4a 55%, #0f766e 100%);
+  box-shadow: 0 6px 0 #0b3b38, 0 26px 40px -20px rgba(15, 118, 110, .7);
+}
+.sa-hero::after {
+  content: ''; position: absolute; right: -40px; bottom: -60px; width: 220px; height: 220px; border-radius: 40px;
+  border: 1px solid rgba(255, 255, 255, .18); transform: rotate(28deg); pointer-events: none;
+}
+.sa-hero-kicker { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #99f6e4; }
+.sa-hero-title { margin: 4px 0 4px; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; }
+.sa-hero-sub { margin: 0; font-size: 13.5px; color: #ccfbf1; }
+.sa-hero-actions { display: flex; gap: 8px; position: relative; z-index: 1; }
+.sa-btn-light { background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .25); }
+.sa-btn-light:hover { background: rgba(255, 255, 255, .2); }
+
+.sa-dash-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+@media (min-width: 1200px) { .sa-dash-grid { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); align-items: start; } }
+.sa-renew-list { padding: 6px 10px 10px; }
+.sa-renew-row { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 12px; }
+.sa-renew-row + .sa-renew-row { border-top: 1px solid #f1f5f9; }
+.sa-renew-row:hover { background: #f8fafc; }
+.sa-renew-when { text-align: right; }
+
+/* School identity */
+.sa-school-cell { display: flex; align-items: center; gap: 12px; min-width: 200px; }
+.sa-school-avatar {
+  --tone: var(--sa-accent);
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px;
+  display: grid; place-items: center; font-size: 14px; font-weight: 800; color: #fff;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--tone) 80%, #fff), var(--tone));
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--tone) 65%, #000), 0 8px 14px -8px var(--tone);
+}
+.sa-avatar-sm { width: 34px; height: 34px; border-radius: 10px; font-size: 12px; }
+.sa-min0 { min-width: 0; }
+.sa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.sa-code {
+  display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  padding: 1px 7px; border-radius: 6px; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0;
+}
+.sa-kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 2px 0; min-width: 170px; }
+.sa-kv > span:first-child { color: var(--sa-muted); }
+.sa-kv b { font-weight: 700; }
+.sa-pill-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 6px; align-self: center; }
+.sa-pill { text-transform: capitalize; padding: 3px 10px; }
+
+/* Schools toolbar */
+.sa-panel-head-wrap { flex-wrap: wrap; gap: 12px; }
+.sa-panel-sub { margin: 2px 0 0; font-size: 12px; color: var(--sa-muted); }
+.sa-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sa-search {
+  display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 38px; width: 280px; max-width: 100%;
+  border: 1px solid var(--sa-line); border-radius: 10px; background: #fff; color: #94a3b8;
+}
+.sa-search:focus-within { border-color: #5eead4; box-shadow: 0 0 0 3px rgba(15, 118, 110, .12); }
+.sa-search input { border: 0; outline: none; flex: 1; min-width: 0; font-size: 13px; color: var(--sa-ink); background: transparent; }
+.sa-select {
+  height: 38px; padding: 0 30px 0 12px; border: 1px solid var(--sa-line); border-radius: 10px; background: #fff;
+  font-size: 13px; color: var(--sa-ink); cursor: pointer;
+}
+.sa-table-schools td { vertical-align: middle; }
+.sa-table tbody tr { transition: background .12s; }
+.sa-table tbody tr:hover { background: #f8fafc; }
+.sa-th-actions { min-width: 250px; }
+
+/* Action buttons */
+.sa-action-grid { display: flex; flex-wrap: wrap; gap: 6px; max-width: 320px; }
+.sa-act {
+  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px;
+  border-radius: 8px; border: 1px solid var(--sa-line); background: #fff; color: #334155;
+  font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  box-shadow: 0 2px 0 #e2e8f0; transition: transform .08s, box-shadow .08s, background .12s, border-color .12s;
+}
+.sa-act:hover { background: #f8fafc; border-color: #cbd5e1; }
+.sa-act:active { transform: translateY(2px); box-shadow: 0 0 0 #e2e8f0; }
+.sa-act svg { flex-shrink: 0; }
+.sa-act-primary { background: var(--sa-accent); border-color: var(--sa-accent); color: #fff; box-shadow: 0 2px 0 #115e59; }
+.sa-act-primary:hover { background: var(--sa-accent-deep); border-color: var(--sa-accent-deep); }
+.sa-act-ok { color: #047857; border-color: #a7f3d0; background: #f0fdf4; box-shadow: 0 2px 0 #bbf7d0; }
+.sa-act-ok:hover { background: #dcfce7; border-color: #86efac; }
+.sa-act-warn { color: #b45309; border-color: #fde68a; background: #fffbeb; box-shadow: 0 2px 0 #fde68a; }
+.sa-act-warn:hover { background: #fef3c7; border-color: #fcd34d; }
+.sa-act-danger { color: #b91c1c; border-color: #fecaca; background: #fff; box-shadow: 0 2px 0 #fecaca; }
+.sa-act-danger:hover { background: #fef2f2; border-color: #fca5a5; }
+
+/* Modal polish */
+.sa-modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.sa-modal-head h2 { margin: 0 0 2px; }
+.sa-form-section {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--sa-accent);
+  padding-top: 6px; border-top: 1px dashed var(--sa-line); margin-top: 2px;
+}
+.sa-form-section:first-child { border-top: 0; padding-top: 0; }
+.sa-grid-3 { display: grid; grid-template-columns: 1fr 1fr 0.7fr; gap: 12px; }
+.sa-modal { max-height: calc(100vh - 32px); overflow-y: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-stat, .sa-btn-primary, .sa-act { transition: none; }
+  .sa-stat-cube { animation: none; }
+}
+
 @media (max-width: 900px) {
   .sa-sidebar {
     position: fixed; inset: 0 auto 0 0; transform: translateX(-105%);
@@ -914,6 +1275,9 @@ export default {
   }
   .sa-sidebar.open { transform: translateX(0); }
   .sa-menu { display: grid; }
-  .sa-grid-2 { grid-template-columns: 1fr; }
+  .sa-grid-2, .sa-grid-3 { grid-template-columns: 1fr; }
+  .sa-content { padding: 16px; }
+  .sa-search { width: 100%; }
+  .sa-hero-actions { width: 100%; }
 }
 </style>

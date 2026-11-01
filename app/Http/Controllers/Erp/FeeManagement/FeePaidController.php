@@ -21,6 +21,30 @@ class FeePaidController extends Controller
     /** Vehicles of the students in scope — set by buildRows() for the Vehicle filter. */
     private array $vehicles = [];
 
+    /** Set by studentRecord(): limits buildRows() to one student. */
+    private ?int $onlyStudentId = null;
+
+    /**
+     * One student's Fee Paid row ("paid any" view) and receipt details for a session —
+     * the same figures this screen shows, reused by the student portal's Fees page.
+     *
+     * @return array{row: array|null, details: array}
+     */
+    public function studentRecord(Student $student, AcademicSession $session): array
+    {
+        $request = Request::create('/', 'GET', ['view' => 'paid_any']);
+        $request->headers->set('X-Academic-Session', $session->name);
+        $this->onlyStudentId = $student->id;
+        try {
+            return [
+                'row' => $this->buildRows($request)->first(),
+                'details' => $this->details($request, $student)->getData(true),
+            ];
+        } finally {
+            $this->onlyStudentId = null;
+        }
+    }
+
     public function index(Request $request)
     {
         $rows = $this->buildRows($request);
@@ -142,6 +166,9 @@ class FeePaidController extends Controller
             $query->where('status', 'Active');
         }
 
+        if ($this->onlyStudentId) {
+            $query->whereKey($this->onlyStudentId);
+        }
         if (! empty($data['branch_id'])) {
             $query->forBranch((int) $data['branch_id']);
         }

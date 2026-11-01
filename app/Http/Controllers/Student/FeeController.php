@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Erp\FeeManagement\FeePaidController;
 use App\Http\Controllers\Student\Concerns\EnforcesPortalVisibility;
 use App\Models\AcademicSession;
 use App\Models\FeePayment;
@@ -58,20 +59,89 @@ class FeeController extends Controller
         return response()->json(['session' => ['id' => $session->id, 'name' => $session->name], 'months' => $due]);
     }
 
+    /** Same record the ERP's Fee Management → Fee Paid shows for this student (current session). */
     public function paid()
     {
         $this->abortIfModuleDisabled('paid_fees');
         $student = $this->student();
+        $session = $this->currentSession();
+        if (! $session) {
+            return response()->json(['session' => null, 'row' => null, 'receipts' => [], 'summary' => null]);
+        }
 
-        return response()->json($this->paymentRows($student));
+        $record = app(FeePaidController::class)->studentRecord($student, $session);
+        $row = $record['row'];
+
+        return response()->json([
+            'session' => $session->name,
+            'row' => $row ? collect($row)->only([
+                'scope_label', 'total_fee', 'total_discount', 'total_paid', 'advance_paid', 'due', 'counted_paid',
+                'session_paid', 'paid_through_label', 'advance_months_label', 'payment_status',
+                'outside_session_paid', 'outside_session_months', 'fine_paid', 'unmatched_paid',
+            ])->all() : null,
+            'receipts' => $record['details']['receipts'] ?? [],
+            'summary' => $record['details']['summary'] ?? null,
+        ]);
     }
 
+    /**
+     * Session-wise fee ledger (like the ERP's Fee History): each session's whole-year charge,
+     * concession, received and balance, with that session's receipts.
+     */
     public function history()
     {
         $this->abortIfModuleDisabled('fee_history');
         $student = $this->student();
 
-        return response()->json($this->paymentRows($student, allSessions: true));
+        $payments = FeePayment::where('student_id', $student->id)
+            ->where('status', '!=', 'Rolled Back')
+            ->orderByDesc('payment_date')
+            ->orderByDesc('id')
+            ->get();
+        $paymentSessionIds = $payments->flatMap(fn (FeePayment $p) => collect(is_array($p->items) ? $p->items : [])
+            ->map(fn ($item) => $p->itemSessionId((array) $item))
+            ->push((int) $p->academic_session_id))->filter()->unique()->values();
+        $sessions = AcademicSession::query()
+            ->where(fn ($q) => $q->where('is_current', true)->orWhereIn('id', $paymentSessionIds))
+            ->orderByDesc('start_date')
+            ->get();
+
+        $rows = $sessions->map(function (AcademicSession $session) use ($student, $payments) {
+            // A receipt that also pays another session's fees shows only this session's lines.
+            $receipts = FeePayment::slicesFor($payments, [$session->id]);
+            $row = [
+                'session' => $session->name,
+                'is_current' => (bool) $session->is_current,
+                'total' => null,
+                'concession' => null,
+                'received' => round((float) $receipts->sum('amount'), 2),
+                'balance' => null,
+                'receipts' => $this->paymentRowsFrom($receipts),
+            ];
+
+            // Whole-session ledger for the current session — same figures as the ERP's Fee History.
+            // Older sessions (often imported) list their receipts only: their fee plan can't be
+            // rebuilt reliably, so a computed balance there would be misleading.
+            if ($session->is_current) {
+                $calc = FeeCalculator::forStudent($student, $session);
+                $paidInfo = $this->balance->paidByHead($student, $session);
+                $keys = $this->balance->filterMonthsFromFeeStart(
+                    $student,
+                    collect($session->months())->pluck('key')->filter()->values()->all()
+                );
+                if ($keys) {
+                    $ledger = $this->balance->remainingForMonths($student, $session, $keys, $calc, $paidInfo);
+                    $row['total'] = round((float) $ledger['charge'], 2);
+                    $row['concession'] = round((float) $ledger['discount'], 2);
+                    $row['received'] = round((float) $ledger['paid'], 2);
+                    $row['balance'] = round((float) $ledger['due'], 2);
+                }
+            }
+
+            return $row;
+        })->filter(fn ($r) => $r['is_current'] || $r['receipts'] !== [])->values();
+
+        return response()->json(['sessions' => $rows]);
     }
 
     public function receipt(FeePayment $feePayment): StreamedResponse
@@ -145,22 +215,10 @@ class FeeController extends Controller
         return $keys;
     }
 
-    private function paymentRows(Student $student, bool $allSessions = false): array
+    /** @param  iterable<FeePayment>  $payments */
+    private function paymentRowsFrom(iterable $payments): array
     {
-        $query = FeePayment::where('student_id', $student->id)
-            ->where('status', '!=', 'Rolled Back')
-            ->orderByDesc('payment_date')
-            ->orderByDesc('id');
-
-        if (! $allSessions) {
-            $sessionId = $this->currentSession()?->id;
-            if ($sessionId) {
-                // A receipt that also pays another session's fees is listed in both sessions.
-                $query->touchingSessions([$sessionId]);
-            }
-        }
-
-        return $query->get()->map(function (FeePayment $p) {
+        return collect($payments)->map(function (FeePayment $p) {
             $items = is_array($p->items) ? $p->items : [];
             $heads = collect($items)->pluck('fee_head_name')->filter()->unique()->implode(', ');
 
@@ -176,6 +234,17 @@ class FeeController extends Controller
                 'status' => $p->status,
                 'fee_heads' => $heads,
                 'remarks' => $p->remarks,
+                // One line per fee head on the receipt, for the "details" view
+                'lines' => collect($items)->map(fn ($i) => [
+                    'fee_head' => $i['fee_head_name'] ?? 'Fee',
+                    'months' => collect((array) ($i['months'] ?? (isset($i['month']) ? [$i['month']] : [])))
+                        ->filter()
+                        ->map(fn ($m) => preg_match('/^\d{4}-\d{2}$/', (string) $m) ? \Carbon\Carbon::createFromFormat('!Y-m', $m)->format('M Y') : (string) $m)
+                        ->implode(', '),
+                    'charge' => (float) ($i['charge'] ?? $i['amount'] ?? 0),
+                    'discount' => (float) ($i['discount'] ?? 0),
+                    'amount' => (float) ($i['amount'] ?? 0),
+                ])->values()->all(),
             ];
         })->values()->all();
     }

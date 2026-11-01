@@ -19,6 +19,8 @@ class School extends Model
         'price',
         'renewal_charge',
         'billing_currency',
+        'creation_date',
+        'renewal_date',
         'storage_path',
         'is_first_school',
         'notes',
@@ -33,6 +35,8 @@ class School extends Model
             'is_first_school' => 'boolean',
             'price' => 'decimal:2',
             'renewal_charge' => 'decimal:2',
+            'creation_date' => 'date:Y-m-d',
+            'renewal_date' => 'date:Y-m-d',
             'demo_settings' => 'array',
             'allow_backdate_fee' => 'boolean',
         ];
@@ -42,6 +46,14 @@ class School extends Model
     public function allowsBackdateFee(): bool
     {
         return (bool) $this->allow_backdate_fee;
+    }
+
+    /** creation_date / renewal_date exist only after the 2026_11_01 master migration has run. */
+    public static function hasSubscriptionDates(): bool
+    {
+        static $ready;
+
+        return $ready ??= \Illuminate\Support\Facades\Schema::connection('master')->hasColumn('schools', 'renewal_date');
     }
 
     public function domains(): HasMany

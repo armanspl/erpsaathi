@@ -7,9 +7,9 @@ const seededVisibility = window.__STUDENT_PORTAL_VISIBILITY__ || {};
 function initialDarkMode() {
     try {
         const saved = localStorage.getItem('student_dark_mode');
-        return saved === null ? true : saved === '1';
+        return saved === '1';
     } catch {
-        return true;
+        return false;
     }
 }
 
@@ -42,6 +42,17 @@ watch(
             // ignore
         }
     },
+);
+
+watch(
+    () => studentStore.darkMode,
+    (dark) => {
+        const root = document.documentElement;
+        root.classList.toggle('dark', dark);
+        root.setAttribute('data-erp-template', 'school-green');
+        root.style.background = dark ? '#052E16' : '#F8FAFC';
+    },
+    { immediate: true },
 );
 
 export function toggleSidebar() {

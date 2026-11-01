@@ -42,4 +42,9 @@ return [
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
     ],
 
+    // Homepage "Request a Demo" form recipient
+    'demo_request' => [
+        'to' => env('DEMO_REQUEST_EMAIL', 'armanansari0757@gmail.com'),
+    ],
+
 ];

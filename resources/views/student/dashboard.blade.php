@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" data-erp-template="school-green">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
     @endif
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         window.__STUDENT__ = @json($studentUser);
         window.__STUDENT_SCHOOL__ = @json($studentSchool ?? []);
@@ -19,15 +19,16 @@
         window.__STUDENT_LOGIN_URL__ = @json(route('student.login'));
         (function () {
             var saved = localStorage.getItem('student_dark_mode');
-            var dark = saved === null ? true : saved === '1';
+            var dark = saved === '1'; // School Green: light unless the student chose night mode
             document.documentElement.classList.toggle('dark', dark);
-            document.documentElement.style.background = dark ? '#07080c' : '#f2f4f7';
+            document.documentElement.setAttribute('data-erp-template', 'school-green');
+            document.documentElement.style.background = dark ? '#052E16' : '#F8FAFC';
         })();
     </script>
     @vite(['resources/css/app.css', 'resources/js/student-app.js'])
     <style>
-        html, body { min-height: 100%; background: #07080c; }
-        body { margin: 0; font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif; }
+        html, body { min-height: 100%; background: #F8FAFC; }
+        body { margin: 0; font-family: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
     </style>
 </head>
 <body class="antialiased">
