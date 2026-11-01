@@ -346,6 +346,41 @@ class GlobalWorkbookImportController extends Controller
             }
         }
 
+        // Headings check before anything is saved: a sheet missing a column it needs (or with
+        // positional columns shifted) is NOT imported — rows would otherwise be misread or all
+        // fail one by one. Columns the import doesn't read are listed as warnings.
+        $headerCheck = [];
+        $sheetOk = function (string $kind, ?array $parsed, ?array $result = null) use (&$headerCheck): bool {
+            if ($parsed === null && $result === null) {
+                return true;
+            }
+            $result ??= $this->checkSheetHeaders($kind, $parsed['header']);
+            $headerCheck[] = ['sheet' => $result['title'] ?? $parsed['title'], 'kind' => $kind, 'imported' => $result['missing'] === []] + $result;
+
+            return $result['missing'] === [];
+        };
+        if (! $sheetOk('INCOME', $incomeSheet)) {
+            $incomeSheet = null;
+        }
+        if (! $sheetOk('EXPENSES', $expenseSheet)) {
+            $expenseSheet = null;
+        }
+        if (! $sheetOk('TRANSPORT', $transportSheet)) {
+            $transportSheet = null;
+        }
+        if ($studentMasterSheet && ! $sheetOk('STUDENT MASTER', $studentMasterSheet,
+            ['title' => $studentMasterSheet['title']] + app(StudentMasterImportService::class)->headerCheck($studentMasterSheet['header']))) {
+            $studentMasterSheet = null;
+        }
+        if (! $sheetOk('FEES DISCOUNT', $feesDiscountSheet)) {
+            $feesDiscountSheet = null;
+        }
+        if ($salaryBankSheet && ! $sheetOk('SALARY', null, ['title' => $salaryBankTitle] + $salaryBank->headerCheck($salaryBankSheet))) {
+            $salaryBankSheet = null;
+        }
+        $bankSheets = array_values(array_filter($bankSheets, fn (array $s) => $sheetOk('BANK', $s)));
+        $blockedSheets = array_values(array_filter($headerCheck, fn ($c) => ! $c['imported']));
+
         $salaryBankResult = null;
         if ($salaryBankSheet) {
             $salaryBankResult = $salaryBank->importWorksheet($salaryBankSheet, $salaryBankTitle, Auth::guard('erp')->id());
@@ -759,7 +794,10 @@ class GlobalWorkbookImportController extends Controller
             'total_rows' => $total,
             'success_count' => $success,
             'failed_count' => $failed,
-            'ignored_columns' => array_values(array_unique($ignoredColumns)),
+            'ignored_columns' => array_values(array_unique(array_merge($ignoredColumns, ...array_map(
+                fn ($c) => array_map(fn ($col) => $c['sheet'].': '.$col, $c['unknown']),
+                $headerCheck
+            )))),
         ]);
 
         $stats['breakdown'] = $breakdown;
@@ -872,9 +910,18 @@ class GlobalWorkbookImportController extends Controller
             'flagged' => $flagged->take(300)->values()->all(),
         ];
 
+        if ($blockedSheets !== []) {
+            $message = 'NOT IMPORTED — headings don\'t match: '.implode('; ', array_map(
+                fn ($c) => $c['sheet'].' (missing '.implode(', ', $c['missing']).')',
+                $blockedSheets
+            )).'. Fix those headings and import again. | '.$message;
+        }
+
         return response()->json([
             'preview' => $preview,
             'corrections_applied' => $applyCorrections,
+            'header_check' => $headerCheck,
+            'blocked_sheets' => count($blockedSheets),
             'report' => $report,
             'log' => $preview ? null : $log->fresh(),
             'failed_rows' => array_slice($failedRows, 0, 200),
@@ -1570,6 +1617,108 @@ class GlobalWorkbookImportController extends Controller
         }
 
         return [$mapped, $junk];
+    }
+
+    /**
+     * Does a sheet's heading row match what the import reads? 'missing' = columns it needs that
+     * aren't there (or, for the positional TRANSPORT/BANK layouts, a heading in the wrong place)
+     * — such a sheet is not imported. 'unknown' = headed columns the import doesn't read; they
+     * are only reported. Blank, formula (=SUM…) and known junk headings are ignored.
+     *
+     * @param  array<int, mixed>  $header
+     * @return array{missing: list<string>, unknown: list<string>, expected: string}
+     */
+    private function checkSheetHeaders(string $kind, array $header): array
+    {
+        $norm = fn ($v) => preg_replace('/\s+/', ' ', strtolower(trim(str_replace("\xc2\xa0", ' ', (string) $v)))) ?? '';
+        $labels = array_map($norm, $header);
+        $isNoise = fn (string $raw) => trim($raw) === '' || str_starts_with(trim($raw), '=') || $this->isJunkHeader($raw);
+        $missing = [];
+        $unknown = [];
+
+        if ($kind === 'INCOME' || $kind === 'EXPENSES') {
+            $map = $kind === 'INCOME' ? self::INCOME_HEADER_MAP : self::EXPENSE_HEADER_MAP;
+            $fields = [];
+            foreach ($header as $i => $raw) {
+                if ($isNoise((string) $raw)) {
+                    continue;
+                }
+                if (isset($map[$labels[$i]])) {
+                    $fields[$map[$labels[$i]]] = true;
+                } else {
+                    $unknown[] = mb_strtoupper(trim((string) $raw));
+                }
+            }
+            if (! isset($fields['date']) && ! (isset($fields['year']) && isset($fields['month']))) {
+                $missing[] = 'DATE';
+            }
+            $required = $kind === 'INCOME'
+                ? ['admission_no' => 'ADM NO', 'name' => 'NAME', 'head' => 'HEAD', 'fee' => 'FEE']
+                : ['description' => 'DESCRIPTION', 'amount' => 'AMOUNT'];
+            foreach ($required as $field => $label) {
+                if (! isset($fields[$field])) {
+                    $missing[] = $label;
+                }
+            }
+            $expected = $kind === 'INCOME'
+                ? 'YEAR, MONTH, DATE, ADM NO, NAME, ADDRESS, CLASS, HEAD, FEE, SESSION, RECEIPT, REMARKS, PMNT MODE'
+                : 'RCPT NO, YEAR, MONTH, DATE, DESCRIPTION, PART 1, PART 2, AMOUNT, PART 3, REMARKS';
+
+            return ['missing' => $missing, 'unknown' => $unknown, 'expected' => $expected];
+        }
+
+        if ($kind === 'FEES DISCOUNT') {
+            $hasAdm = false;
+            $hasDisc = false;
+            foreach ($header as $i => $raw) {
+                if ($isNoise((string) $raw)) {
+                    continue;
+                }
+                $key = $this->normalizeFeesDiscountHeader((string) $raw);
+                if (in_array($key, ['adm no', 'adm no.', 'adm. no.', 'admno', 'admission no', 'admission no.'], true)) {
+                    $hasAdm = true;
+                } elseif (isset(self::FEES_DISCOUNT_HEAD_MAP[$key])) {
+                    $hasDisc = true;
+                } else {
+                    $unknown[] = mb_strtoupper(trim((string) $raw));
+                }
+            }
+            if (! $hasAdm) {
+                $missing[] = 'ADM NO.';
+            }
+            if (! $hasDisc) {
+                $missing[] = 'ADM-DISC / ANN-DISC / TUI DISC / TRA DISC (at least one)';
+            }
+
+            return ['missing' => $missing, 'unknown' => $unknown, 'expected' => 'ADM NO., ADM-DISC, ANN-DISC, TUI DISC, TRA DISC'];
+        }
+
+        // Positional layouts: column letter => what must be headed there (startsWith match).
+        $positions = $kind === 'TRANSPORT'
+            ? ['B' => ['stoppage'], 'C' => ['fare']]
+            : ['C' => ['date'], 'D' => ['item'], 'F' => ['dr/cr', 'dr / cr', 'dr-cr', 'drcr'], 'G' => ['amount']];
+        $readCols = $kind === 'TRANSPORT' ? [0, 1, 2] : [0, 1, 2, 3, 4, 5, 6, 7, 8];
+        foreach ($positions as $letter => $accepted) {
+            $index = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($letter) - 1;
+            $label = $labels[$index] ?? '';
+            $ok = false;
+            foreach ($accepted as $a) {
+                $ok = $ok || str_starts_with($label, $a);
+            }
+            if (! $ok) {
+                $missing[] = strtoupper($accepted[0]).' in column '.$letter.($label !== '' ? ' (found "'.mb_strtoupper(trim((string) $header[$index])).'")' : ' (empty)');
+            }
+        }
+        foreach ($header as $i => $raw) {
+            if (! in_array($i, $readCols, true) && ! $isNoise((string) $raw)) {
+                $unknown[] = mb_strtoupper(trim((string) $raw));
+            }
+        }
+        $expected = $kind === 'TRANSPORT'
+            ? 'S.NO, STOPPAGE, FARE (columns A–C)'
+            : 'YEAR, MON, DATE, ITEM, CHQ NO, DR/CR, AMOUNT, TOTAL, CATEGORY (columns A–I)';
+
+        return ['missing' => $missing, 'unknown' => $unknown, 'expected' => $expected];
     }
 
     /** First of rows 1–5 holding both ADM NO and NAME headers (row 1 when none does). */

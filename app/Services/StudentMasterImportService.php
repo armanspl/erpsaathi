@@ -249,6 +249,34 @@ class StudentMasterImportService
      * @param  array<int, string>  $header
      * @return array{0: array<string, int>, 1: list<string>} [field => column index, warnings]
      */
+    /**
+     * Headings check for the Global Workbook import: 'missing' = columns a Student Master sheet
+     * can't do without (the sheet is then not imported), 'unknown' = headed columns not read.
+     *
+     * @param  array<int, mixed>  $header
+     * @return array{missing: list<string>, unknown: list<string>, expected: string}
+     */
+    public function headerCheck(array $header): array
+    {
+        [$map] = $this->buildColumnMap($header);
+        $unknown = [];
+        foreach ($header as $rawName) {
+            $raw = trim(str_replace("\xc2\xa0", ' ', (string) $rawName));
+            $name = preg_replace('/\s+/', ' ', strtolower($raw)) ?? $raw;
+            if ($name !== '' && ! str_starts_with($name, '=') && $name !== 'status' && ! array_key_exists($name, self::HEADER_MAP)) {
+                $unknown[] = mb_strtoupper($raw);
+            }
+        }
+        $missing = [];
+        foreach (['session' => 'SESSION', 'admission_no' => 'ADM NO.', 'name' => 'NAME', 'class' => 'CLASS'] as $field => $label) {
+            if (! isset($map[$field])) {
+                $missing[] = $label;
+            }
+        }
+
+        return ['missing' => $missing, 'unknown' => $unknown, 'expected' => 'SESSION, ADM NO., NAME, CLASS, SECTION, … (Student Master columns)'];
+    }
+
     private function buildColumnMap(array $header): array
     {
         $map = [];

@@ -124,6 +124,43 @@ class SalaryBankWorkbookService
      *   created: list<array{type:string,id:int,employee_id:string,name:string}>
      * }
      */
+    /**
+     * Headings check for the Global Workbook import: 'missing' = NAME / DESIG / BASIC SALARY /
+     * month columns the sheet needs (it is then not imported), 'unknown' = headed columns not read.
+     *
+     * @return array{missing: list<string>, unknown: list<string>, expected: string}
+     */
+    public function headerCheck(Worksheet $sheet): array
+    {
+        $highestRow = (int) $sheet->getHighestDataRow();
+        $highestCol = Coordinate::columnIndexFromString($sheet->getHighestDataColumn() ?: 'A');
+        $headerRow = $this->findHeaderRow($sheet, $highestRow, $highestCol) ?? 1;
+        $map = $this->mapHeaderColumns($sheet, $headerRow, $highestCol);
+
+        $missing = [];
+        foreach (['name' => 'NAME', 'desig' => 'DESIG', 'basic' => 'BASIC SALARY'] as $key => $label) {
+            if (! isset($map[$key])) {
+                $missing[] = $label;
+            }
+        }
+        if (($map['months'] ?? []) === []) {
+            $missing[] = 'APR … MAR month columns';
+        }
+
+        $read = array_merge(array_filter([$map['name'] ?? null, $map['desig'] ?? null, $map['basic'] ?? null]), array_values($map['months'] ?? []));
+        $unknown = [];
+        for ($c = 1; $c <= $highestCol; $c++) {
+            $raw = trim((string) $this->cellValue($sheet, $c, $headerRow));
+            $label = $this->normalizeHeader($raw);
+            if ($raw === '' || str_starts_with($raw, '=') || in_array($c, $read, true) || in_array($label, ['sl no', 's no', 'sno', 'total'], true)) {
+                continue;
+            }
+            $unknown[] = mb_strtoupper($raw);
+        }
+
+        return ['missing' => $missing, 'unknown' => $unknown, 'expected' => 'SL NO, NAME, DESIG, BASIC SALARY, APR … MAR, TOTAL'];
+    }
+
     public function importWorksheet(Worksheet $sheet, ?string $sheetTitle = null, ?int $userId = null): array
     {
         $title = $sheetTitle ?? (string) $sheet->getTitle();

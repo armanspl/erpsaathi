@@ -124,6 +124,32 @@
                         </div>
                     </div>
 
+                    <!-- Headings check: sheets whose headings don't match are not imported -->
+                    <div v-if="blockedSheets.length" class="overflow-hidden rounded-lg border border-rose-300 dark:border-rose-900/60">
+                        <p class="bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 dark:bg-rose-900/30 dark:text-rose-200">
+                            ⚠ {{ blockedSheets.length }} sheet(s) {{ importResult.preview ? 'will NOT be imported' : 'were NOT imported' }} — their headings don't match.
+                            Fix the headings in Excel and import again; the other sheets are not affected.
+                        </p>
+                        <ul class="divide-y divide-rose-100 text-xs dark:divide-rose-900/40">
+                            <li v-for="c in blockedSheets" :key="c.sheet" class="px-3 py-2">
+                                <p class="font-semibold text-slate-800 dark:text-slate-100">{{ c.sheet }} <span class="font-normal text-slate-400">({{ c.kind }} sheet)</span></p>
+                                <p class="mt-0.5 text-rose-700 dark:text-rose-300">Missing / wrong: {{ c.missing.join(' · ') }}</p>
+                                <p v-if="c.unknown.length" class="mt-0.5 text-slate-500">Not recognised: {{ c.unknown.join(', ') }}</p>
+                                <p class="mt-0.5 text-slate-500">Expected headings: {{ c.expected }}</p>
+                            </li>
+                        </ul>
+                    </div>
+                    <div v-if="unreadColumnSheets.length" class="overflow-hidden rounded-lg border border-amber-200 dark:border-amber-900/50">
+                        <p class="bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                            Columns not imported — these headings aren't recognised, so their data is ignored (the rest of the sheet {{ importResult.preview ? 'will be' : 'was' }} imported).
+                        </p>
+                        <ul class="divide-y divide-amber-100 text-xs dark:divide-amber-900/40">
+                            <li v-for="c in unreadColumnSheets" :key="c.sheet" class="px-3 py-1.5 text-slate-600 dark:text-slate-300">
+                                <span class="font-semibold text-slate-800 dark:text-slate-100">{{ c.sheet }}:</span> {{ c.unknown.join(', ') }}
+                            </li>
+                        </ul>
+                    </div>
+
                     <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                         <div v-for="card in reportCards" :key="card.label" class="rounded-lg border border-slate-100 px-3 py-2 dark:border-slate-800">
                             <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{{ card.label }}</p>
@@ -524,6 +550,9 @@ const importPhase = ref('idle'); // idle | uploading | processing
 const uploadProgress = ref(0);
 const importMode = ref('import'); // Global Workbook: preview first, then import
 const applyCorrections = ref(false);
+// Global Workbook headings check (server: header_check) — blocked sheets aren't imported.
+const blockedSheets = computed(() => (importResult.value?.header_check || []).filter((c) => !c.imported));
+const unreadColumnSheets = computed(() => (importResult.value?.header_check || []).filter((c) => c.imported && c.unknown?.length));
 
 const FLAG_LABELS = {
     fee_payment_changed: 'Payment differs',

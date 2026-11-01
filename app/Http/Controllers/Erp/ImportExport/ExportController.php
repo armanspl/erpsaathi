@@ -44,7 +44,7 @@ class ExportController extends Controller
      * GAS INC_EXP). Route and Attendance are deliberately excluded from the combined workbook —
      * they remain available as standalone exports via the 'route'/'attendance' entities above.
      */
-    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fee', 'expense', 'salary', 'bank'];
+    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fee', 'daily-income', 'expense', 'salary', 'bank'];
 
     /** Fee-head columns in the Income sheet — also used to flag those columns as money for formatting. */
     private const INCOME_HEAD_CODES = ['REG', 'ADM', 'ANN', 'TUI', 'TRA', 'FINE', 'DIARY', 'TC'];
@@ -55,6 +55,7 @@ class ExportController extends Controller
         'student-udise' => '0F766E',
         'stud-rec-sum' => 'CA8A04',
         'fee' => '059669',
+        'daily-income' => '0E7490',
         'expense' => 'DC2626',
         'salary' => '7C3AED',
         'bank' => '2563EB',
@@ -277,36 +278,81 @@ class ExportController extends Controller
         }
 
         foreach ($sections as [$name, $section]) {
-            [$header, $rows] = $section;
-            $customTitle = $section[2] ?? null;
-
             $sheet = $sheetIndex === 0 ? $spreadsheet->getActiveSheet() : $spreadsheet->createSheet();
-            $title = $customTitle ?: self::sheetTitle($name);
-            $sheet->setTitle(mb_substr($title, 0, 31));
-            // Global INCOME sheet: row 1 carries a total above every amount column, header moves to row 2.
-            $withTotalsRow = $entity === 'global' && $name === 'fee';
-            $headerRow = $withTotalsRow ? 2 : 1;
-            $sheet->fromArray($header, null, 'A'.$headerRow);
-            if ($rows) {
-                // strictNullComparison=true — otherwise PhpSpreadsheet's default loose (==) null
-                // check treats a numeric 0 as "null" (0 == null is true in PHP) and skips the
-                // cell entirely, leaving it blank instead of writing 0.
-                $sheet->fromArray($rows, null, 'A'.($headerRow + 1), true);
-            }
-            $isRichLayout = $name === 'student';
-            $moneyHeaders = $entity === 'global' ? $this->moneyHeadersFor($name, $header) : [];
-            $dateFormats = $entity === 'global' ? $this->dateFormatsFor($name) : [];
-            // richLayout (Student) sheet uses its own curated STUDENT_COLUMN_WIDTHS map instead.
-            $columnWidths = ($entity === 'global' && ! $isRichLayout) ? $this->computeColumnWidths($header, $rows, $dateFormats) : null;
-            $rowsForStyling = $entity === 'global' ? $rows : null;
-            $this->styleDataSheet($sheet, $header, count($rows), self::SHEET_ACCENTS[$name] ?? '4F46E5', $isRichLayout, $headerRow, $moneyHeaders, $columnWidths, $rowsForStyling, $dateFormats);
-            if ($withTotalsRow) {
-                $this->writeColumnTotalsRow($sheet, $header, $rows, $moneyHeaders, self::SHEET_ACCENTS[$name] ?? '4F46E5');
-            }
+            $this->writeSectionSheet($sheet, $name, $section, $entity === 'global');
             $sheetIndex++;
         }
         $spreadsheet->setActiveSheetIndex(0);
 
+        return $this->streamXlsx($spreadsheet, $filename);
+    }
+
+    /**
+     * The Global Workbook's INCOME sheet on its own (same columns, styling and totals row), for
+     * fee reports that export in that layout — e.g. Fee Management › Month-wise Fee Collection.
+     * $scope narrows it: 'session' (?AcademicSession, null = all sessions) replaces the header
+     * picker, 'payments' (Closure) adds filters to the fee_payments query, and 'fee_month'
+     * (Y-m) keeps only that month's share of each line. A scoped export lists fee receipts only
+     * (no misc income or discount-month rows).
+     *
+     * @param  array{session?: ?AcademicSession, payments?: \Closure, fee_month?: ?string}  $scope
+     */
+    public function incomeSheetDownload(Request $request, array $scope, string $basename, string $format = 'xlsx'): StreamedResponse
+    {
+        @set_time_limit(300);
+        @ini_set('memory_limit', '512M');
+
+        $section = $this->finalizeGlobalSection('fee', $this->buildIncomeExport($request, $scope));
+        $filename = $basename.'-'.now()->format('Ymd-His').'.'.($format === 'csv' ? 'csv' : 'xlsx');
+
+        if ($format === 'csv') {
+            return $this->streamCsv($section[0], $section[1], $filename);
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial');
+        $this->writeSectionSheet($spreadsheet->getActiveSheet(), 'fee', $section, true);
+
+        return $this->streamXlsx($spreadsheet, $filename);
+    }
+
+    /**
+     * One exported section as a styled sheet. $global turns on the Global Workbook look (money
+     * and date formats, content-sized columns, and the INCOME sheet's totals row).
+     *
+     * @param  array{0: array<int, string>, 1: array<int, array<int, mixed>>, 2?: string}  $section
+     */
+    private function writeSectionSheet(Worksheet $sheet, string $name, array $section, bool $global): void
+    {
+        [$header, $rows] = $section;
+        $customTitle = $section[2] ?? null;
+
+        $title = $customTitle ?: self::sheetTitle($name);
+        $sheet->setTitle(mb_substr($title, 0, 31));
+        // Global INCOME sheet: row 1 carries a total above every amount column, header moves to row 2.
+        $withTotalsRow = $global && in_array($name, ['fee', 'daily-income'], true);
+        $headerRow = $withTotalsRow ? 2 : 1;
+        $sheet->fromArray($header, null, 'A'.$headerRow);
+        if ($rows) {
+            // strictNullComparison=true — otherwise PhpSpreadsheet's default loose (==) null
+            // check treats a numeric 0 as "null" (0 == null is true in PHP) and skips the
+            // cell entirely, leaving it blank instead of writing 0.
+            $sheet->fromArray($rows, null, 'A'.($headerRow + 1), true);
+        }
+        $isRichLayout = $name === 'student';
+        $moneyHeaders = $global ? $this->moneyHeadersFor($name, $header) : [];
+        $dateFormats = $global ? $this->dateFormatsFor($name) : [];
+        // richLayout (Student) sheet uses its own curated STUDENT_COLUMN_WIDTHS map instead.
+        $columnWidths = ($global && ! $isRichLayout) ? $this->computeColumnWidths($header, $rows, $dateFormats) : null;
+        $rowsForStyling = $global ? $rows : null;
+        $this->styleDataSheet($sheet, $header, count($rows), self::SHEET_ACCENTS[$name] ?? '4F46E5', $isRichLayout, $headerRow, $moneyHeaders, $columnWidths, $rowsForStyling, $dateFormats);
+        if ($withTotalsRow) {
+            $this->writeColumnTotalsRow($sheet, $header, $rows, $moneyHeaders, self::SHEET_ACCENTS[$name] ?? '4F46E5');
+        }
+    }
+
+    private function streamXlsx(Spreadsheet $spreadsheet, string $filename): StreamedResponse
+    {
         return response()->streamDownload(function () use ($spreadsheet) {
             \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
             (new Xlsx($spreadsheet))->save('php://output');
@@ -657,6 +703,7 @@ class ExportController extends Controller
                 'TUI_DUES', 'TRA_PMNT', 'TRA CALC', 'TRA_DUES', 'DUES',
             ],
             'fee' => array_merge(self::INCOME_HEAD_CODES, ['OTHER', 'GRAND TOTAL']),
+            'daily-income' => ['CASH', 'BANK', 'INCOME'],
             'expense' => ['AMOUNT'],
             'bank' => ['AMOUNT', 'TOTAL'],
             'salary' => array_merge(['BASIC SALARY', 'TOTAL'], SalaryBankWorkbookService::EXPORT_MONTHS),
@@ -666,9 +713,9 @@ class ExportController extends Controller
 
     /**
      * Header labels (exact match) whose cells are real Excel serial-date numbers, mapped to the
-     * display format they should render with. Only the Income sheet's MONTH/DATE columns use
-     * actual dates today — every other date column in the workbook stays a plain DD-MM-YYYY text
-     * string, unaffected by this.
+     * display format they should render with. Only the Income and Expenses sheets' MONTH/DATE
+     * columns use actual dates today (finalizeGlobalSection() turns Expenses' Y-m-d values into
+     * serials) — every other date column in the workbook stays a plain DD-MM-YYYY text string.
      *
      * @return array<string, string>
      */
@@ -676,6 +723,9 @@ class ExportController extends Controller
     {
         return match ($name) {
             'fee' => ['MONTH' => 'mmm-yy', 'DATE' => 'dd-mmm-yy'],
+            'daily-income' => ['DATE' => 'dd/mmm/yy'],
+            // EXPENSES MONTH/DATE as e.g. 01-Jan-2026 / 02-Jan-2026 (real dates, still filterable).
+            'expense' => ['MONTH' => 'dd-mmm-yyyy', 'DATE' => 'dd-mmm-yyyy'],
             default => [],
         };
     }
@@ -701,6 +751,14 @@ class ExportController extends Controller
             }
         }
 
+        // Columns that become real Excel dates (shown via dateFormatsFor()) instead of DD-MM-YYYY text.
+        $serialDateIdx = [];
+        foreach ($header as $i => $label) {
+            if (isset($this->dateFormatsFor($name)[$label])) {
+                $serialDateIdx[$i] = true;
+            }
+        }
+
         foreach ($rows as &$row) {
             $rowIsBlank = true;
             foreach ($row as $cell) {
@@ -715,7 +773,8 @@ class ExportController extends Controller
 
             foreach ($row as $i => &$cell) {
                 if (is_string($cell) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $cell)) {
-                    $cell = \Carbon\Carbon::createFromFormat('Y-m-d', $cell)->format('d-m-Y');
+                    $date = \Carbon\Carbon::createFromFormat('!Y-m-d', $cell);
+                    $cell = isset($serialDateIdx[$i]) ? $this->excelDateSerial($date) : $date->format('d-m-Y');
 
                     continue;
                 }
@@ -1297,6 +1356,7 @@ class ExportController extends Controller
             'student-udise' => 'Student UDISE',
             'stud-rec-sum' => 'Stud_Rec_Sum',
             'fee' => 'INCOME',
+            'daily-income' => 'Daily Summary',
             'expense' => 'EXPENSES',
             default => ucfirst($entity),
         };
@@ -1314,6 +1374,7 @@ class ExportController extends Controller
             'student-udise' => $this->buildStudentUdiseExport($request),
             'stud-rec-sum' => $this->buildStudRecSumExport($request),
             'fee' => $this->buildIncomeExport($request),
+            'daily-income' => $this->buildDailyIncomeSummary($request),
             // Same column layout as the legacy workbook's EXPENSES sheet / Global Workbook import.
             'expense' => [
                 ['RCPT', 'YEAR', 'MONTH', 'DATE', 'DESCRIPTION', 'PART 1', 'PART 2', 'AMOUNT', 'PART 3', 'REMARKS'],
@@ -1355,11 +1416,19 @@ class ExportController extends Controller
      * re-export of a legacy workbook) the older long-format HEAD/FEE-per-row sheet; this wide
      * layout is not read back in by GlobalWorkbookImportController.
      *
+     * $scope: see incomeSheetDownload().
+     *
+     * @param  array{session?: ?AcademicSession, payments?: \Closure, fee_month?: ?string}  $scope
      * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
      */
-    private function buildIncomeExport(?Request $request = null): array
+    private function buildIncomeExport(?Request $request = null, array $scope = []): array
     {
-        [$session, $allSessions] = $this->resolveHeaderSession($request);
+        [$session, $allSessions] = array_key_exists('session', $scope)
+            ? [$scope['session'], $scope['session'] === null]
+            : $this->resolveHeaderSession($request);
+        $scoped = $scope !== [];
+        $feeMonth = $scope['fee_month'] ?? null;
+        $this->dailyIncome = [];
 
         $headCodes = self::INCOME_HEAD_CODES;
         $headers = array_merge(
@@ -1377,6 +1446,7 @@ class ExportController extends Controller
             ])
             ->when(! $allSessions && $session, fn ($q) => $q->touchingSessions([$session->id]))
             ->where('status', '!=', 'Rolled Back')
+            ->when(isset($scope['payments']), fn ($q) => $scope['payments']($q))
             ->orderBy('payment_date')
             ->orderBy('id')
             ->get();
@@ -1446,15 +1516,27 @@ class ExportController extends Controller
                 $items[] = ['fee_head_name' => 'Fee', 'amount' => (float) $payment->amount, 'months' => []];
             }
 
+            $paymentTotal = 0.0; // this payment's share of the INCOME row — feeds the Daily Summary sheet
             foreach ($items as $item) {
                 $headName = trim((string) ($item['fee_head_name'] ?? 'Fee')) ?: 'Fee';
                 $amount = (float) ($item['amount'] ?? 0);
+                if ($feeMonth !== null) {
+                    // Only lines that cover this fee month (a line without months counts for its payment month).
+                    $months = array_map(
+                        fn ($m) => substr(trim((string) $m), 0, 7),
+                        (array) (($item['months'] ?? null) ?: (($item['month'] ?? null) ? [$item['month']] : []))
+                    ) ?: [$payment->payment_date?->format('Y-m')];
+                    if (! in_array($feeMonth, $months, true)) {
+                        continue;
+                    }
+                }
                 if ($amount == 0.0) {
                     continue;
                 }
                 $code = $this->incomeHeadCode($headName);
                 $bucket = isset($knownCodes[$code]) ? $code : 'OTHER';
                 $groups[$key]['amounts'][$bucket] += $amount;
+                $paymentTotal += $amount;
 
                 $remark = $this->incomeRemarksForItem($item, $payment->remarks);
                 if ($remark !== '' && ! in_array($remark, $groups[$key]['remarks'], true)) {
@@ -1462,9 +1544,13 @@ class ExportController extends Controller
                 }
             }
 
-            $fine = (float) $payment->fine_amount;
+            // A fine isn't tied to a fee month, so a single-fee-month export leaves it out — except
+            // on a fine-only receipt (no fee lines), which counts for its payment month.
+            $fineOnlyInMonth = empty($payment->items) && $payment->payment_date?->format('Y-m') === $feeMonth;
+            $fine = $feeMonth !== null && ! $fineOnlyInMonth ? 0.0 : (float) $payment->fine_amount;
             if ($fine > 0) {
                 $groups[$key]['amounts']['FINE'] += $fine;
+                $paymentTotal += $fine;
             }
 
             $receipt = $payment->receipt_no ?? '';
@@ -1473,6 +1559,7 @@ class ExportController extends Controller
             }
 
             $mode = $modeByReceipt[$receipt] ?? ($payment->payment_mode ?: 'Cash');
+            $this->addDailyIncome($paymentDate, $mode, $paymentTotal);
             if (! in_array($mode, $groups[$key]['modes'], true)) {
                 $groups[$key]['modes'][] = $mode;
             }
@@ -1516,6 +1603,10 @@ class ExportController extends Controller
             $rows[] = $row;
         }
 
+        if ($scoped) {
+            return [$headers, $rows];
+        }
+
         // Misc income rows (no admission no) — same wide columns, one row per entry.
         $incomes = Income::query()
             ->with('bankAccount:id,account_name')
@@ -1531,6 +1622,7 @@ class ExportController extends Controller
             $code = $this->incomeHeadCode((string) ($income->source ?: 'Income'));
             $bucket = isset($knownCodes[$code]) ? $code : 'OTHER';
             $amount = round((float) $income->amount, 2);
+            $this->addDailyIncome($income->date?->toDateString() ?? '', $mode, $amount);
 
             $row = [
                 $income->date ? $this->fiscalYearLabel($income->date) : '',
@@ -1555,6 +1647,44 @@ class ExportController extends Controller
         }
 
         return [$headers, $rows];
+    }
+
+    /** @var array<string, array{cash: float, bank: float}>|null Y-m-d => totals, filled by buildIncomeExport() */
+    private ?array $dailyIncome = null;
+
+    /** Cash when the INCOME row's PMNT MODE is Cash; any other mode (UPI, card, cheque, bank account…) is Bank. */
+    private function addDailyIncome(string $date, string $mode, float $amount): void
+    {
+        if ($date === '' || round($amount, 2) == 0.0) {
+            return;
+        }
+        $this->dailyIncome[$date] ??= ['cash' => 0.0, 'bank' => 0.0];
+        $this->dailyIncome[$date][strcasecmp(trim($mode), 'cash') === 0 ? 'cash' : 'bank'] += $amount;
+    }
+
+    /**
+     * Daily Summary sheet — DATE | CASH | BANK | INCOME, one row per day that had income, from the
+     * same payments and misc income as the INCOME sheet (so the totals match it).
+     *
+     * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>}
+     */
+    private function buildDailyIncomeSummary(?Request $request = null): array
+    {
+        if ($this->dailyIncome === null) {
+            $this->buildIncomeExport($request);
+        }
+        ksort($this->dailyIncome);
+
+        $rows = [];
+        foreach ($this->dailyIncome as $date => $t) {
+            $total = round($t['cash'] + $t['bank'], 2);
+            if ($total == 0.0) {
+                continue;
+            }
+            $rows[] = [$this->excelDateSerial(\Carbon\Carbon::createFromFormat('!Y-m-d', $date)), round($t['cash'], 2), round($t['bank'], 2), $total];
+        }
+
+        return [['DATE', 'CASH', 'BANK', 'INCOME'], $rows];
     }
 
     /**

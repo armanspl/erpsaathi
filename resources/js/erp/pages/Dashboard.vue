@@ -212,12 +212,15 @@
                     </div>
                 </DashCard>
 
-                <DashCard title="Recent activity" icon="history">
-                    <div v-if="!recentActivities.length" class="dash-empty">No recent activity.</div>
-                    <ul v-else class="dash-activity">
-                        <li v-for="(a, i) in recentActivities" :key="i">{{ a }}</li>
-                    </ul>
-                </DashCard>
+                <div class="flex min-w-0 flex-col gap-4">
+                    <WorkingDaysCard />
+                    <DashCard title="Recent activity" icon="history">
+                        <div v-if="!recentActivities.length" class="dash-empty">No recent activity.</div>
+                        <ul v-else class="dash-activity">
+                            <li v-for="(a, i) in recentActivities" :key="i">{{ a }}</li>
+                        </ul>
+                    </DashCard>
+                </div>
             </div>
 
             <div class="dash-grid dash-grid--2">
@@ -309,6 +312,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import AppIcon from '../components/common/AppIcon.vue';
 import DashCard from '../components/dashboard/DashCard.vue';
+import WorkingDaysCard from '../components/dashboard/WorkingDaysCard.vue';
 import { erpStore, loadSessions } from '../store';
 import client from '../api/client';
 

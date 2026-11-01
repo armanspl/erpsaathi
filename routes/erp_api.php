@@ -28,6 +28,7 @@ use App\Http\Controllers\Erp\DatabaseBackupController;
 use App\Http\Controllers\Erp\Attendance\AttendanceReportController;
 use App\Http\Controllers\Erp\Attendance\HolidayController;
 use App\Http\Controllers\Erp\Attendance\LeaveRequestController;
+use App\Http\Controllers\Erp\Attendance\SchoolWorkingDayController;
 use App\Http\Controllers\Erp\Attendance\WorkingDayConfigController;
 use App\Http\Controllers\Erp\Communication\ErpNoticeController;
 use App\Http\Controllers\Erp\Communication\EventController;
@@ -436,6 +437,7 @@ Route::prefix('fee-management')->name('fee-management.')->group(function () {
     Route::middleware('erp.permission:fee-management.fee-structure.delete')->delete('structures/{plan}', [ErpFeeStructureController::class, 'destroy'])->name('structures.destroy');
 
     Route::middleware('erp.permission:fee-management.pay-fee.create')->post('payments', [FeePaymentController::class, 'store'])->name('payments.store');
+    Route::middleware('erp.permission:fee-management.fee-receipt.edit')->post('payments/{payment}/edit-otp', [FeePaymentController::class, 'requestEditOtp'])->middleware('throttle:6,1')->name('payments.edit-otp');
     Route::middleware('erp.permission:fee-management.fee-receipt.edit')->patch('payments/{payment}', [FeePaymentController::class, 'update'])->name('payments.update');
     Route::middleware('erp.permission:fee-management.fee-receipt.rollback')->group(function () {
         Route::post('payments/{payment}/refund', [FeePaymentController::class, 'refund'])->name('payments.refund');
@@ -457,6 +459,7 @@ Route::prefix('attendance')->name('attendance.')->group(function () {
     Route::get('leave-requests/my-profile', [LeaveRequestController::class, 'myProfile'])->name('leave-requests.my-profile');
     Route::get('holidays', [HolidayController::class, 'index'])->name('holidays.index');
     Route::get('working-days', [WorkingDayConfigController::class, 'show'])->name('working-days.show');
+    Route::get('school-working-days', [SchoolWorkingDayController::class, 'index'])->name('school-working-days.index');
     Route::get('reports', [AttendanceReportController::class, 'index'])->name('reports.index');
     Route::get('mine', [AttendanceController::class, 'mine'])->name('mine');
     Route::get('student/sessions', [AttendanceController::class, 'studentSessions'])->name('student.sessions');
@@ -489,6 +492,7 @@ Route::prefix('attendance')->name('attendance.')->group(function () {
         Route::delete('holidays/{holiday}', [HolidayController::class, 'destroy'])->name('holidays.destroy');
 
         Route::put('working-days', [WorkingDayConfigController::class, 'update'])->name('working-days.update');
+        Route::put('school-working-days', [SchoolWorkingDayController::class, 'update'])->name('school-working-days.update');
 
         Route::post('driver/check-in', [AttendanceController::class, 'driverCheckIn'])->name('driver.check-in');
         Route::post('driver/route-students', [AttendanceController::class, 'storeDriverRouteStudents'])->name('driver.route-students.store');

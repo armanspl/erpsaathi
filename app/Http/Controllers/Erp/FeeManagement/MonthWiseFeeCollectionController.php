@@ -3,16 +3,13 @@
 namespace App\Http\Controllers\Erp\FeeManagement;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Erp\ImportExport\ExportController;
 use App\Models\AcademicSession;
 use App\Models\FeeHead;
 use App\Models\FeePayment;
-use App\Support\TabularExport;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -53,110 +50,26 @@ class MonthWiseFeeCollectionController extends Controller
         ]);
     }
 
+    /**
+     * Same layout as the Global Workbook's INCOME sheet (one row per student per payment date,
+     * a column per fee head, GRAND TOTAL, RECEIPT, PMNT MODE), limited to this report's filters.
+     */
     public function export(Request $request): StreamedResponse
     {
-        $data = $request->validate([
+        $format = $request->validate([
             'format' => 'nullable|in:xlsx,csv',
-        ]);
-        $format = $data['format'] ?? 'xlsx';
-        $built = $this->buildReport($request);
+        ])['format'] ?? 'xlsx';
+        [$data, $sessionFilterId] = $this->filters($request);
 
-        $detailHeader = [
-            'Receipt No',
-            'Admission No',
-            'Student',
-            'Class',
-            'Section',
-            'Payment Date',
-            'Payment Month',
-            'Fee Month',
-            'Fee Head',
-            'Amount',
-            'Payment Mode',
-        ];
-        $detailRows = $built['rows']->map(fn (array $r) => [
-            $r['receipt_no'],
-            $r['admission_no'],
-            $r['student_name'],
-            $r['school_class'],
-            $r['section'],
-            $r['payment_date'],
-            $r['payment_month_label'],
-            $r['fee_month_label'],
-            $r['fee_head_name'],
-            $r['amount'],
-            $r['payment_mode'],
-        ])->all();
-
-        if ($format === 'csv') {
-            return TabularExport::stream($detailHeader, $detailRows, 'month-wise-fee-collection', 'Month-wise Fee Collection', 'csv');
-        }
-
-        $spreadsheet = new Spreadsheet();
-
-        // --- Summary sheet ---
-        $summary = $spreadsheet->getActiveSheet();
-        $summary->setTitle('Month Summary');
-        $summaryHeader = ['Payment Month', 'Students', 'Receipts', 'Line Items', 'Total Collected'];
-        $summary->fromArray($summaryHeader, null, 'A1');
-        $summary->getStyle('A1:E1')->getFont()->setBold(true);
-        $summary->getStyle('A1:E1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('DBEAFE');
-        $summaryData = $built['summaries']->map(fn (array $s) => [
-            $s['payment_month_label'],
-            $s['students'],
-            $s['receipts'],
-            $s['line_items'],
-            $s['total_collected'],
-        ])->all();
-        $summaryData[] = [
-            'GRAND TOTAL',
-            $built['totals']['students'],
-            $built['totals']['receipts'],
-            $built['totals']['line_items'],
-            $built['totals']['total_collected'],
-        ];
-        if ($summaryData !== []) {
-            $summary->fromArray($summaryData, null, 'A2');
-            $last = 1 + count($summaryData);
-            $summary->getStyle("A{$last}:E{$last}")->getFont()->setBold(true);
-        }
-        foreach (range(1, 5) as $col) {
-            $summary->getColumnDimensionByColumn($col)->setAutoSize(true);
-        }
-
-        // --- Detail sheet ---
-        $detail = $spreadsheet->createSheet();
-        $detail->setTitle('Collection Detail');
-        $detail->fromArray($detailHeader, null, 'A1');
-        $detail->getStyle('A1:K1')->getFont()->setBold(true);
-        $detail->getStyle('A1:K1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('DCFCE7');
-        if ($detailRows !== []) {
-            $detail->fromArray($detailRows, null, 'A2');
-        }
-        foreach (range(1, 11) as $col) {
-            $detail->getColumnDimensionByColumn($col)->setAutoSize(true);
-        }
-
-        $spreadsheet->setActiveSheetIndex(0);
-        $filename = 'month-wise-fee-collection-'.now()->format('Ymd-His').'.xlsx';
-
-        return response()->streamDownload(function () use ($spreadsheet) {
-            \App\Support\ExcelBorders::applyThinGrid($spreadsheet);
-            (new Xlsx($spreadsheet))->save('php://output');
-            $spreadsheet->disconnectWorksheets();
-        }, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ]);
+        return app(ExportController::class)->incomeSheetDownload($request, [
+            'session' => $sessionFilterId ? AcademicSession::find($sessionFilterId) : null,
+            'payments' => fn ($query) => $this->applyPaymentFilters($query, $data),
+            'fee_month' => $data['fee_month'] ?? null,
+        ], 'month-wise-fee-collection', $format);
     }
 
-    /**
-     * @return array{
-     *   rows: Collection<int, array<string, mixed>>,
-     *   summaries: Collection<int, array<string, mixed>>,
-     *   totals: array<string, mixed>
-     * }
-     */
-    private function buildReport(Request $request): array
+    /** @return array{0: array<string, mixed>, 1: ?int} validated filters and the session to report on */
+    private function filters(Request $request): array
     {
         $data = $request->validate([
             'academic_session_id' => 'nullable|integer|exists:academic_sessions,id',
@@ -170,24 +83,19 @@ class MonthWiseFeeCollectionController extends Controller
             'search' => 'nullable|string|max:100',
         ]);
 
-        $query = FeePayment::query()
-            ->with([
-                'student:id,name,admission_no,school_class_id,section_id',
-                'student.schoolClass:id,name',
-                'student.section:id,name',
-            ])
-            ->whereNotIn('status', ['Rolled Back']);
-
         $sessionFilterId = null;
         if (! empty($data['academic_session_id'])) {
             $sessionFilterId = (int) $data['academic_session_id'];
         } elseif (! AcademicSession::requestWantsAll($request)) {
             $sessionFilterId = AcademicSession::fromRequest($request, true)?->id;
         }
-        if ($sessionFilterId) {
-            $query->touchingSessions([$sessionFilterId]);
-        }
 
+        return [$data, $sessionFilterId];
+    }
+
+    /** Payment date / month / mode and student (class, section, search) filters. */
+    private function applyPaymentFilters($query, array $data)
+    {
         if (! empty($data['payment_from'])) {
             $query->whereDate('payment_date', '>=', $data['payment_from']);
         }
@@ -218,6 +126,33 @@ class MonthWiseFeeCollectionController extends Controller
                 }
             });
         }
+
+        return $query;
+    }
+
+    /**
+     * @return array{
+     *   rows: Collection<int, array<string, mixed>>,
+     *   summaries: Collection<int, array<string, mixed>>,
+     *   totals: array<string, mixed>
+     * }
+     */
+    private function buildReport(Request $request): array
+    {
+        [$data, $sessionFilterId] = $this->filters($request);
+
+        $query = FeePayment::query()
+            ->with([
+                'student:id,name,admission_no,school_class_id,section_id',
+                'student.schoolClass:id,name',
+                'student.section:id,name',
+            ])
+            ->whereNotIn('status', ['Rolled Back']);
+
+        if ($sessionFilterId) {
+            $query->touchingSessions([$sessionFilterId]);
+        }
+        $this->applyPaymentFilters($query, $data);
 
         $payments = $query->orderByDesc('payment_date')->orderByDesc('id')->get();
         if ($sessionFilterId) {

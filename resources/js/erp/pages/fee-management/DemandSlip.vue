@@ -25,9 +25,80 @@
                         </button>
                     </div>
                 </div>
-                <button type="button" class="btn-outline" :disabled="!!exporting || !rows.length" @click="runExport('pdf')">{{ exporting === 'pdf' ? 'Exporting…' : 'PDF' }}</button>
-                <button type="button" class="btn-outline" :disabled="!!exporting || !rows.length" @click="runExport('csv')">{{ exporting === 'csv' ? 'Exporting…' : 'CSV' }}</button>
-                <button type="button" class="btn-primary" :disabled="!!exporting || !rows.length" @click="runExport('xlsx')">{{ exporting === 'xlsx' ? 'Exporting…' : 'Export Excel' }}</button>
+                <button type="button" class="btn-primary" :disabled="!!exporting || !columns.length" @click="openExport">{{ exporting ? 'Exporting…' : 'Export' }}</button>
+            </div>
+        </div>
+
+        <!-- Export options -->
+        <div v-if="exportOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-slate-900/40" @click="exportOpen = false" />
+            <div class="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Export demand slip</h2>
+                    <p class="mt-1 text-sm text-slate-500">Choose what goes into the file. {{ exportFilterSummary }}</p>
+                </div>
+                <div class="space-y-5 overflow-y-auto px-5 py-4">
+                    <div>
+                        <p class="form-label">Format</p>
+                        <div class="flex flex-wrap gap-2">
+                            <label
+                                v-for="f in [{ key: 'xlsx', label: 'Excel (.xlsx)' }, { key: 'csv', label: 'CSV' }, { key: 'pdf', label: 'PDF' }]"
+                                :key="f.key"
+                                class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                                :class="exportForm.format === f.key ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300' : 'border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-300'"
+                            >
+                                <input v-model="exportForm.format" type="radio" :value="f.key" class="sr-only" />
+                                {{ f.label }}
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="form-label">Students</p>
+                        <div class="flex flex-wrap gap-2">
+                            <label
+                                v-for="t in [{ key: 'active', label: 'Enrolled students' }, { key: 'left', label: 'Left students' }]"
+                                :key="t.key"
+                                class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                                :class="exportForm.tab === t.key ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300' : 'border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-300'"
+                            >
+                                <input v-model="exportForm.tab" type="radio" :value="t.key" class="sr-only" />
+                                {{ t.label }}
+                                <span class="rounded-full bg-slate-200/80 px-1.5 text-[11px] text-slate-600 dark:bg-slate-600 dark:text-slate-200">{{ tabCounts[t.key] }}</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <p class="form-label !mb-0">Columns <span class="font-normal text-slate-400">({{ exportForm.columns.length }} of {{ columns.length }})</span></p>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" class="btn-outline !py-1 !text-xs" @click="exportForm.columns = columns.map((c) => c.key)">Select all</button>
+                                <button type="button" class="btn-outline !py-1 !text-xs" @click="exportForm.columns = [...DUES_PRESET]">Dues only</button>
+                                <button type="button" class="btn-outline !py-1 !text-xs" @click="exportForm.columns = [...PAID_PRESET]">Payments only</button>
+                                <button type="button" class="btn-outline !py-1 !text-xs" @click="exportForm.columns = []">Clear</button>
+                            </div>
+                        </div>
+                        <div class="mt-2 space-y-3">
+                            <div v-for="group in columnGroups" :key="group.label">
+                                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{{ group.label }}</p>
+                                <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
+                                    <label v-for="c in group.columns" :key="c.key" class="inline-flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                                        <input v-model="exportForm.columns" type="checkbox" :value="c.key" class="rounded border-slate-300" />
+                                        {{ c.label }}
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+                    <p class="text-xs text-rose-600">{{ !exportForm.columns.length ? 'Pick at least one column.' : (!tabCounts[exportForm.tab] ? 'No students to export.' : '') }}</p>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn-outline" @click="exportOpen = false">Cancel</button>
+                        <button type="button" class="btn-primary" :disabled="!!exporting || !exportForm.columns.length || !tabCounts[exportForm.tab]" @click="confirmExport">
+                            {{ exporting ? 'Exporting…' : 'Export' }}
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -397,11 +468,40 @@ async function saveNote() {
     }
 }
 
-async function runExport(format) {
+// Export dialog — starts from the page's tab and columns; changes here only affect the file.
+const exportOpen = ref(false);
+const exportForm = reactive({ format: 'xlsx', tab: 'active', columns: [] });
+const exportFilterSummary = computed(() => {
+    const { class_label: cls, section_label: sec } = filterLabels();
+    const parts = [
+        cls ? `Class ${cls}${sec ? ` – ${sec}` : ''}` : '',
+        filters.vehicle ? (filters.vehicle === '__any' ? 'Transport students' : filters.vehicle === 'None' ? 'No transport' : `Vehicle ${filters.vehicle}`) : '',
+        filters.dues === 'due' ? 'Only with dues' : filters.dues === 'clear' ? 'Only fully paid' : '',
+        filters.search.trim() ? `Search “${filters.search.trim()}”` : '',
+    ].filter(Boolean);
+    return parts.length ? `Page filters apply: ${parts.join(' · ')}.` : 'All students of the session (no page filters).';
+});
+
+function openExport() {
+    exportForm.tab = tab.value;
+    exportForm.columns = [...(selectedKeys.value || [])];
+    exportOpen.value = true;
+}
+
+async function confirmExport() {
+    // Keep Stud_Rec_Sum column order, whatever order the boxes were ticked in.
+    const keys = columns.value.map((c) => c.key).filter((k) => exportForm.columns.includes(k));
+    if (await runExport(exportForm.format, { tab: exportForm.tab, columns: keys })) exportOpen.value = false;
+}
+
+async function runExport(format, { tab: exportTab, columns: keys }) {
     exporting.value = format;
     try {
+        const params = { ...currentParams(), ...filterLabels(), format, columns: keys };
+        if (exportTab === 'left') params.tab = 'left';
+        else delete params.tab;
         const response = await client.get('/fee-management/demand-slip/export', {
-            params: { ...currentParams(), ...filterLabels(), format, columns: selectedKeys.value },
+            params,
             responseType: 'blob',
         });
         const disposition = response.headers['content-disposition'] || '';
@@ -413,8 +513,10 @@ async function runExport(format) {
         a.click();
         URL.revokeObjectURL(url);
         pushToast('Export downloaded.', 'success');
+        return true;
     } catch (err) {
         pushToast(err?.response?.status === 403 ? 'You do not have permission to export the demand slip.' : 'Export failed.', 'error');
+        return false;
     } finally {
         exporting.value = null;
     }

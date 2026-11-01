@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Erp\FeeManagement;
 
 use App\Http\Controllers\Controller;
+use App\Mail\FeeReceiptEditOtpMail;
 use App\Models\AcademicSession;
 use App\Models\BankTransaction;
 use App\Models\ErpFeeSetting;
@@ -22,7 +23,10 @@ use App\Support\Tenancy\BackdateFee;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -930,11 +934,206 @@ class FeePaymentController extends Controller
         return response()->json($payment->load(['student:id,name,admission_no', 'collectedBy:id,name']));
     }
 
+    /** Minutes an edit-approval code stays valid, and wrong tries allowed before it is void. */
+    private const EDIT_OTP_MINUTES = 10;
+
+    private const EDIT_OTP_MAX_TRIES = 5;
+
     /**
-     * Correct a payment that was entered wrong (amount, date, fee head, months, mode, reference).
+     * Step 1 of an edit: check the edited receipt exactly as update() will, then email a 6-digit
+     * code to the school's email (School Settings). The code approves only this exact edit, by
+     * this user, for EDIT_OTP_MINUTES — a new request replaces the previous code.
+     */
+    public function requestEditOtp(Request $request, FeePayment $payment)
+    {
+        $edit = $this->prepareEdit($request, $payment);
+
+        $settings = SchoolSetting::current();
+        $email = trim((string) $settings->email);
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw ValidationException::withMessages([
+                'otp' => 'No school email is set. Add one in Settings › School Settings to approve receipt edits.',
+            ]);
+        }
+
+        $otp = (string) random_int(100000, 999999);
+        Cache::put($this->editOtpKey($payment), [
+            'hash' => Hash::make($otp),
+            'fingerprint' => $edit['fingerprint'],
+            'tries' => 0,
+        ], now()->addMinutes(self::EDIT_OTP_MINUTES));
+
+        $payment->loadMissing('student:id,name,admission_no');
+        try {
+            Mail::to($email)->send(new FeeReceiptEditOtpMail($otp, [
+                'school' => (string) ($settings->school_name ?: config('app.name')),
+                'receipt_no' => (string) $payment->receipt_no,
+                'student' => (string) ($payment->student?->name ?? ''),
+                'admission_no' => (string) ($payment->student?->admission_no ?? ''),
+                'editor' => (string) (Auth::guard('erp')->user()?->name ?? 'A user'),
+                'reason' => $edit['data']['reason'],
+                'before_total' => (float) $payment->amount,
+                'after_total' => $edit['amount'],
+                'changes' => $this->editChangeList($payment, $edit),
+                'minutes' => self::EDIT_OTP_MINUTES,
+            ]));
+        } catch (\Throwable $e) {
+            Cache::forget($this->editOtpKey($payment));
+            report($e);
+
+            throw ValidationException::withMessages(['otp' => 'The approval email could not be sent. Check the mail settings and try again.']);
+        }
+
+        return response()->json([
+            'sent_to' => $this->maskEmail($email),
+            'expires_in' => self::EDIT_OTP_MINUTES * 60,
+        ]);
+    }
+
+    /**
+     * Step 2: correct a payment that was entered wrong (amount, date, fee head, months, mode,
+     * reference) once the emailed code is entered. The code must belong to this same edit.
      * Dashboard fee snapshots are invalidated below so the next load recomputes from this row.
      */
     public function update(Request $request, FeePayment $payment)
+    {
+        $edit = $this->prepareEdit($request, $payment);
+        $this->verifyEditOtp($request, $payment, $edit['fingerprint']);
+
+        ['data' => $data, 'items' => $items, 'amount' => $amount, 'discount_amount' => $discountAmount,
+            'multi_session' => $multiSession, 'session_fines' => $sessionFines] = $edit;
+
+        $before = $payment->only(['items', 'amount', 'discount_amount', ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot'] : []), 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']);
+
+        DB::transaction(function () use ($payment, $items, $amount, $discountAmount, $data, $before, $multiSession, $sessionFines) {
+            $payment->update([
+                'items' => $items->values()->all(),
+                'multi_session' => $multiSession,
+                'session_fines' => $sessionFines,
+                'amount' => $amount,
+                'discount_amount' => $discountAmount,
+                // The form snapshot described the receipt as first saved; after an edit the receipt
+                // prints from its edited lines (the audit entry keeps the old snapshot).
+                ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot' => null] : []),
+                'fine_amount' => $data['fine_amount'] ?? 0,
+                'payment_mode' => $data['payment_mode'],
+                'payment_date' => $data['payment_date'],
+                'reference_no' => $data['reference_no'] ?? null,
+                'remarks' => $data['remarks'] ?? null,
+                'edited_at' => now(),
+                'edited_by_id' => Auth::guard('erp')->id(),
+            ]);
+
+            FeePaymentAudit::create([
+                'fee_payment_id' => $payment->id,
+                'action' => 'Edit',
+                'before' => $before,
+                'after' => $payment->only(['items', 'amount', 'discount_amount', 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']),
+                'reason' => $data['reason'].' (approved by OTP to school email)',
+                'performed_by_id' => Auth::guard('erp')->id(),
+            ]);
+        });
+
+        DashboardCache::forget();
+
+        return response()->json($this->presentPayment(
+            $payment->fresh(['student', 'collectedBy', 'editedBy', 'rolledBackBy'])
+        ));
+    }
+
+    /** One pending code per school database + receipt + user. */
+    private function editOtpKey(FeePayment $payment): string
+    {
+        return 'fee-edit-otp:'.DB::connection()->getDatabaseName().':'.$payment->id.':'.Auth::guard('erp')->id();
+    }
+
+    private function verifyEditOtp(Request $request, FeePayment $payment, string $fingerprint): void
+    {
+        $otp = (string) $request->validate(['otp' => 'required|digits:6'], [
+            'otp.required' => 'Enter the 6-digit code sent to the school email.',
+            'otp.digits' => 'The code has 6 digits.',
+        ])['otp'];
+
+        $key = $this->editOtpKey($payment);
+        $pending = Cache::get($key);
+        if (! $pending) {
+            throw ValidationException::withMessages(['otp' => 'This code has expired or was never sent. Send a new code.']);
+        }
+        if (! hash_equals($pending['fingerprint'], $fingerprint)) {
+            throw ValidationException::withMessages(['otp' => 'The edit changed after the code was sent. Send a new code for these changes.']);
+        }
+        if (! Hash::check($otp, $pending['hash'])) {
+            $pending['tries']++;
+            if ($pending['tries'] >= self::EDIT_OTP_MAX_TRIES) {
+                Cache::forget($key);
+
+                throw ValidationException::withMessages(['otp' => 'Too many wrong codes. Send a new code.']);
+            }
+            Cache::put($key, $pending, now()->addMinutes(self::EDIT_OTP_MINUTES));
+
+            throw ValidationException::withMessages(['otp' => 'Wrong code. '.(self::EDIT_OTP_MAX_TRIES - $pending['tries']).' tries left.']);
+        }
+
+        Cache::forget($key);
+    }
+
+    private function maskEmail(string $email): string
+    {
+        [$name, $domain] = explode('@', $email, 2) + [1 => ''];
+
+        return mb_substr($name, 0, min(2, mb_strlen($name))).str_repeat('*', max(1, mb_strlen($name) - 2)).'@'.$domain;
+    }
+
+    /**
+     * Plain-language list of what an edit changes, for the approval email.
+     *
+     * @return list<string>
+     */
+    private function editChangeList(FeePayment $payment, array $edit): array
+    {
+        $line = fn (array $i) => ($i['fee_head_name'] ?? 'Fee')
+            .(($m = (array) ($i['months'] ?? array_filter([$i['month'] ?? null]))) ? ' ('.implode(', ', array_map(
+                fn ($k) => preg_match('/^\d{4}-\d{2}$/', (string) $k) ? Carbon::createFromFormat('Y-m', $k)->format('M Y') : (string) $k,
+                $m
+            )).')' : '')
+            .': paid ₹'.number_format((float) ($i['amount'] ?? 0), 2)
+            .((float) ($i['discount'] ?? 0) > 0 ? ', discount ₹'.number_format((float) $i['discount'], 2) : '');
+
+        $old = array_map($line, $payment->items ?? []);
+        $new = array_map($line, $edit['items']->all());
+        $changes = [];
+        foreach (array_diff($old, $new) as $l) {
+            $changes[] = 'Before: '.$l;
+        }
+        foreach (array_diff($new, $old) as $l) {
+            $changes[] = 'After: '.$l;
+        }
+
+        $data = $edit['data'];
+        $fields = [
+            'Payment date' => [$payment->payment_date?->format('d-m-Y'), Carbon::parse($data['payment_date'])->format('d-m-Y')],
+            'Payment mode' => [$payment->payment_mode, $data['payment_mode']],
+            'Fine' => ['₹'.number_format((float) $payment->fine_amount, 2), '₹'.number_format((float) ($data['fine_amount'] ?? 0), 2)],
+            'Reference no.' => [(string) $payment->reference_no, (string) ($data['reference_no'] ?? '')],
+            'Remarks' => [(string) $payment->remarks, (string) ($data['remarks'] ?? '')],
+        ];
+        foreach ($fields as $label => [$from, $to]) {
+            if ((string) $from !== (string) $to) {
+                $changes[] = $label.': '.($from !== '' && $from !== null ? $from : '—').' → '.($to !== '' ? $to : '—');
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * Validate an edit and work out the receipt's new lines and totals (shared by the code request
+     * and the save, so a code is only sent for an edit that will save). The fingerprint ties a
+     * code to these exact changes.
+     *
+     * @return array{data: array<string, mixed>, items: \Illuminate\Support\Collection, amount: float, discount_amount: float, multi_session: bool, session_fines: ?array, fingerprint: string}
+     */
+    private function prepareEdit(Request $request, FeePayment $payment): array
     {
         if ($payment->status === 'Rolled Back') {
             throw ValidationException::withMessages(['status' => 'This receipt has been rolled back and can no longer be edited.']);
@@ -1031,48 +1230,31 @@ class FeePaymentController extends Controller
         }
         $discountAmount = (float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0));
 
-        $before = $payment->only(['items', 'amount', 'discount_amount', ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot'] : []), 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']);
-
         // A changed fine on a multi-session receipt can no longer be split reliably — it then
         // counts in the receipt's own session (session_fines cleared).
         $sessionFines = $multiSession && round((float) ($data['fine_amount'] ?? 0), 2) === round((float) $payment->fine_amount, 2)
             ? $payment->session_fines
             : null;
 
-        DB::transaction(function () use ($payment, $items, $amount, $discountAmount, $data, $before, $multiSession, $sessionFines) {
-            $payment->update([
-                'items' => $items->values()->all(),
-                'multi_session' => $multiSession,
-                'session_fines' => $sessionFines,
-                'amount' => $amount,
-                'discount_amount' => $discountAmount,
-                // The form snapshot described the receipt as first saved; after an edit the receipt
-                // prints from its edited lines (the audit entry keeps the old snapshot).
-                ...(FeePayment::hasTotalsSnapshot() ? ['totals_snapshot' => null] : []),
-                'fine_amount' => $data['fine_amount'] ?? 0,
-                'payment_mode' => $data['payment_mode'],
-                'payment_date' => $data['payment_date'],
-                'reference_no' => $data['reference_no'] ?? null,
-                'remarks' => $data['remarks'] ?? null,
-                'edited_at' => now(),
-                'edited_by_id' => Auth::guard('erp')->id(),
-            ]);
+        $fingerprint = hash('sha256', json_encode([
+            $items->values()->all(),
+            round((float) ($data['fine_amount'] ?? 0), 2),
+            $data['payment_mode'],
+            Carbon::parse($data['payment_date'])->toDateString(),
+            $data['reference_no'] ?? null,
+            $data['remarks'] ?? null,
+            trim($data['reason']),
+        ]));
 
-            FeePaymentAudit::create([
-                'fee_payment_id' => $payment->id,
-                'action' => 'Edit',
-                'before' => $before,
-                'after' => $payment->only(['items', 'amount', 'discount_amount', 'fine_amount', 'payment_mode', 'payment_date', 'reference_no', 'remarks']),
-                'reason' => $data['reason'],
-                'performed_by_id' => Auth::guard('erp')->id(),
-            ]);
-        });
-
-        DashboardCache::forget();
-
-        return response()->json($this->presentPayment(
-            $payment->fresh(['student', 'collectedBy', 'editedBy', 'rolledBackBy'])
-        ));
+        return [
+            'data' => $data,
+            'items' => $items,
+            'amount' => $amount,
+            'discount_amount' => $discountAmount,
+            'multi_session' => $multiSession,
+            'session_fines' => $sessionFines,
+            'fingerprint' => $fingerprint,
+        ];
     }
 
     /**

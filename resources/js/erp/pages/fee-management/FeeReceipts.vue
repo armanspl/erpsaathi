@@ -750,91 +750,220 @@
         <!-- Edit payment modal -->
         <div v-if="editOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-slate-900/40" @click="closeEdit" />
-            <div class="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Edit receipt {{ editTarget?.receipt_no }}</h2>
-                <p class="mt-1 text-sm text-slate-500">Correct amount, date, fee type, months, mode or reference — {{ editTarget?.student?.name }}.</p>
+            <div class="relative z-10 flex max-h-[92vh] w-full max-w-3xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                <!-- Header + steps -->
+                <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Edit receipt {{ editTarget?.receipt_no }}</h2>
+                            <p class="mt-0.5 text-sm text-slate-500">
+                                <span class="font-semibold uppercase text-slate-700 dark:text-slate-200">{{ editTarget?.student?.name }}</span>
+                                <span v-if="editTarget?.student?.admission_no"> · Adm. {{ editTarget.student.admission_no }}</span>
+                                · paid {{ formatDate(editTarget?.payment_date) }}
+                            </p>
+                        </div>
+                        <ol class="flex items-center gap-2 text-xs font-semibold">
+                            <li class="inline-flex items-center gap-1.5" :class="editStep === 'edit' ? 'text-primary-600' : 'text-emerald-600'">
+                                <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] text-white" :class="editStep === 'edit' ? 'bg-primary-600' : 'bg-emerald-600'">{{ editStep === 'edit' ? '1' : '✓' }}</span>
+                                Make changes
+                            </li>
+                            <li class="h-px w-6 bg-slate-300 dark:bg-slate-600" />
+                            <li class="inline-flex items-center gap-1.5" :class="editStep === 'otp' ? 'text-primary-600' : 'text-slate-400'">
+                                <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px]" :class="editStep === 'otp' ? 'bg-primary-600 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700'">2</span>
+                                Approve with OTP
+                            </li>
+                        </ol>
+                    </div>
+                </div>
 
-                <div class="mt-4 space-y-2">
-                    <div v-for="(item, idx) in editForm.items" :key="idx" class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                        <div class="grid gap-2 sm:grid-cols-[1.5fr_1fr_1fr_auto]">
+                <!-- Step 1: make changes -->
+                <div v-if="editStep === 'edit'" class="space-y-5 overflow-y-auto px-5 py-4">
+                    <section>
+                        <div class="flex flex-wrap items-baseline justify-between gap-2">
+                            <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Fee lines</h3>
+                            <p class="text-xs text-slate-400">Net fee = Fee − Discount. Change what was paid or discounted; the old value shows under a changed box.</p>
+                        </div>
+                        <div class="mt-2 space-y-2">
+                            <div
+                                v-for="(item, idx) in editForm.items"
+                                :key="item.key"
+                                class="rounded-xl border p-3"
+                                :class="editLineChanged(item) ? 'border-amber-300 bg-amber-50/50 dark:border-amber-500/40 dark:bg-amber-500/5' : 'border-slate-200 dark:border-slate-700'"
+                            >
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                        Line {{ idx + 1 }}
+                                        <span v-if="!item.original" class="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">New</span>
+                                        <span v-else-if="editLineChanged(item)" class="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">Changed</span>
+                                    </span>
+                                    <button type="button" class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:text-rose-700" @click="removeEditItem(idx)">
+                                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>
+                                        Remove line
+                                    </button>
+                                </div>
+                                <div class="mt-2 grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_1fr]">
+                                    <div>
+                                        <label class="form-label">Fee type</label>
+                                        <select v-model.number="item.fee_head_id" class="form-input">
+                                            <option v-for="h in feeHeads" :key="h.id" :value="h.id">{{ h.name }}</option>
+                                        </select>
+                                        <p v-if="item.original && item.fee_head_id !== item.original.fee_head_id" class="mt-0.5 text-[11px] text-amber-700">was {{ feeHeadName(item.original.fee_head_id) }}</p>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Fee (₹)</label>
+                                        <div class="form-input bg-slate-50 tabular-nums text-slate-600 dark:bg-slate-800/60">{{ money(editLineFee(item)) }}</div>
+                                        <p class="mt-0.5 text-[11px] text-slate-400">Paid + discount</p>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Discount (₹)</label>
+                                        <input v-model.number="item.discount" type="number" min="0" step="1" class="form-input" />
+                                        <p v-if="item.original && Number(item.discount || 0) !== item.original.discount" class="mt-0.5 text-[11px] text-amber-700">was ₹{{ money(item.original.discount) }}</p>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Paid (₹)</label>
+                                        <input v-model.number="item.amount" type="number" min="0.01" step="1" class="form-input" />
+                                        <p v-if="item.original && Number(item.amount || 0) !== item.original.amount" class="mt-0.5 text-[11px] text-amber-700">was ₹{{ money(item.original.amount) }}</p>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <label class="form-label">Months this line pays for</label>
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span v-for="m in item.months" :key="m" class="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
+                                            {{ editMonthLabel(m) }}
+                                            <button type="button" class="text-primary-400 hover:text-rose-600" :title="`Remove ${editMonthLabel(m)}`" @click="removeEditItemMonth(idx, m)">×</button>
+                                        </span>
+                                        <span v-if="!item.months.length" class="text-xs text-slate-400">No month (one-time fee)</span>
+                                        <input v-model="editNewMonth[item.key]" type="month" class="form-input !w-auto !py-1 !text-xs" @change="addEditItemMonth(idx)" />
+                                    </div>
+                                    <p v-if="item.original && editMonthsText(item.months) !== editMonthsText(item.original.months)" class="mt-1 text-[11px] text-amber-700">was {{ editMonthsText(item.original.months) || 'no month' }}</p>
+                                </div>
+                            </div>
+                            <p v-if="editRemovedLines.length" class="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                                Removed: {{ editRemovedLines.map(editLineText).join(' · ') }}
+                            </p>
+                            <button type="button" class="btn-outline !py-1.5 !text-xs" @click="addEditItem">+ Add fee line</button>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Payment details</h3>
+                        <div class="mt-2 grid gap-3 sm:grid-cols-3">
                             <div>
-                                <label class="form-label">Fee head</label>
-                                <select v-model.number="item.fee_head_id" class="form-input">
-                                    <option v-for="h in feeHeads" :key="h.id" :value="h.id">{{ h.name }}</option>
+                                <label class="form-label">Payment date</label>
+                                <input v-model="editForm.payment_date" type="date" class="form-input" />
+                                <p v-if="editForm.payment_date !== editOriginal.payment_date" class="mt-0.5 text-[11px] text-amber-700">was {{ formatDate(editOriginal.payment_date) }}</p>
+                            </div>
+                            <div>
+                                <label class="form-label">Payment mode</label>
+                                <select v-model="editForm.payment_mode" class="form-input">
+                                    <option>Cash</option>
+                                    <option>UPI</option>
+                                    <option>Card</option>
+                                    <option>Bank Transfer</option>
+                                    <option>Cheque</option>
                                 </select>
+                                <p v-if="editForm.payment_mode !== editOriginal.payment_mode" class="mt-0.5 text-[11px] text-amber-700">was {{ editOriginal.payment_mode }}</p>
                             </div>
                             <div>
-                                <label class="form-label">Amount (₹)</label>
-                                <input v-model.number="item.amount" type="number" min="0.01" step="0.01" class="form-input" />
+                                <label class="form-label">Fine (₹)</label>
+                                <input v-model.number="editForm.fine_amount" type="number" min="0" step="1" class="form-input" />
+                                <p v-if="Number(editForm.fine_amount || 0) !== editOriginal.fine_amount" class="mt-0.5 text-[11px] text-amber-700">was ₹{{ money(editOriginal.fine_amount) }}</p>
                             </div>
                             <div>
-                                <label class="form-label">Discount (₹)</label>
-                                <input v-model.number="item.discount" type="number" min="0" step="0.01" class="form-input" />
+                                <label class="form-label">Reference / transaction no.</label>
+                                <input v-model="editForm.reference_no" type="text" class="form-input" placeholder="Cheque / UTR / txn no." />
                             </div>
-                            <div class="flex items-end">
-                                <button type="button" class="btn-outline !px-2.5 !py-2 !text-xs text-rose-600" title="Remove item" @click="removeEditItem(idx)">
-                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <label class="form-label">Months</label>
-                            <div class="flex flex-wrap items-center gap-1.5">
-                                <span v-for="m in item.months" :key="m" class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                    {{ m }}
-                                    <button type="button" class="text-slate-400 hover:text-rose-600" @click="removeEditItemMonth(idx, m)">×</button>
-                                </span>
-                                <input v-model="editNewMonth[idx]" type="month" class="form-input !w-auto !py-1 !text-xs" />
-                                <button type="button" class="btn-outline !py-1 !text-xs" @click="addEditItemMonth(idx)">Add</button>
+                            <div class="sm:col-span-2">
+                                <label class="form-label">Remarks</label>
+                                <input v-model="editForm.remarks" type="text" class="form-input" />
                             </div>
                         </div>
+                    </section>
+
+                    <section>
+                        <label class="form-label">Why are you editing this receipt? <span class="text-rose-500">*</span></label>
+                        <input v-model="editForm.reason" type="text" class="form-input" maxlength="200" placeholder="e.g. Wrong amount entered at collection" />
+                        <p class="mt-0.5 text-[11px] text-slate-400">Goes into the approval email and the receipt's edit history.</p>
+                    </section>
+                </div>
+
+                <!-- Step 2: review + OTP -->
+                <div v-else class="space-y-4 overflow-y-auto px-5 py-4">
+                    <div>
+                        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Check the changes</h3>
+                        <ul class="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700">
+                            <li v-for="(c, i) in editChanges" :key="i" class="flex flex-wrap items-start gap-x-3 gap-y-0.5 px-3 py-2">
+                                <span class="w-40 shrink-0 font-medium text-slate-700 dark:text-slate-200">{{ c.label }}</span>
+                                <span class="text-slate-400 line-through">{{ c.from || '—' }}</span>
+                                <span class="text-slate-400">→</span>
+                                <span class="font-semibold text-slate-800 dark:text-slate-100">{{ c.to || '—' }}</span>
+                            </li>
+                        </ul>
+                        <p class="mt-2 text-xs text-slate-500">Reason: {{ editForm.reason }}</p>
+                    </div>
+
+                    <div class="rounded-xl border border-primary-200 bg-primary-50/60 p-4 dark:border-primary-500/30 dark:bg-primary-500/10">
+                        <p class="text-sm text-slate-700 dark:text-slate-200">
+                            We emailed a 6-digit code to the school email <strong>{{ editOtp.sentTo }}</strong>.
+                            Ask whoever reads that inbox for the code. Nothing changes until it is entered.
+                        </p>
+                        <div class="mt-3 flex flex-wrap items-end gap-3">
+                            <div>
+                                <label class="form-label">OTP code</label>
+                                <input
+                                    ref="editOtpInput"
+                                    v-model="editOtp.code"
+                                    type="text"
+                                    inputmode="numeric"
+                                    autocomplete="one-time-code"
+                                    maxlength="6"
+                                    class="form-input !w-40 text-center font-mono text-lg tracking-[0.4em]"
+                                    placeholder="••••••"
+                                    @input="editOtp.code = editOtp.code.replace(/\D/g, '').slice(0, 6); editOtp.error = ''"
+                                    @keyup.enter="submitEdit"
+                                />
+                            </div>
+                            <button type="button" class="btn-outline !py-2 !text-xs" :disabled="editOtp.sending || editOtp.cooldown > 0" @click="sendEditOtp">
+                                {{ editOtp.sending ? 'Sending…' : editOtp.cooldown > 0 ? `Resend in ${editOtp.cooldown}s` : 'Resend code' }}
+                            </button>
+                        </div>
+                        <p v-if="editOtp.error" class="mt-2 text-sm font-medium text-rose-600">{{ editOtp.error }}</p>
+                        <p v-else class="mt-2 text-xs text-slate-500">The code works for {{ Math.round(editOtp.expiresIn / 60) }} minutes and only for these exact changes.</p>
                     </div>
                 </div>
 
-                <div class="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div>
-                        <label class="form-label">Payment date</label>
-                        <input v-model="editForm.payment_date" type="date" class="form-input" />
+                <!-- Footer: totals + actions -->
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+                    <div class="flex items-center gap-3 text-sm">
+                        <div>
+                            <p class="text-[11px] uppercase tracking-wide text-slate-400">Before</p>
+                            <p class="font-semibold text-slate-500 tabular-nums">₹{{ money(editOriginal.total) }}</p>
+                        </div>
+                        <span class="text-slate-300">→</span>
+                        <div>
+                            <p class="text-[11px] uppercase tracking-wide text-slate-400">After</p>
+                            <p class="text-lg font-bold text-primary-600 tabular-nums">₹{{ money(editTotal) }}</p>
+                        </div>
+                        <span
+                            v-if="editTotal !== editOriginal.total"
+                            class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                            :class="editTotal > editOriginal.total ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+                        >{{ editTotal > editOriginal.total ? '+' : '−' }}₹{{ money(Math.abs(editTotal - editOriginal.total)) }}</span>
                     </div>
-                    <div>
-                        <label class="form-label">Payment mode</label>
-                        <select v-model="editForm.payment_mode" class="form-input">
-                            <option>Cash</option>
-                            <option>UPI</option>
-                            <option>Card</option>
-                            <option>Bank Transfer</option>
-                            <option>Cheque</option>
-                        </select>
+                    <div class="flex gap-2">
+                        <template v-if="editStep === 'edit'">
+                            <button type="button" class="btn-outline" @click="closeEdit">Cancel</button>
+                            <button type="button" class="btn-primary disabled:opacity-50" :disabled="editOtp.sending || !editChanges.length" @click="reviewEdit">
+                                {{ editOtp.sending ? 'Sending code…' : 'Review & send OTP' }}
+                            </button>
+                        </template>
+                        <template v-else>
+                            <button type="button" class="btn-outline" :disabled="editSaving" @click="backToEdit">Back to edit</button>
+                            <button type="button" class="btn-primary disabled:opacity-50" :disabled="editSaving || editOtp.code.length !== 6" @click="submitEdit">
+                                {{ editSaving ? 'Saving…' : 'Confirm & save' }}
+                            </button>
+                        </template>
                     </div>
-                    <div>
-                        <label class="form-label">Fine (₹)</label>
-                        <input v-model.number="editForm.fine_amount" type="number" min="0" step="0.01" class="form-input" />
-                    </div>
-                    <div>
-                        <label class="form-label">Reference / transaction no.</label>
-                        <input v-model="editForm.reference_no" type="text" class="form-input" placeholder="Cheque / UTR / txn no." />
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="form-label">Remarks</label>
-                        <input v-model="editForm.remarks" type="text" class="form-input" />
-                    </div>
-                </div>
-
-                <div class="mt-4">
-                    <label class="form-label">Reason for this edit (required)</label>
-                    <input v-model="editForm.reason" type="text" class="form-input" placeholder="e.g. Wrong amount entered at collection" />
-                </div>
-
-                <div class="mt-4 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm dark:bg-slate-800/60">
-                    <span class="text-slate-500">New total</span>
-                    <span class="text-lg font-bold text-primary-600">₹{{ money(editTotal) }}</span>
-                </div>
-
-                <div class="mt-5 flex justify-end gap-2">
-                    <button type="button" class="btn-outline" @click="closeEdit">Cancel</button>
-                    <button type="button" class="btn-primary disabled:opacity-50" :disabled="editSaving" @click="submitEdit">
-                        {{ editSaving ? 'Saving...' : 'Save changes' }}
-                    </button>
                 </div>
             </div>
         </div>
@@ -933,7 +1062,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
@@ -1802,27 +1931,44 @@ const editForm = reactive({
     reason: '',
 });
 const editNewMonth = reactive({});
+// 'edit' = making changes, 'otp' = reviewing them and entering the code emailed to the school.
+const editStep = ref('edit');
+const editOtpInput = ref(null);
+const editOtp = reactive({ sentTo: '', code: '', error: '', sending: false, cooldown: 0, expiresIn: 600 });
+let editCooldownTimer = null;
+// The receipt as it was when the dialog opened — every "was …" hint compares with this.
+const editOriginal = reactive({ items: [], payment_mode: '', payment_date: '', reference_no: '', remarks: '', fine_amount: 0, total: 0 });
+let editKeySeq = 0;
 
 const editTotal = computed(() => {
     const itemsTotal = editForm.items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-    return itemsTotal + (Number(editForm.fine_amount) || 0);
+    return round2(itemsTotal + (Number(editForm.fine_amount) || 0));
 });
 
-function openEdit(p) {
-    editTarget.value = p;
-    editForm.items = (p.items || []).map((i) => ({
+function editLine(i) {
+    return {
         fee_head_id: i.fee_head_id,
         amount: Number(i.amount) || 0,
         discount: Number(i.discount) || 0,
-        months: Array.isArray(i.months) ? [...i.months] : i.month ? [i.month] : [],
-    }));
-    editForm.payment_mode = p.payment_mode || 'Cash';
-    editForm.payment_date = String(p.payment_date || '').slice(0, 10);
-    editForm.reference_no = p.reference_no || '';
-    editForm.remarks = p.remarks || '';
-    editForm.fine_amount = Number(p.fine_amount) || 0;
+        months: Array.isArray(i.months) ? i.months.map((m) => String(m).slice(0, 7)) : i.month ? [String(i.month).slice(0, 7)] : [],
+    };
+}
+
+function openEdit(p) {
+    editTarget.value = p;
+    const originals = (p.items || []).map(editLine);
+    editOriginal.items = originals;
+    editForm.items = originals.map((o) => ({ ...o, months: [...o.months], key: ++editKeySeq, original: o }));
+    editForm.payment_mode = editOriginal.payment_mode = p.payment_mode || 'Cash';
+    editForm.payment_date = editOriginal.payment_date = String(p.payment_date || '').slice(0, 10);
+    editForm.reference_no = editOriginal.reference_no = p.reference_no || '';
+    editForm.remarks = editOriginal.remarks = p.remarks || '';
+    editForm.fine_amount = editOriginal.fine_amount = Number(p.fine_amount) || 0;
+    editOriginal.total = round2(Number(p.amount) || 0);
     editForm.reason = '';
     Object.keys(editNewMonth).forEach((k) => delete editNewMonth[k]);
+    editStep.value = 'edit';
+    resetEditOtp();
     editOpen.value = true;
 }
 
@@ -1830,65 +1976,182 @@ function closeEdit() {
     editOpen.value = false;
     editTarget.value = null;
     editSaving.value = false;
+    resetEditOtp();
 }
 
+function resetEditOtp() {
+    clearInterval(editCooldownTimer);
+    Object.assign(editOtp, { sentTo: '', code: '', error: '', sending: false, cooldown: 0, expiresIn: 600 });
+}
+
+function feeHeadName(id) {
+    return feeHeads.value.find((h) => h.id === id)?.name || 'Fee';
+}
+function editMonthLabel(key) {
+    const [y, m] = String(key).split('-').map(Number);
+    return y && m ? new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : String(key);
+}
+function editMonthsText(months) {
+    return [...(months || [])].sort().map(editMonthLabel).join(', ');
+}
+function editLineFee(item) {
+    return round2((Number(item.amount) || 0) + (Number(item.discount) || 0));
+}
+function editLineText(i) {
+    const months = editMonthsText(i.months);
+    return `${feeHeadName(i.fee_head_id)}${months ? ` (${months})` : ''}: paid ₹${money(i.amount)}${Number(i.discount) ? `, discount ₹${money(i.discount)}` : ''}`;
+}
+function editLineChanged(item) {
+    const o = item.original;
+    if (!o) return true;
+    return item.fee_head_id !== o.fee_head_id
+        || (Number(item.amount) || 0) !== o.amount
+        || (Number(item.discount) || 0) !== o.discount
+        || editMonthsText(item.months) !== editMonthsText(o.months);
+}
+const editRemovedLines = computed(() => editOriginal.items.filter((o) => !editForm.items.some((i) => i.original === o)));
+
+// Before → after list for the review step (also tells whether anything changed at all).
+const editChanges = computed(() => {
+    const out = [];
+    editForm.items.forEach((item, idx) => {
+        if (!item.original) out.push({ label: `New line ${idx + 1}`, from: '', to: editLineText(item) });
+        else if (editLineChanged(item)) out.push({ label: `Line ${idx + 1}`, from: editLineText(item.original), to: editLineText(item) });
+    });
+    editRemovedLines.value.forEach((o) => out.push({ label: 'Removed line', from: editLineText(o), to: '' }));
+    const fields = [
+        ['Payment date', formatDate(editOriginal.payment_date), formatDate(editForm.payment_date), editOriginal.payment_date !== editForm.payment_date],
+        ['Payment mode', editOriginal.payment_mode, editForm.payment_mode],
+        ['Fine', `₹${money(editOriginal.fine_amount)}`, `₹${money(editForm.fine_amount)}`, editOriginal.fine_amount !== (Number(editForm.fine_amount) || 0)],
+        ['Reference no.', editOriginal.reference_no, editForm.reference_no.trim()],
+        ['Remarks', editOriginal.remarks, editForm.remarks.trim()],
+    ];
+    for (const [label, from, to, changed = from !== to] of fields) {
+        if (changed) out.push({ label, from, to });
+    }
+    if (out.length && editTotal.value !== editOriginal.total) {
+        out.push({ label: 'Receipt total', from: `₹${money(editOriginal.total)}`, to: `₹${money(editTotal.value)}` });
+    }
+    return out;
+});
+
 function addEditItemMonth(idx) {
-    const m = editNewMonth[idx];
-    if (!m) return;
     const item = editForm.items[idx];
-    if (!item.months.includes(m)) item.months.push(m);
-    editNewMonth[idx] = '';
+    const m = editNewMonth[item.key];
+    if (!m) return;
+    if (!item.months.includes(m)) item.months = [...item.months, m].sort();
+    editNewMonth[item.key] = '';
 }
 
 function removeEditItemMonth(idx, month) {
     editForm.items[idx].months = editForm.items[idx].months.filter((m) => m !== month);
 }
 
+function addEditItem() {
+    editForm.items.push({ fee_head_id: feeHeads.value[0]?.id ?? null, amount: 0, discount: 0, months: [], key: ++editKeySeq, original: null });
+}
+
 function removeEditItem(idx) {
     if (editForm.items.length <= 1) {
-        pushToast('A receipt needs at least one fee item.', 'error');
+        pushToast('A receipt needs at least one fee line.', 'error');
         return;
     }
     editForm.items.splice(idx, 1);
 }
 
-async function submitEdit() {
+function editPayload() {
+    return {
+        items: editForm.items.map((i) => ({
+            fee_head_id: i.fee_head_id,
+            amount: Number(i.amount),
+            discount: Number(i.discount) || 0,
+            months: i.months,
+        })),
+        fine_amount: Number(editForm.fine_amount) || 0,
+        payment_mode: editForm.payment_mode,
+        payment_date: editForm.payment_date,
+        reference_no: editForm.reference_no.trim() || null,
+        remarks: editForm.remarks.trim() || null,
+        reason: editForm.reason.trim(),
+    };
+}
+
+function editErrorMessage(e, fallback) {
+    const errors = e?.response?.data?.errors || {};
+    return Object.values(errors)[0]?.[0] || e?.response?.data?.message || fallback;
+}
+
+async function reviewEdit() {
     if (!editTarget.value) return;
     if (!editForm.items.length) {
-        pushToast('Add at least one fee item.', 'error');
+        pushToast('Add at least one fee line.', 'error');
+        return;
+    }
+    if (editForm.items.some((i) => !i.fee_head_id)) {
+        pushToast('Pick a fee type for every line.', 'error');
         return;
     }
     if (editForm.items.some((i) => !(Number(i.amount) > 0))) {
-        pushToast('Every item needs an amount greater than zero.', 'error');
+        pushToast('Every line needs a paid amount greater than zero.', 'error');
+        return;
+    }
+    if (!editChanges.value.length) {
+        pushToast('Nothing has changed yet.', 'error');
         return;
     }
     if (!editForm.reason.trim()) {
-        pushToast('Enter a reason for this edit.', 'error');
+        pushToast('Enter why you are editing this receipt.', 'error');
         return;
     }
-    editSaving.value = true;
+    if (await sendEditOtp()) editStep.value = 'otp';
+}
+
+async function sendEditOtp() {
+    editOtp.sending = true;
+    editOtp.error = '';
     try {
-        await client.patch(`/fee-management/payments/${editTarget.value.id}`, {
-            items: editForm.items.map((i) => ({
-                fee_head_id: i.fee_head_id,
-                amount: Number(i.amount),
-                discount: Number(i.discount) || 0,
-                months: i.months,
-            })),
-            fine_amount: Number(editForm.fine_amount) || 0,
-            payment_mode: editForm.payment_mode,
-            payment_date: editForm.payment_date,
-            reference_no: editForm.reference_no || null,
-            remarks: editForm.remarks || null,
-            reason: editForm.reason.trim(),
-        });
-        pushToast('Receipt updated.', 'success');
+        const { data } = await client.post(`/fee-management/payments/${editTarget.value.id}/edit-otp`, editPayload());
+        editOtp.sentTo = data.sent_to;
+        editOtp.expiresIn = data.expires_in || 600;
+        editOtp.code = '';
+        editOtp.cooldown = 30;
+        clearInterval(editCooldownTimer);
+        editCooldownTimer = setInterval(() => {
+            editOtp.cooldown -= 1;
+            if (editOtp.cooldown <= 0) clearInterval(editCooldownTimer);
+        }, 1000);
+        pushToast(`Code sent to ${data.sent_to}.`, 'success');
+        nextTick(() => editOtpInput.value?.focus());
+        return true;
+    } catch (e) {
+        const message = e?.response?.status === 429 ? 'Too many codes requested — wait a minute and try again.' : editErrorMessage(e, 'Could not send the code.');
+        if (editStep.value === 'otp') editOtp.error = message;
+        else pushToast(message, 'error');
+        return false;
+    } finally {
+        editOtp.sending = false;
+    }
+}
+
+onBeforeUnmount(() => clearInterval(editCooldownTimer));
+
+function backToEdit() {
+    // Any change made now needs a fresh code (the server checks the code matches the edit).
+    editStep.value = 'edit';
+    resetEditOtp();
+}
+
+async function submitEdit() {
+    if (!editTarget.value || editOtp.code.length !== 6 || editSaving.value) return;
+    editSaving.value = true;
+    editOtp.error = '';
+    try {
+        await client.patch(`/fee-management/payments/${editTarget.value.id}`, { ...editPayload(), otp: editOtp.code });
+        pushToast(`Receipt ${editTarget.value.receipt_no} updated.`, 'success');
         closeEdit();
         await loadHistory();
     } catch (e) {
-        const errors = e?.response?.data?.errors || {};
-        const firstError = Object.values(errors)[0]?.[0];
-        pushToast(firstError || e?.response?.data?.message || 'Edit failed.', 'error');
+        editOtp.error = editErrorMessage(e, 'Edit failed.');
     } finally {
         editSaving.value = false;
     }

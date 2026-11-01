@@ -2,8 +2,69 @@
     <div class="space-y-5">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Student Attendance</h1>
+            <div class="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+                <button
+                    v-for="t in [{ key: 'students', label: 'Students' }, { key: 'working-days', label: 'Working Days' }]"
+                    :key="t.key"
+                    type="button"
+                    class="rounded-md px-3.5 py-1.5 text-sm font-medium transition"
+                    :class="activeTab === t.key ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+                    @click="setTab(t.key)"
+                >
+                    {{ t.label }}
+                </button>
+            </div>
         </div>
 
+        <!-- School working days per month -->
+        <div v-if="activeTab === 'working-days'" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 class="text-base font-semibold text-slate-800 dark:text-slate-100">Working Days</h2>
+                    <p class="mt-1 text-xs text-slate-400">Days the school was open each month. Shown on the dashboard, and filled in automatically as each student's Working Days.</p>
+                </div>
+                <div class="flex items-end gap-2">
+                    <div>
+                        <label class="form-label">Session</label>
+                        <select v-model.number="wd.session_start_year" class="form-input" @change="loadWorkingDays">
+                            <option v-for="y in wd.years" :key="y" :value="y">{{ y }}-{{ String((y + 1) % 100).padStart(2, '0') }}</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn-primary" :disabled="wd.saving || wd.loading || !wd.ready || !wdDirty" @click="saveWorkingDays">
+                        {{ wd.saving ? 'Saving...' : 'Save working days' }}
+                    </button>
+                </div>
+            </div>
+            <p v-if="!wd.ready && !wd.loading" class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{{ wd.message }}</p>
+            <div v-if="wd.loading" class="py-10 text-center text-sm text-slate-400">Loading...</div>
+            <div v-else class="mt-4 overflow-x-auto">
+                <table class="w-full max-w-md text-left text-sm">
+                    <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800">
+                        <tr>
+                            <th class="px-3 py-2 font-semibold">Month</th>
+                            <th class="px-3 py-2 text-right font-semibold">Working Days</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                        <tr v-for="m in wd.months" :key="`${m.year}-${m.month}`">
+                            <td class="px-3 py-2 font-medium text-slate-700 dark:text-slate-200">{{ m.label }}</td>
+                            <td class="px-3 py-2 text-right">
+                                <input v-model="m.working_days" type="number" min="0" max="31" class="form-input ml-auto !w-24 !py-1 text-right !text-sm" placeholder="—" :disabled="!wd.ready" />
+                            </td>
+                        </tr>
+                    </tbody>
+                    <tfoot class="border-t border-slate-200 dark:border-slate-700">
+                        <tr class="font-semibold">
+                            <td class="px-3 py-2.5">Total Working Days</td>
+                            <td class="px-3 py-2.5 text-right text-primary-600 dark:text-primary-400">{{ wdTotal }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <p class="mt-2 text-xs text-slate-400">Leave a month blank if it isn't known yet.</p>
+            </div>
+        </div>
+
+        <template v-if="activeTab === 'students'">
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 <div>
@@ -46,7 +107,7 @@
                     Back to list
                 </button>
             </div>
-            <p class="mt-3 text-xs text-slate-400">Select a class (or search), open a student, enter Working Days + Days Present for each month, then Save.</p>
+            <p class="mt-3 text-xs text-slate-400">Select a class (or search), open a student, enter Days Present for each month (Working Days come from the Working Days tab), then Save.</p>
         </div>
 
         <div v-if="monthlyLoading" class="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900">Loading...</div>
@@ -89,9 +150,11 @@
                                         min="0"
                                         max="31"
                                         class="form-input ml-auto !w-20 !py-1 text-right !text-sm"
+                                        :class="m.from_school && 'bg-sky-50 dark:bg-sky-500/10'"
                                         placeholder="—"
-                                        @input="recalcMonthlyRow(m)"
+                                        @input="m.from_school = false; recalcMonthlyRow(m)"
                                     />
+                                    <span v-if="m.from_school" class="mt-0.5 block text-[10px] text-sky-600">from Working Days</span>
                                 </td>
                                 <td class="px-3 py-2 text-right">
                                     <input
@@ -166,14 +229,95 @@
                 </tbody>
             </table>
         </div>
+        </template>
     </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';
 import { pushToast } from '../../utils/toast';
+
+const route = useRoute();
+const router = useRouter();
+// ?tab=working-days opens the school Working Days tab (the dashboard's "Add" button links here).
+const activeTab = ref(route.query.tab === 'working-days' ? 'working-days' : 'students');
+function setTab(key) {
+    activeTab.value = key;
+    router.replace({ query: { ...route.query, tab: key === 'students' ? undefined : key } });
+    if (key === 'working-days' && !wd.months.length) loadWorkingDays();
+}
+
+// --- School working days per month ---
+const wd = reactive({ session_start_year: null, years: [], months: [], saved: '', ready: true, message: '', loading: false, saving: false });
+const wdTotal = computed(() => wd.months.reduce((sum, m) => sum + (toNullableNumber(m.working_days) ?? 0), 0));
+const wdDirty = computed(() => JSON.stringify(wd.months.map((m) => toNullableNumber(m.working_days))) !== wd.saved);
+// session start year => { 'YYYY-MM': working days } — used to pre-fill a student's blank months.
+const schoolDaysByYear = reactive({});
+
+function applyWorkingDays(data) {
+    wd.session_start_year = data.session_start_year;
+    wd.years = data.available_years || [data.session_start_year];
+    wd.months = (data.months || []).map((m) => ({ ...m, working_days: m.working_days ?? '' }));
+    wd.saved = JSON.stringify(wd.months.map((m) => toNullableNumber(m.working_days)));
+    wd.ready = data.ready !== false;
+    wd.message = data.message || '';
+    applyWorkingDaysCache(data);
+}
+
+async function loadWorkingDays() {
+    wd.loading = true;
+    try {
+        const params = wd.session_start_year ? { session_start_year: wd.session_start_year } : { session_start_year: monthly.session_start_year };
+        const { data } = await client.get('/attendance/school-working-days', { params });
+        applyWorkingDays(data);
+    } catch (err) {
+        pushToast(err?.response?.data?.message || 'Could not load working days.', 'error');
+    } finally {
+        wd.loading = false;
+    }
+}
+
+async function saveWorkingDays() {
+    wd.saving = true;
+    try {
+        const { data } = await client.put('/attendance/school-working-days', {
+            session_start_year: wd.session_start_year,
+            months: wd.months.map((m) => ({ year: m.year, month: m.month, working_days: toNullableNumber(m.working_days) })),
+        });
+        applyWorkingDays(data);
+        pushToast('Working days saved.', 'success');
+    } catch (err) {
+        const errors = err?.response?.data?.errors || {};
+        pushToast(Object.values(errors)[0]?.[0] || err?.response?.data?.message || 'Could not save working days.', 'error');
+    } finally {
+        wd.saving = false;
+    }
+}
+
+async function schoolDaysFor(year) {
+    if (!schoolDaysByYear[year]) {
+        try {
+            const { data } = await client.get('/attendance/school-working-days', { params: { session_start_year: year } });
+            applyWorkingDaysCache(data);
+        } catch {
+            schoolDaysByYear[year] = {}; // pre-fill is a convenience — the editor still works without it
+        }
+    }
+    return schoolDaysByYear[year] || {};
+}
+function applyWorkingDaysCache(data) {
+    schoolDaysByYear[data.session_start_year] = Object.fromEntries(
+        (data.months || []).filter((m) => m.working_days != null).map((m) => [`${m.year}-${m.month}`, m.working_days]),
+    );
+}
+
+// A month pre-filled from Working Days only counts (and is saved) once Days Present is entered.
+function isPrefillOnly(m) {
+    return m.from_school && toNullableNumber(m.days_present) === null;
+}
 
 const branches = ref([]);
 const classes = ref([]);
@@ -240,7 +384,7 @@ function toNullableNumber(value) {
 function recalcMonthlyRow(row) {
     const wd = toNullableNumber(row.working_days);
     const dp = toNullableNumber(row.days_present);
-    if (wd === null && dp === null) {
+    if ((wd === null && dp === null) || isPrefillOnly(row)) {
         row.percentage = null;
         return;
     }
@@ -255,7 +399,7 @@ function summarizeEditableMonths(months) {
     months.forEach((m, index) => {
         const wd = toNullableNumber(m.working_days);
         const dp = toNullableNumber(m.days_present);
-        if (wd === null && dp === null) return;
+        if ((wd === null && dp === null) || isPrefillOnly(m)) return;
         const bucket = index < 7 ? half1 : half2;
         bucket.working_days += wd ?? 0;
         bucket.days_present += dp ?? 0;
@@ -340,6 +484,21 @@ function openMonthlyStudent(student) {
         half2: student.half2 || { working_days: 0, days_present: 0, percentage: null },
         full: student.full || { working_days: 0, days_present: 0, percentage: null },
     };
+    prefillWorkingDays(months, monthly.session_start_year);
+}
+
+// Blank Working Days on a student's months come from the school's Working Days tab.
+async function prefillWorkingDays(months, year) {
+    const school = await schoolDaysFor(year);
+    if (selectedMonthlyDetail.value?.months !== months) return; // another student opened meanwhile
+    for (const m of months) {
+        const days = school[`${m.year}-${m.month}`];
+        if (days != null && toNullableNumber(m.working_days) === null) {
+            m.working_days = days;
+            m.from_school = true;
+            recalcMonthlyRow(m);
+        }
+    }
 }
 
 function closeMonthlyEditor() {
@@ -354,7 +513,7 @@ async function saveMonthlyDetail() {
         const months = selectedMonthlyDetail.value.months.map((m) => ({
             month: m.month,
             year: m.year,
-            working_days: toNullableNumber(m.working_days),
+            working_days: isPrefillOnly(m) ? null : toNullableNumber(m.working_days),
             days_present: toNullableNumber(m.days_present),
         }));
         const { data } = await client.post('/attendance/student/monthly-summaries', {
@@ -392,5 +551,6 @@ async function loadLookups() {
 onMounted(async () => {
     await loadLookups();
     await loadMonthly();
+    if (activeTab.value === 'working-days') loadWorkingDays();
 });
 </script>
