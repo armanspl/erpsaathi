@@ -63,7 +63,7 @@
                         <li>Student Master* (e.g. "Student Master 22-26") → runs first so new admissions in this sheet exist before INCOME rows try to match them</li>
                         <li>INCOME with Adm No. → Fee Receipts (students must already exist)</li>
                         <li>INCOME without Adm No. → Finance Income</li>
-                        <li>EXPENSES → Finance Expenses (Part-1 becomes category)</li>
+                        <li>EXPENSES → Finance Expenses (PART 1 becomes category; RCPT identifies each expense, so an edited row updates it)</li>
                         <li>TRANSPORT-NN (S.NO / STOPPAGE / FARE only) → updates fare on the matching route stop (Fee Structure → Transport); creates a new route+stop only for a stoppage with no existing match</li>
                         <li>SALARY … Bank (NAME / DESIG / BASIC / APR–MAR) → auto-creates Teachers &amp; Staff from designation, writes monthly salary slips with inferred present/absent, so you can manage them under People</li>
                         <li>Skipped sheets: SUMMARY, STUD_REC*, pivots, BANK* statements, CHQ*, FUEL*, WORKING DAYS</li>

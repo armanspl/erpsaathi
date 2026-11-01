@@ -101,12 +101,18 @@ class ImportTemplateService
         // --- EXPENSES ---
         $expenses = $ss->createSheet();
         $expenses->setTitle('EXPENSES');
-        $expenseHeaders = ['Year', 'Month', 'Date', 'Description', 'Part-1', 'Part-2', 'Part-3', 'Amount', 'Remarks', 'Receipt No'];
+        // Same layout as the school's own EXPENSES sheet and the Global Workbook export. RCPT is
+        // the expense's number within the YEAR — a re-import with an edited row updates that
+        // expense instead of adding a second one.
+        $expenseHeaders = ['RCPT', 'YEAR', 'MONTH', 'DATE', 'DESCRIPTION', 'PART 1', 'PART 2', 'AMOUNT', 'PART 3', 'REMARKS'];
         $expenses->fromArray($expenseHeaders, null, 'A1');
         $this->styleHeaderRow($expenses, 'A1:J1');
         $expenses->fromArray([
-            '2026', 'April', '2026-04-10', 'Office stationery', 'Admin', 'Stationery', '', '2500', 'Sample', 'V-101',
+            1, '2026-27', '2026-04-01', '2026-04-10', 'Office stationery', 'SCHOOL', 'STATIONERY', 2500, 'OFFICE', 'Sample',
         ], null, 'A2');
+        $expenses->fromArray([
+            2, '2026-27', '2026-04-01', '2026-04-12', 'Diesel for bus', 'TRANSPORT', 'BUS 1', 1800, 'FUEL', 'Sample',
+        ], null, 'A3');
 
         // --- TRANSPORT ---
         $transport = $ss->createSheet();

@@ -142,6 +142,7 @@ class GlobalWorkbookImportController extends Controller
         'part3' => 'part3',
         'remarks' => 'remarks',
         'remark' => 'remarks',
+        'rcpt' => 'receipt_no',
         'rcpt no' => 'receipt_no',
         'rcpt no.' => 'receipt_no',
         'receipt no' => 'receipt_no',
@@ -531,6 +532,10 @@ class GlobalWorkbookImportController extends Controller
                     $breakdown['skipped_cancelled'] += $rows;
                 } elseif ($reason === 'changed_flagged') {
                     $breakdown['flagged_changed'] += $rows;
+                }
+                // A skipped row can still carry bookkeeping updates (e.g. an expense taking its RCPT voucher).
+                foreach ($result['extra_updates'] ?? [] as $table => $updates) {
+                    $buffers['updates'][$table] = array_merge($buffers['updates'][$table] ?? [], $updates);
                 }
 
                 return;
@@ -1662,7 +1667,7 @@ class GlobalWorkbookImportController extends Controller
             }
             $expected = $kind === 'INCOME'
                 ? 'YEAR, MONTH, DATE, ADM NO, NAME, ADDRESS, CLASS, HEAD, FEE, SESSION, RECEIPT, REMARKS, PMNT MODE'
-                : 'RCPT NO, YEAR, MONTH, DATE, DESCRIPTION, PART 1, PART 2, AMOUNT, PART 3, REMARKS';
+                : 'RCPT, YEAR, MONTH, DATE, DESCRIPTION, PART 1, PART 2, AMOUNT, PART 3, REMARKS';
 
             return ['missing' => $missing, 'unknown' => $unknown, 'expected' => $expected];
         }
@@ -2582,10 +2587,15 @@ class GlobalWorkbookImportController extends Controller
             if (! $match) {
                 return $this->fail($log, $row, 'Could not match this expense row.', 'other');
             }
-            if ($match['kind'] === 'same') {
-                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
-            }
             $voucher = $match['voucher'];
+            // A saved expense taking its RCPT voucher (first import that reads RCPT) — only the
+            // voucher no. changes, so it isn't reported as a change.
+            $rekey = $match['existing'] && $match['existing']['voucher_no'] !== $voucher
+                ? ['extra_updates' => ['expenses' => [['id' => $match['existing']['id'], 'data' => ['voucher_no' => $voucher]]]]]
+                : [];
+            if ($match['kind'] === 'same') {
+                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'] + $rekey;
+            }
             $part2 = trim((string) ($row['part2'] ?? ''));
             $part3 = trim((string) ($row['part3'] ?? ''));
             $remarks = trim((string) ($row['remarks'] ?? ''));
@@ -2608,12 +2618,12 @@ class GlobalWorkbookImportController extends Controller
                 // Expenses screen), a stale re-import must not silently change its figures
                 // out from under that decision.
                 if ($existing['status'] !== 'Pending') {
-                    return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited'];
+                    return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited'] + $rekey;
                 }
 
-                $changed = $this->diffForUpdate($existing, $newData, ['amount']);
+                $changed = $this->diffForUpdate($existing, array_diff_key($newData, ['voucher_no' => true]), ['amount']);
                 if ($changed === []) {
-                    return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
+                    return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'] + $rekey;
                 }
                 if (! $cache['apply_corrections']) {
                     $cache['flagged'][] = [
@@ -2625,7 +2635,7 @@ class GlobalWorkbookImportController extends Controller
                         'excel' => $changed,
                     ];
 
-                    return ['ok' => true, 'skip' => true, 'reason' => 'changed_flagged'];
+                    return ['ok' => true, 'skip' => true, 'reason' => 'changed_flagged'] + $rekey;
                 }
 
                 return [
@@ -2633,7 +2643,7 @@ class GlobalWorkbookImportController extends Controller
                     'bucket' => 'expenses_updated',
                     'update' => 'expenses',
                     'update_id' => $existing['id'],
-                    'data' => array_merge($changed, ['updated_at' => $now]),
+                    'data' => array_merge($changed, $voucher !== $existing['voucher_no'] ? ['voucher_no' => $voucher] : [], ['updated_at' => $now]),
                 ];
             }
 
@@ -3131,6 +3141,8 @@ class GlobalWorkbookImportController extends Controller
         $claimed = [];
         $pending = [];
         $occurrence = [];
+        $rows = [];
+        $rcptSeen = [];
         foreach ($mapped as $row) {
             $date = $this->resolveDate($row);
             $amount = $this->parseAmount(trim((string) ($row['amount'] ?? '')));
@@ -3140,30 +3152,79 @@ class GlobalWorkbookImportController extends Controller
             }
             $key = $this->expenseKey($date, $title, $amount, trim((string) ($row['part1'] ?? '')) ?: 'General',
                 (string) ($row['part2'] ?? ''), (string) ($row['part3'] ?? ''), (string) ($row['remarks'] ?? ''));
+            // The sheet's RCPT no. is the expense's stable identity (a repeated RCPT only counts once).
+            $rcpt = $this->expenseRcptVoucher($row, $date);
+            if ($rcpt !== null && isset($rcptSeen[$rcpt])) {
+                $rcpt = null;
+            }
+            if ($rcpt !== null) {
+                $rcptSeen[$rcpt] = true;
+            }
+            $rows[] = [$row, $date, $title, $amount, $key, $rcpt];
+        }
+
+        // Pass 1: an expense already saved under this row's RCPT voucher is this row.
+        $unmatched = [];
+        foreach ($rows as $r) {
+            [$row, , , , $key, $rcpt] = $r;
+            $existing = $rcpt !== null ? ($byVoucher[$rcpt] ?? null) : null;
+            if ($existing && ! isset($claimed[$existing['id']])) {
+                $claimed[$existing['id']] = true;
+                $same = $key === $this->expenseKey(substr((string) $existing['date'], 0, 10), (string) $existing['title'], (float) $existing['amount'],
+                    (string) ($categoryNames[$existing['expense_category_id']] ?? ''), (string) $existing['part2'], (string) $existing['part3'], (string) $existing['remarks']);
+                $cache['expense_match'][$row['row_number']] = ['kind' => $same ? 'same' : 'changed', 'existing' => $existing, 'voucher' => $rcpt];
+
+                continue;
+            }
+            $unmatched[] = $r;
+        }
+
+        // Pass 2: same content as a saved expense (saved before RCPT was read, or without RCPT) —
+        // it takes the RCPT voucher from now on.
+        foreach ($unmatched as [$row, $date, $title, $amount, $key, $rcpt]) {
             $n = $occurrence[$key] = ($occurrence[$key] ?? 0) + 1;
-            $match = ['kind' => 'new', 'existing' => null, 'voucher' => 'EXP-IMP-'.$date.'-'.substr(md5($key), 0, 10).'-'.$n];
+            $match = ['kind' => 'new', 'existing' => null, 'voucher' => $rcpt ?? 'EXP-IMP-'.$date.'-'.substr(md5($key), 0, 10).'-'.$n];
 
             while (($pool[$key] ?? []) !== []) {
                 $existing = array_shift($pool[$key]);
                 if (! isset($claimed[$existing['id']])) {
                     $claimed[$existing['id']] = true;
-                    $match = ['kind' => 'same', 'existing' => $existing, 'voucher' => $existing['voucher_no']];
+                    $match = ['kind' => 'same', 'existing' => $existing, 'voucher' => $rcpt ?? $existing['voucher_no']];
                     break;
                 }
             }
             $cache['expense_match'][$row['row_number']] = $match;
             if ($match['kind'] === 'new') {
-                $pending[] = [$row, $date, $title, $amount];
+                $pending[] = [$row, $date, $title, $amount, $rcpt];
             }
         }
 
-        // Second pass: rows with no content match — the same expense edited in the sheet?
-        foreach ($pending as [$row, $date, $title, $amount]) {
+        // Pass 3: rows with no match yet — the same expense edited in the sheet? Its old
+        // position-based voucher, or else an unmatched saved expense on the same date with the
+        // same description or the same amount.
+        $unclaimedByDate = [];
+        foreach ($byVoucher as $voucher => $existing) {
+            if (! isset($claimed[$existing['id']]) && str_starts_with((string) $voucher, 'EXP-IMP-')) {
+                $unclaimedByDate[substr((string) $existing['date'], 0, 10)][] = $existing;
+            }
+        }
+        $sameExpense = fn (array $e, string $date, string $title, float $amount) => substr((string) $e['date'], 0, 10) === $date
+            && (mb_strtoupper(trim((string) $e['title'])) === mb_strtoupper($title) || round((float) $e['amount'], 2) === round($amount, 2));
+        foreach ($pending as [$row, $date, $title, $amount, $rcpt]) {
+            $found = null;
             $legacy = $byVoucher[sprintf('EXP-IMP-%s-%04d', substr($date, 0, 4), $row['row_number'])] ?? null;
-            if ($legacy && ! isset($claimed[$legacy['id']]) && substr((string) $legacy['date'], 0, 10) === $date
-                && (mb_strtoupper(trim((string) $legacy['title'])) === mb_strtoupper($title) || round((float) $legacy['amount'], 2) === round($amount, 2))) {
-                $claimed[$legacy['id']] = true;
-                $cache['expense_match'][$row['row_number']] = ['kind' => 'changed', 'existing' => $legacy, 'voucher' => $legacy['voucher_no']];
+            if ($legacy && ! isset($claimed[$legacy['id']]) && $sameExpense($legacy, $date, $title, $amount)) {
+                $found = $legacy;
+            }
+            foreach ($found ? [] : ($unclaimedByDate[$date] ?? []) as $candidate) {
+                if (! isset($claimed[$candidate['id']]) && $sameExpense($candidate, $date, $title, $amount)) {
+                    $found = $candidate;
+                    break;
+                }
+            }
+            if ($found) {
+                $claimed[$found['id']] = true;
+                $cache['expense_match'][$row['row_number']] = ['kind' => 'changed', 'existing' => $found, 'voucher' => $rcpt ?? $found['voucher_no']];
             }
         }
 
@@ -3186,6 +3247,38 @@ class GlobalWorkbookImportController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * Voucher for an EXPENSES row's RCPT no.: "EXP-IMP-<year>-R<rcpt>" (RCPT restarts every
+     * year, so the year — the YEAR cell, else the April–March year of the date — keeps them
+     * apart, and the IMP- part keeps them clear of expenses typed in on the Expenses screen).
+     * An RCPT exported by the ERP ("IMP-2026-27-R15") is already a voucher and is used as is.
+     */
+    private function expenseRcptVoucher(array $row, string $date): ?string
+    {
+        $rcpt = trim((string) ($row['receipt_no'] ?? ''));
+        if (is_numeric($rcpt) && str_contains($rcpt, '.') && (float) $rcpt == (int) (float) $rcpt) {
+            $rcpt = (string) (int) (float) $rcpt; // Excel number 15.0
+        }
+        if ($rcpt === '' || $this->looksLikeFormula($rcpt) || mb_strlen($rcpt) > 60) {
+            return null;
+        }
+        if (str_starts_with(strtoupper($rcpt), 'IMP-')) {
+            return 'EXP-'.$rcpt;
+        }
+        if (str_starts_with(strtoupper($rcpt), 'EXP-')) {
+            return $rcpt;
+        }
+
+        $year = trim((string) ($row['year'] ?? ''));
+        if (! preg_match('/^\d{4}-\d{2}$/', $year)) {
+            $y = (int) substr($date, 0, 4);
+            $start = (int) substr($date, 5, 2) >= 4 ? $y : $y - 1;
+            $year = sprintf('%04d-%02d', $start, ($start + 1) % 100);
+        }
+
+        return 'EXP-IMP-'.$year.'-R'.$rcpt;
     }
 
     private function expenseKey(string $date, string $title, float $amount, string $part1, string $part2, string $part3, string $remarks): string
