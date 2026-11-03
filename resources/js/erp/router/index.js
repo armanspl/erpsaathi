@@ -36,6 +36,7 @@ import Parents from '../pages/people/Parents.vue';
 import Teachers from '../pages/people/Teachers.vue';
 import Staff from '../pages/people/Staff.vue';
 import Drivers from '../pages/people/Drivers.vue';
+import RteStudents from '../pages/people/RteStudents.vue';
 import VisitorRecords from '../pages/people/VisitorRecords.vue';
 import UdisePlus from '../pages/people/UdisePlus.vue';
 import UdisePlusS02 from '../pages/people/UdisePlusS02.vue';
@@ -178,6 +179,7 @@ const FLAGSHIP_ROUTES = {
     '/people/teachers': { component: PeopleDirectoryHub, meta: { hubPage: Teachers } },
     '/people/staff': { component: PeopleDirectoryHub, meta: { hubPage: Staff } },
     '/people/drivers': { component: PeopleDirectoryHub, meta: { hubPage: Drivers } },
+    '/people/rte-students': { component: PeopleDirectoryHub, meta: { hubPage: RteStudents } },
     '/people/visitor-records': VisitorRecords,
     '/people/udiseplus': UdisePlus,
     '/people/udiseplus-s03': { component: UdiseHub, meta: { hubPage: UdisePlus } },

@@ -105,6 +105,9 @@
                         <p class="text-slate-500">{{ transportStatusLabel }}</p>
                     </div>
 
+                    <div v-if="!loadingDue && due?.is_rte" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+                        <span class="font-semibold">RTE student</span> (Right to Education) — no school fee is charged. Only the transport fee can be collected, if the student uses transport.
+                    </div>
                     <div v-if="loadingDue" class="py-10 text-center text-sm text-slate-400">Loading fee details...</div>
                     <template v-else>
                         <!-- Months -->

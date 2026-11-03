@@ -69,7 +69,7 @@
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total Due</p>
-                <p class="mt-1 text-2xl font-bold text-teal-600 dark:text-teal-400">₹{{ money(summary.due) }}</p>
+                <p class="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">₹{{ money(summary.due) }}</p>
             </div>
         </div>
 
@@ -129,9 +129,11 @@
                             <tr>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('admission_no')">Admission ID {{ sortArrow('admission_no') }}</th>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('name')">Student {{ sortArrow('name') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('school_class')">Class {{ sortArrow('school_class') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('section')">Section {{ sortArrow('section') }}</th>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('roll_no')">Roll No {{ sortArrow('roll_no') }}</th>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('father')">Father {{ sortArrow('father') }}</th>
-                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('mother')">Mother {{ sortArrow('mother') }}</th>
+                                <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('address')">Address {{ sortArrow('address') }}</th>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total_fee')">Charge {{ sortArrow('total_fee') }}</th>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total_paid')">Paid {{ sortArrow('total_paid') }}</th>
                                 <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase text-slate-500" @click="toggleSort('total_discount')">Concession {{ sortArrow('total_discount') }}</th>
@@ -141,7 +143,7 @@
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                             <tr v-if="!autoRows.length">
-                                <td colspan="10" class="px-4 py-12 text-center text-slate-400">No automatic dues match these filters.</td>
+                                <td colspan="12" class="px-4 py-12 text-center text-slate-400">No automatic dues match these filters.</td>
                             </tr>
                             <template v-for="r in pagedAutoRows" :key="r.student_id">
                                 <tr
@@ -152,19 +154,19 @@
                                     <td class="px-3 py-3 font-mono text-xs text-slate-500">{{ r.admission_no }}</td>
                                     <td class="px-3 py-3">
                                         <p class="font-medium text-slate-800 dark:text-slate-100">{{ r.name }}</p>
-                                        <p class="text-xs text-slate-400">{{ [r.branch, r.school_class, r.section].filter(Boolean).join(' · ') }}</p>
-                                        <p v-if="r.scope_label" class="text-[11px] text-slate-400">{{ r.scope_label }}</p>
                                     </td>
+                                    <td class="px-3 py-3 text-slate-600 dark:text-slate-300">{{ r.school_class || '—' }}</td>
+                                    <td class="px-3 py-3 text-slate-600 dark:text-slate-300">{{ r.section || '—' }}</td>
                                     <td class="px-3 py-3 text-slate-500">{{ r.roll_no || '—' }}</td>
                                     <td class="px-3 py-3 text-slate-500">
                                         <p>{{ r.father || '—' }}</p>
                                         <p v-if="r.father_phone" class="mt-0.5 text-xs tabular-nums text-slate-400">{{ r.father_phone }}</p>
                                     </td>
-                                    <td class="px-3 py-3 text-slate-500">{{ r.mother || '—' }}</td>
+                                    <td class="max-w-[16rem] px-3 py-3 text-slate-500"><span class="line-clamp-2" :title="r.address || ''">{{ r.address || '—' }}</span></td>
                                     <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_fee) }}</td>
                                     <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_paid) }}</td>
                                     <td class="px-3 py-3 text-slate-600">₹{{ money(r.total_discount) }}</td>
-                                    <td class="px-3 py-3 font-semibold text-teal-600">₹{{ money(r.due) }}</td>
+                                    <td class="px-3 py-3 font-semibold text-rose-600 dark:text-rose-400">₹{{ money(r.due) }}</td>
                                     <td class="px-3 py-3 text-right" @click.stop>
                                         <div class="flex justify-end gap-1.5">
                                             <button type="button" class="btn-outline !py-1 !text-xs" @click="toggleAutoExpand(r.student_id)">
@@ -175,7 +177,7 @@
                                     </td>
                                 </tr>
                                 <tr v-if="expandedAutoId === r.student_id">
-                                    <td colspan="10" class="bg-white px-4 py-4 dark:bg-slate-900">
+                                    <td colspan="12" class="bg-white px-4 py-4 dark:bg-slate-900">
                                         <div class="overflow-x-auto rounded-xl border border-slate-100 px-2 py-1 dark:border-slate-800">
                                             <p class="px-2 pt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">Fee Due Details</p>
                                             <div v-if="autoDetailLoadingId === r.student_id" class="px-2 py-8 text-center text-sm text-slate-400">Loading...</div>
@@ -206,7 +208,7 @@
                                                         <td class="px-3 py-2.5">{{ line.session }}</td>
                                                         <td class="px-3 py-2.5">{{ line.payment_month }}</td>
                                                         <td class="px-3 py-2.5">{{ line.payment_year }}</td>
-                                                        <td class="px-3 py-2.5 text-right tabular-nums">{{ money(line.fee_amount) }}</td>
+                                                        <td class="px-3 py-2.5 text-right font-semibold tabular-nums text-rose-600 dark:text-rose-400">{{ money(line.fee_amount) }}</td>
                                                     </tr>
                                                 </tbody>
                                             </table>
@@ -291,7 +293,7 @@
                                     </td>
                                     <td class="px-3 py-3 text-slate-500">{{ r.fee_types || '—' }}</td>
                                     <td class="px-3 py-3">₹{{ money(r.total) }}</td>
-                                    <td class="px-3 py-3 font-semibold text-teal-600">₹{{ money(r.balance) }}</td>
+                                    <td class="px-3 py-3 font-semibold text-rose-600 dark:text-rose-400">₹{{ money(r.balance) }}</td>
                                     <td class="px-3 py-3 text-slate-500">{{ r.latest_due_date || '—' }}</td>
                                     <td class="px-3 py-3">
                                         <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="r.status === 'Pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700'">{{ r.status }}</span>
@@ -1158,10 +1160,10 @@ function printDues(kind) {
     if (kind === 'automatic') {
         const rows = sortedAutoRows.value;
         title = `Fee Due — Automatic (${scope.value === 'month' ? `Only ${dueMonthLabel.value}` : SCOPE_LABELS[scope.value] || scope.value})`;
-        head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Mother</th><th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th class="num">Due</th></tr>';
+        head = '<tr><th>#</th><th>Admission ID</th><th>Student</th><th>Class</th><th>Roll No</th><th>Father</th><th>Address</th><th class="num">Charge</th><th class="num">Paid</th><th class="num">Concession</th><th class="num">Due</th></tr>';
         body = rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.admission_no)}</td><td><b>${esc(r.name)}</b></td>
             <td>${esc([r.school_class, r.section].filter(Boolean).join(' / '))}</td><td>${esc(r.roll_no || '—')}</td>
-            <td>${esc(r.father || '—')}${r.father_phone ? `<br><span style="font-size:9px;color:#555">${esc(r.father_phone)}</span>` : ''}</td><td>${esc(r.mother || '—')}</td>
+            <td>${esc(r.father || '—')}${r.father_phone ? `<br><span style="font-size:9px;color:#555">${esc(r.father_phone)}</span>` : ''}</td><td>${esc(r.address || '—')}</td>
             ${amt(r.total_fee)}${amt(r.total_paid)}${amt(r.total_discount)}<td class="num due">${money(r.due)}</td></tr>`).join('');
         foot = `<tr><td></td><td colspan="6">TOTAL (${rows.length} students)</td>${amt(sum(rows, 'total_fee'))}${amt(sum(rows, 'total_paid'))}${amt(sum(rows, 'total_discount'))}<td class="num due">${money(sum(rows, 'due'))}</td></tr>`;
     } else {

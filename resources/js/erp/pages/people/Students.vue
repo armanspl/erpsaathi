@@ -57,7 +57,7 @@
             :columns="columns"
             :rows="pagedRows"
             :loading="loading"
-            :actions="['view', 'edit', 'delete', 'print', 'idcard', 'certificate']"
+            :actions="['view', 'edit', 'delete']"
             external-sort
             :sort-key="sortKey"
             :sort-dir="sortDir"
@@ -919,6 +919,7 @@ const columns = [
     { key: 'section', label: 'Section', type: 'section' },
     { key: 'mobile', label: 'Mobile', type: 'phone' },
     { key: 'status', label: 'Status', type: 'status' },
+    { key: 'rte', label: 'RTE' },
 ];
 
 const filters = computed(() => [
@@ -928,6 +929,7 @@ const filters = computed(() => [
     { key: 'status', label: 'Status', type: 'select', options: ['Active', 'Inactive'] },
     { key: 'gender', label: 'Gender', type: 'select', options: ['Male', 'Female'] },
     { key: 'transport', label: 'Transport', type: 'select', options: ['Yes', 'No'] },
+    { key: 'rte', label: 'RTE', type: 'select', options: ['Yes', 'No'] },
 ]);
 
 const loading = ref(true);
@@ -1119,6 +1121,7 @@ const tableRows = computed(() =>
             status: snap?.status || s.status,
             gender: s.gender,
             transport: transportedStudentIds.value.has(s.id) ? 'Yes' : 'No',
+            rte: s.is_rte ? 'RTE' : '—',
             __raw: s,
         };
     }),
@@ -1336,6 +1339,7 @@ const filteredRows = computed(() =>
         if (filterValues.status && row.status !== filterValues.status) return false;
         if (filterValues.gender && row.gender !== filterValues.gender) return false;
         if (filterValues.transport && row.transport !== filterValues.transport) return false;
+        if (filterValues.rte && (row.rte === 'RTE' ? 'Yes' : 'No') !== filterValues.rte) return false;
         return true;
     }),
 );

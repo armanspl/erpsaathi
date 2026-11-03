@@ -61,7 +61,12 @@ class Student extends Model implements AuthenticatableContract
         're_admission',
         'admission_date',
         'fee_start_month',
+        'is_rte',
+        'rte_from_session_id',
     ];
+
+    /** @var array<int, string|null>|null student_id => RTE-from session start (Y-m-d), per request */
+    private static ?array $rteFrom = null;
 
     protected function casts(): array
     {
@@ -71,7 +76,50 @@ class Student extends Model implements AuthenticatableContract
             're_admission' => 'boolean',
             'custom_field_values' => 'array',
             'permanent_same_as_current' => 'boolean',
+            'is_rte' => 'boolean',
         ];
+    }
+
+    /** True once the RTE migration has run (the fee code works unchanged before that). */
+    public static function rteReady(): bool
+    {
+        static $ready;
+
+        return $ready ??= \Illuminate\Support\Facades\Schema::hasColumn('students', 'is_rte');
+    }
+
+    /**
+     * Is this student RTE in $session? RTE students pay no school fees, only transport.
+     * Applies to the marked "from" session and every later one — earlier sessions keep their fees.
+     */
+    public static function isRteIn(int $studentId, ?AcademicSession $session): bool
+    {
+        if (! self::rteReady()) {
+            return false;
+        }
+        self::$rteFrom ??= self::query()
+            ->where('is_rte', true)
+            ->leftJoin('academic_sessions as rte_s', 'rte_s.id', '=', 'students.rte_from_session_id')
+            ->pluck('rte_s.start_date', 'students.id')
+            ->map(fn ($d) => $d ? substr((string) $d, 0, 10) : null)
+            ->all();
+        if (! array_key_exists($studentId, self::$rteFrom)) {
+            return false;
+        }
+        $from = self::$rteFrom[$studentId];
+
+        return $from === null || ! $session?->start_date || $session->start_date->format('Y-m-d') >= $from;
+    }
+
+    public static function flushRteCache(): void
+    {
+        self::$rteFrom = null;
+    }
+
+    /** Fee head names that RTE students still pay. */
+    public static function isTransportHeadName(?string $name): bool
+    {
+        return stripos((string) $name, 'transport') !== false;
     }
 
     /**

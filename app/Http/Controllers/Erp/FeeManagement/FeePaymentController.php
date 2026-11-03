@@ -313,6 +313,7 @@ class FeePaymentController extends Controller
             'transport_head_id' => $transportHead->id,
             'fee_start_month' => $balance->feeStartKey($student),
             'transport_fee_start_month' => $balance->transportFareAndHead($student)[2] ?? null,
+            'is_rte' => Student::isRteIn((int) $student->id, $session),
         ]);
     }
 
@@ -437,6 +438,17 @@ class FeePaymentController extends Controller
         $paymentMode = $modeMap[strtolower($data['payment_mode'])] ?? $data['payment_mode'];
 
         $feeHeadNames = FeeHead::whereIn('id', collect($data['items'] ?? [])->pluck('fee_head_id'))->pluck('name', 'id');
+
+        // RTE (Right to Education): no school fees — only the transport fee can be collected.
+        if (Student::isRteIn((int) $data['student_id'], $session)) {
+            foreach ($data['items'] ?? [] as $i => $line) {
+                if (! Student::isTransportHeadName($feeHeadNames[$line['fee_head_id']] ?? null)) {
+                    throw ValidationException::withMessages([
+                        "items.$i.fee_head_id" => 'This is an RTE student — only the transport fee can be collected.',
+                    ]);
+                }
+            }
+        }
         $globalMonths = array_values(array_unique($data['months'] ?? []));
 
         $student = Student::findOrFail($data['student_id']);

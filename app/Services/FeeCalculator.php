@@ -158,6 +158,7 @@ class FeeCalculator
         self::$firstSessionCache = [];
         self::$sessionsCache = null;
         self::$warmed = false;
+        Student::flushRteCache();
         FeeBalanceService::flushRuntimeCache();
     }
 
@@ -195,7 +196,17 @@ class FeeCalculator
             $breakdown = self::legacyStructureBreakdown($student, $session);
         }
 
-        return self::filterBreakdownForAdmissionType($student, $breakdown, $session);
+        $breakdown = self::filterBreakdownForAdmissionType($student, $breakdown, $session);
+
+        // RTE (Right to Education) students pay no school fees — only transport, if they use it.
+        if ($breakdown !== [] && Student::isRteIn((int) $student->id, $session)) {
+            $breakdown = array_values(array_filter(
+                $breakdown,
+                static fn (array $row): bool => Student::isTransportHeadName($row['fee_head_name'] ?? null)
+            ));
+        }
+
+        return $breakdown;
     }
 
     /**

@@ -140,6 +140,7 @@ const ICONS = {
     delete: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>',
     print: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V2h12v7M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v8H6Z"/></svg>',
     idcard: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8.5" cy="11.5" r="1.5"/><path stroke-linecap="round" d="M13 10h6M13 14h4M5 17c.5-1.5 2-2 3.5-2s3 .5 3.5 2"/></svg>',
+    rte: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3 2 8l10 5 10-5-10-5Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/></svg>',
     certificate: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path stroke-linecap="round" stroke-linejoin="round" d="m9 14-1 7 4-2 4 2-1-7"/></svg>',
     transfer: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m17 3 4 4-4 4M3 7h18M7 21l-4-4 4-4m-4 4h18"/></svg>',
     promote: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 12 7-7 7 7M12 19V5"/></svg>',
@@ -149,6 +150,6 @@ function actionIcon(act) {
     return ICONS[act] || ICONS.view;
 }
 function actionLabel(act) {
-    return { view: 'View', edit: 'Edit', delete: 'Delete', print: 'Print', idcard: 'ID Card', certificate: 'Certificate', transfer: 'Transfer', promote: 'Promote' }[act] || act;
+    return { view: 'View', edit: 'Edit', delete: 'Delete', print: 'Print', idcard: 'ID Card', certificate: 'Certificate', rte: 'Mark / remove RTE (no school fee)', transfer: 'Transfer', promote: 'Promote' }[act] || act;
 }
 </script>

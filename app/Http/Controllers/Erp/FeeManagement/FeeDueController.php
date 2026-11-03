@@ -126,13 +126,18 @@ class FeeDueController extends Controller
                 'father' => $student->father?->name,
                 'father_phone' => $student->father?->phone,
                 'mother' => $student->mother?->name,
+                'address' => $this->studentAddress($student),
                 'scope_label' => $scopeLabel,
                 'total_fee' => round($totalFee, 2),
                 'total_discount' => round($totalDiscount, 2),
                 'total_paid' => round($totalPaid, 2),
                 'due' => round($due, 2),
+                'is_rte' => Student::isRteIn((int) $student->id, $sessions->first()),
             ];
-        })->values();
+        })
+            // RTE students pay no school fees; they appear only while a transport fee is due.
+            ->reject(fn (array $r) => $r['is_rte'] && $r['due'] <= 0.0001)
+            ->values();
 
         return $rows;
     }
@@ -140,14 +145,21 @@ class FeeDueController extends Controller
     /** Automatic dues export — same filters/session-scoping as index(), format = pdf|xlsx|csv. */
     public function exportAutomatic(Request $request)
     {
-        $rows = $this->automaticRows($request);
-        $header = ['Admission No', 'Student', 'Roll No', 'Branch', 'Class', 'Section', 'Father', 'Mother', 'Charge', 'Paid', 'Concession', 'Due'];
+        // Same layout as the school's own Fee Due sheet (fee-due-global.xlsx): highest due first,
+        // no Branch / Section, father and mother names; only Paid and Due amounts.
+        $rows = $this->automaticRows($request)->sortByDesc('due')->values();
+        $header = ['Admission No', 'Student', 'Roll No', 'Class', 'Father', 'Mother', 'Paid', 'Due'];
         $table = $rows->map(fn (array $r) => [
-            $r['admission_no'], $r['name'], $r['roll_no'], $r['branch'], $r['school_class'], $r['section'],
-            $this->fatherWithPhone($r['father'] ?? null, $r['father_phone'] ?? null), $r['mother'], $r['total_fee'], $r['total_paid'], $r['total_discount'], $r['due'],
+            $r['admission_no'], $r['name'], $r['roll_no'], $r['school_class'],
+            $r['father'], $r['mother'], $r['total_paid'], $r['due'],
         ])->all();
 
-        return $this->streamTable($request, $header, $table, 'fee-due-automatic', 'Fee Due (Automatic) — '.$this->sessionLabel($request));
+        return $this->streamTable($request, $header, $table, 'fee-due-automatic', 'Fee Due (Automatic) — '.$this->sessionLabel($request), [
+            'widths' => [9.45, 29.45, 9.27, 5.54, 31.73, 29.45, 9.73, 9.73],
+            'amount_columns' => [7, 8],
+            'freeze_header' => true,
+            'filter' => true,
+        ]);
     }
 
     /** Month groups for Create Fee Due modal. */
@@ -210,7 +222,7 @@ class FeeDueController extends Controller
         $query = ManualFeeDue::with([
             'feeHead:id,name',
             'academicSession:id,name',
-            'student:id,name,admission_no,roll_no,branch_id,school_class_id,section_id,father_id,mother_id',
+            'student:id,name,admission_no,roll_no,branch_id,school_class_id,section_id,father_id,mother_id,address,address_line_2',
             'student.branch:id,name',
             'student.schoolClass:id,name',
             'student.section:id,name',
@@ -261,6 +273,7 @@ class FeeDueController extends Controller
                 'father' => $student->father?->name,
                 'father_phone' => $student->father?->phone,
                 'mother' => $student->mother?->name,
+                'address' => $this->studentAddress($student),
                 'fee_types' => implode(', ', $feeNames),
                 'months_label' => implode('-', $months),
                 'session_name' => $lines->first()->academicSession?->name ?? '',
@@ -1234,7 +1247,12 @@ class FeeDueController extends Controller
      * @param  array<int, string>  $header
      * @param  array<int, array<int, mixed>>  $rows
      */
-    private function streamTable(Request $request, array $header, array $rows, string $basename, string $title): StreamedResponse
+    /**
+     * @param  array{widths?: list<float>, amount_columns?: list<int>, freeze_header?: bool, filter?: bool}  $layout
+     *         xlsx only: fixed column widths, 1-based amount columns (accounting format, "-" for 0),
+     *         frozen header row, header filter buttons. Without it, columns auto-size as before.
+     */
+    private function streamTable(Request $request, array $header, array $rows, string $basename, string $title, array $layout = []): StreamedResponse
     {
         $format = strtolower((string) $request->query('format', 'xlsx'));
         if (! in_array($format, ['xlsx', 'csv', 'pdf'], true)) {
@@ -1249,7 +1267,7 @@ class FeeDueController extends Controller
             return $this->streamPdf($header, $rows, $filename, $title);
         }
 
-        return $this->streamXlsx($header, $rows, $filename, $title);
+        return $this->streamXlsx($header, $rows, $filename, $title, $layout);
     }
 
     /**
@@ -1275,7 +1293,7 @@ class FeeDueController extends Controller
      * @param  array<int, string>  $header
      * @param  array<int, array<int, mixed>>  $rows
      */
-    private function streamXlsx(array $header, array $rows, string $filename, string $title): StreamedResponse
+    private function streamXlsx(array $header, array $rows, string $filename, string $title, array $layout = []): StreamedResponse
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -1286,8 +1304,22 @@ class FeeDueController extends Controller
         }
         $sheet->getStyle('A1:'.$sheet->getHighestColumn().'1')->getFont()->setBold(true);
         $colCount = count($header);
+        $lastRow = max(1, count($rows) + 1);
+        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colCount);
         for ($col = 1; $col <= $colCount; $col++) {
-            $sheet->getColumnDimensionByColumn($col)->setAutoSize(true);
+            $width = $layout['widths'][$col - 1] ?? null;
+            $width ? $sheet->getColumnDimensionByColumn($col)->setWidth($width) : $sheet->getColumnDimensionByColumn($col)->setAutoSize(true);
+        }
+        foreach ($layout['amount_columns'] ?? [] as $col) {
+            $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+            $sheet->getStyle("{$letter}2:{$letter}{$lastRow}")->getNumberFormat()
+                ->setFormatCode('_ * #,##0_ ;_ * \\-#,##0_ ;_ * "-"??_ ;_ @_ ');
+        }
+        if (! empty($layout['freeze_header'])) {
+            $sheet->freezePane('A2');
+        }
+        if (! empty($layout['filter'])) {
+            $sheet->setAutoFilter("A1:{$lastCol}{$lastRow}");
         }
 
         return response()->streamDownload(function () use ($spreadsheet) {
@@ -1342,5 +1374,11 @@ class FeeDueController extends Controller
         }, $filename, [
             'Content-Type' => 'application/pdf',
         ]);
+    }
+
+    /** Student's address for the list / export (same two lines Fee History uses). */
+    private function studentAddress(Student $student): ?string
+    {
+        return trim(implode(', ', array_filter([$student->address, $student->address_line_2]))) ?: null;
     }
 }

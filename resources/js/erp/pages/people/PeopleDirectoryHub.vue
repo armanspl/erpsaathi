@@ -13,6 +13,8 @@ import ModuleTabsHub from '../../components/common/ModuleTabsHub.vue';
 /** People Directory — Students / Parents / Teachers / Staff / Drivers as tabs (see ModuleTabsHub). */
 const TABS = [
     { id: 'students', label: 'Students', icon: 'graduation', items: [{ key: 'students', label: 'Students', path: '/people/students' }] },
+    // Same permission as Students (people.students.view).
+    { id: 'rte', label: 'RTE Students', icon: 'graduation', items: [{ key: 'students', label: 'RTE Students', path: '/people/rte-students' }] },
     { id: 'parents', label: 'Parents', icon: 'users', items: [{ key: 'parents', label: 'Parents', path: '/people/parents' }] },
     { id: 'teachers', label: 'Teachers', icon: 'presentation', items: [{ key: 'teachers', label: 'Teachers', path: '/people/teachers' }] },
     { id: 'staff', label: 'Staff', icon: 'briefcase', items: [{ key: 'staff', label: 'Staff', path: '/people/staff' }] },

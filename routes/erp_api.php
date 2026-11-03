@@ -280,6 +280,7 @@ Route::prefix('people')->name('people.')->group(function () {
     });
     Route::middleware('erp.permission:people.students.view')->group(function () {
         Route::get('students', [StudentController::class, 'index'])->name('students.index');
+        Route::get('students-rte', [StudentController::class, 'rteList'])->name('students.rte-list');
         Route::get('students/{student}', [StudentController::class, 'show'])->name('students.show');
         Route::get('students/{student}/fee-months', [StudentController::class, 'feeMonths'])->name('students.fee-months');
     });
@@ -315,6 +316,7 @@ Route::prefix('people')->name('people.')->group(function () {
     Route::middleware('erp.permission:people.students.edit')->group(function () {
         Route::put('students/{student}', [StudentController::class, 'update'])->name('students.update');
         Route::patch('students/{student}/admission-status', [StudentController::class, 'updateAdmissionStatus'])->name('students.admission-status');
+        Route::patch('students/{student}/rte', [StudentController::class, 'updateRte'])->name('students.rte');
     });
     Route::middleware('erp.permission:people.students.delete')->group(function () {
         Route::delete('students/{student}', [StudentController::class, 'destroy'])->name('students.destroy');

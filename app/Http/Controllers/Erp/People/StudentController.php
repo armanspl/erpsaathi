@@ -294,6 +294,69 @@ class StudentController extends Controller
     }
 
     /** Promote Registered → Admitted (and similar) without a full student form rewrite. */
+    /** People → Students: mark / unmark an RTE (Right to Education) student. */
+    public function updateRte(Request $request, Student $student)
+    {
+        abort_unless(Student::rteReady(), 422, 'RTE needs the database update first — run the migrations.');
+        $data = $request->validate([
+            'is_rte' => 'required|boolean',
+            'rte_from_session_id' => 'nullable|exists:academic_sessions,id',
+        ]);
+        $student->update([
+            'is_rte' => $data['is_rte'],
+            'rte_from_session_id' => $data['is_rte']
+                ? ($data['rte_from_session_id'] ?? AcademicSession::fromRequest($request, true)?->id)
+                : null,
+        ]);
+        Student::flushRteCache();
+
+        return response()->json([
+            'id' => $student->id,
+            'is_rte' => (bool) $student->is_rte,
+            'rte_from_session_id' => $student->rte_from_session_id,
+        ]);
+    }
+
+    /** People → RTE Students: every student marked RTE, with transport (the only fee they pay). */
+    public function rteList(Request $request)
+    {
+        if (! Student::rteReady()) {
+            return response()->json(['ready' => false, 'rows' => [], 'sessions' => []]);
+        }
+        $students = Student::query()
+            ->where('is_rte', true)
+            ->with(['schoolClass:id,name', 'section:id,name', 'father:id,name,phone'])
+            ->orderBy('name')
+            ->get();
+        $transport = \App\Models\StudentTransport::query()
+            ->whereIn('student_id', $students->pluck('id'))
+            ->where('status', 'Active')
+            ->with(['route:id,name', 'routeStop:id,stop_name,fare'])
+            ->get()
+            ->keyBy('student_id');
+        $sessions = AcademicSession::query()->orderByDesc('start_date')->get(['id', 'name', 'is_current']);
+
+        return response()->json([
+            'ready' => true,
+            'sessions' => $sessions,
+            'rows' => $students->map(fn (Student $st) => [
+                'id' => $st->id,
+                'admission_no' => $st->admission_no,
+                'name' => $st->name,
+                'school_class' => $st->schoolClass?->name,
+                'section' => $st->section?->name,
+                'roll_no' => $st->roll_no,
+                'father' => $st->father?->name,
+                'mobile' => $st->father?->phone ?: $st->mobile,
+                'status' => $st->status,
+                'rte_from' => $sessions->firstWhere('id', $st->rte_from_session_id)?->name,
+                'transport_route' => $transport[$st->id]?->route?->name,
+                'transport_stop' => $transport[$st->id]?->routeStop?->stop_name,
+                'transport_fare' => (float) ($transport[$st->id]?->routeStop?->fare ?? 0),
+            ])->values(),
+        ]);
+    }
+
     public function updateAdmissionStatus(Request $request, Student $student)
     {
         $data = $request->validate([
