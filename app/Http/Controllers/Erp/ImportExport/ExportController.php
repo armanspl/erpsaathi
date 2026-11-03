@@ -1493,11 +1493,12 @@ class ExportController extends Controller
             }
         }
 
-        // Group by student + calendar day (+ session) — merges multiple same-day payments into one row.
+        // One row per receipt (per session it pays for). Same-day receipts stay separate rows so the
+        // Global Workbook import can rebuild each receipt with its own number and amounts.
         $groups = [];
         foreach ($payments as $payment) {
             $paymentDate = $payment->payment_date?->toDateString() ?? '';
-            $key = $payment->student_id.'|'.$paymentDate.'|'.$payment->academic_session_id;
+            $key = $payment->student_id.'|'.$paymentDate.'|'.$payment->academic_session_id.'|'.($payment->receipt_no ?: 'id:'.$payment->id);
 
             if (! isset($groups[$key])) {
                 $groups[$key] = [
@@ -1507,6 +1508,7 @@ class ExportController extends Controller
                     'amounts' => array_fill_keys(array_merge($headCodes, ['OTHER']), 0.0),
                     'receipts' => [],
                     'remarks' => [],
+                    'remarks_by_code' => [],
                     'modes' => [],
                 ];
             }
@@ -1541,6 +1543,21 @@ class ExportController extends Controller
                 $remark = $this->incomeRemarksForItem($item, $payment->remarks);
                 if ($remark !== '' && ! in_array($remark, $groups[$key]['remarks'], true)) {
                     $groups[$key]['remarks'][] = $remark;
+                }
+                // Per fee head, for REMARKS (see incomeRowRemarks()): the months it pays for, or its
+                // remark text when it has none. OTHER holds heads with no column of their own, so
+                // it keeps each head's name: "DIARY 1 PC (AUG)".
+                $monthKeys = $this->incomeMonthKeysForItem($item);
+                if ($bucket === 'OTHER') {
+                    $label = $monthKeys !== [] ? $this->incomeMonthRuns($monthKeys) : $remark;
+                    $codeRemark = "{$headName} ({$label})";
+                    if (! in_array($codeRemark, $groups[$key]['remarks_by_code']['OTHER'] ?? [], true)) {
+                        $groups[$key]['remarks_by_code']['OTHER'][] = $codeRemark;
+                    }
+                } elseif ($monthKeys !== []) {
+                    $groups[$key]['month_keys'][$bucket] = array_merge($groups[$key]['month_keys'][$bucket] ?? [], $monthKeys);
+                } elseif ($remark !== '' && ! in_array($remark, $groups[$key]['remarks_by_code'][$bucket] ?? [], true)) {
+                    $groups[$key]['remarks_by_code'][$bucket][] = $remark;
                 }
             }
 
@@ -1597,7 +1614,7 @@ class ExportController extends Controller
             $row[] = round($total, 2);
             $row[] = $group['session_label'];
             $row[] = implode(', ', $group['receipts']);
-            $row[] = implode('; ', $group['remarks']);
+            $row[] = $this->incomeRowRemarks($group);
             $row[] = implode('/', $group['modes']);
 
             $rows[] = $row;
@@ -1846,6 +1863,58 @@ class ExportController extends Controller
         );
 
         return [array_values(StudRecSumReport::COLUMNS), $rows];
+    }
+
+    /**
+     * REMARKS of one INCOME row: the months paid for, in calendar order ("APR-MAY-JUN"; a gap
+     * starts a new run: "MAR-APR, NOV-DEC"). When its fee heads cover different months each is
+     * named — "TUI: APR-MAY; TRA: APR-JUN" — so the Global Workbook import gives every head its
+     * own months back.
+     */
+    private function incomeRowRemarks(array $group): string
+    {
+        $byCode = [];
+        foreach (array_unique(array_merge(array_keys($group['month_keys'] ?? []), array_keys($group['remarks_by_code'] ?? []))) as $code) {
+            $parts = [];
+            if (! empty($group['month_keys'][$code])) {
+                $parts[] = $this->incomeMonthRuns($group['month_keys'][$code]);
+            }
+            array_push($parts, ...($group['remarks_by_code'][$code] ?? []));
+            $byCode[$code] = implode(', ', array_unique($parts));
+        }
+        if (count(array_unique($byCode)) > 1 || isset($byCode['OTHER'])) {
+            return implode('; ', array_map(fn ($code, $r) => "{$code}: {$r}", array_keys($byCode), $byCode));
+        }
+
+        return $byCode !== [] ? (string) reset($byCode) : implode('; ', $group['remarks']);
+    }
+
+    /** Y-m keys a fee line pays for (empty when it names none). */
+    private function incomeMonthKeysForItem(array $item): array
+    {
+        $months = (array) (($item['months'] ?? null) ?: (($item['month'] ?? null) ? [$item['month']] : []));
+
+        return array_values(array_filter(array_map(fn ($m) => substr(trim((string) $m), 0, 7), $months), fn ($m) => preg_match('/^\d{4}-\d{2}$/', $m)));
+    }
+
+    /** ["2025-03","2025-04","2025-11"] → "MAR-APR, NOV": calendar order, "-" within a run of months. */
+    private function incomeMonthRuns(array $keys): string
+    {
+        $keys = array_values(array_unique($keys));
+        sort($keys);
+        $runs = [];
+        $previous = null;
+        foreach ($keys as $key) {
+            $label = strtoupper(\Carbon\Carbon::createFromFormat('!Y-m', $key)->format('M'));
+            if ($previous !== null && \Carbon\Carbon::createFromFormat('!Y-m', $previous)->addMonth()->format('Y-m') === $key) {
+                $runs[count($runs) - 1][] = $label;
+            } else {
+                $runs[] = [$label];
+            }
+            $previous = $key;
+        }
+
+        return implode(', ', array_map(fn (array $run) => implode('-', $run), $runs));
     }
 
     /** Reverse of GlobalWorkbookImportController::INCOME_HEAD_CANONICAL_MAP. */

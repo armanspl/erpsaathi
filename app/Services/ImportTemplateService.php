@@ -88,14 +88,17 @@ class ImportTemplateService
         // --- INCOME ---
         $income = $ss->createSheet();
         $income->setTitle('INCOME');
-        $incomeHeaders = ['Year', 'Month', 'Date', 'Adm No', 'Name', 'Address', 'Class', 'Head', 'Fee', 'Session', 'Receipt No', 'Mode', 'Remarks'];
+        // Same layout as the Global Workbook export's INCOME sheet: one amount column per fee head,
+        // one row per student per receipt. REMARKS = the months paid for ("APR-MAY-JUN"); when the
+        // heads cover different months, name each: "TUI: APR-MAY; TRA: APR-JUN".
+        $incomeHeaders = ['YEAR', 'MONTH', 'DATE', 'ADM NO', 'NAME', 'ADDRESS', 'CLASS', 'REG', 'ADM', 'ANN', 'TUI', 'TRA', 'FINE', 'DIARY', 'TC', 'OTHER', 'GRAND TOTAL', 'SESSION', 'RECEIPT', 'REMARKS', 'PMNT MODE'];
         $income->fromArray($incomeHeaders, null, 'A1');
-        $this->styleHeaderRow($income, 'A1:M1');
+        $this->styleHeaderRow($income, 'A1:U1');
         $income->fromArray([
-            '2026', 'April', '2026-04-05', '16701', 'SAMPLE STUDENT', 'Sample Address', 'Nursery', 'TUI', '1500', '2026-27', 'R-1001', 'Cash', 'APR',
+            '2026-27', 'Apr-2026', '05-Apr-2026', '16701', 'SAMPLE STUDENT', 'Sample Address', 'Nursery', 0, 0, 0, 3000, 1000, 0, 0, 0, 0, 4000, '2026-2027', 'R-1001', 'TUI: APR-MAY; TRA: APR', 'Cash',
         ], null, 'A2');
         $income->fromArray([
-            '2026', 'April', '2026-04-05', '', 'Misc Donor', '', '', 'Donation', '500', '2026-27', 'R-1002', 'UPI', 'Misc income (no Adm No)',
+            '2026-27', 'Apr-2026', '05-Apr-2026', '', 'Misc Donor', '', '', 0, 0, 0, 0, 0, 0, 0, 0, 500, 500, '2026-2027', 'R-1002', 'Donation', 'UPI',
         ], null, 'A3');
 
         // --- EXPENSES ---

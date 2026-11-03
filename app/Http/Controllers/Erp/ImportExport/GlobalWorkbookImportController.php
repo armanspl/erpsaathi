@@ -178,6 +178,13 @@ class GlobalWorkbookImportController extends Controller
     private const INCOME_FINE_HEAD_CODES = ['fine', 'fin'];
 
     /**
+     * The Global Workbook export's INCOME sheet has one amount column per fee head instead of
+     * HEAD + FEE: … CLASS | REG | ADM | ANN | TUI | TRA | FINE | DIARY | TC | OTHER | GRAND TOTAL | …
+     * expandWideIncomeSheet() turns each such row into one HEAD/FEE row per non-zero column.
+     */
+    private const INCOME_WIDE_HEAD_COLUMNS = ['reg', 'adm', 'ann', 'tui', 'tra', 'fine', 'diary', 'tc', 'other'];
+
+    /**
      * mode=preview runs the whole import inside a transaction and rolls it back, so the school
      * sees exactly what would be inserted / skipped / flagged before anything is saved.
      * A normal import only adds new records and skips unchanged ones; existing records whose
@@ -291,7 +298,7 @@ class GlobalWorkbookImportController extends Controller
                 $parsed = SpreadsheetImportReader::fromWorksheet($sheet, $headerRow);
                 $parsed['header_row'] = $headerRow;
                 $parsed['title'] = $title;
-                $incomeSheet = $parsed;
+                $incomeSheet = $this->expandWideIncomeSheet($parsed);
             }
             if ($expenseTitle && strtolower($expenseTitle) === $lower) {
                 $parsed = SpreadsheetImportReader::fromWorksheet($sheet);
@@ -416,6 +423,7 @@ class GlobalWorkbookImportController extends Controller
             'skipped_old_student_new_only_fee' => 0,
             'skipped_manually_edited' => 0,
             'skipped_cancelled' => 0,
+            'skipped_discount_month' => 0,
             'flagged_changed' => 0,
             'rolled_back_cancelled' => 0,
             'superseded_removed' => 0,
@@ -530,6 +538,8 @@ class GlobalWorkbookImportController extends Controller
                     $breakdown['skipped_manually_edited'] += $rows;
                 } elseif ($reason === 'cancelled') {
                     $breakdown['skipped_cancelled'] += $rows;
+                } elseif ($reason === 'discount_month') {
+                    $breakdown['skipped_discount_month'] += $rows;
                 } elseif ($reason === 'changed_flagged') {
                     $breakdown['flagged_changed'] += $rows;
                 }
@@ -692,6 +702,10 @@ class GlobalWorkbookImportController extends Controller
 
         if ($incomeSheet) {
             [$mapped, $junk] = $this->mapRows($incomeSheet, self::INCOME_HEADER_MAP, 'INCOME');
+            if (! empty($incomeSheet['wide'])) {
+                // Rows of the ERP's own export — see sameMoneyAsSaved().
+                $mapped = array_map(fn (array $r) => $r + ['_from_export' => true], $mapped);
+            }
             $ignoredColumns = array_merge($ignoredColumns, $junk);
             $this->warmReceiptCaches($mapped, $cache);
             // Student fee rows are collected per receipt first (a receipt is usually several
@@ -1598,8 +1612,12 @@ class GlobalWorkbookImportController extends Controller
 
         $mapped = [];
         $rowNumber = (int) ($sheet['header_row'] ?? 1); // header consumed; first data row is the next Excel row
-        foreach ($sheet['rows'] as $line) {
+        foreach ($sheet['rows'] as $lineIndex => $line) {
             $rowNumber++;
+            // A wide INCOME row expanded into several HEAD/FEE rows keeps its own Excel row number.
+            if (isset($sheet['row_numbers'][$lineIndex])) {
+                $rowNumber = (int) $sheet['row_numbers'][$lineIndex];
+            }
             $row = ['row_number' => $rowNumber, '_sheet' => $sheetLabel, '_junk_fields' => []];
             $hasAny = false;
             foreach ($indexToField as $index => $field) {
@@ -1666,7 +1684,7 @@ class GlobalWorkbookImportController extends Controller
                 }
             }
             $expected = $kind === 'INCOME'
-                ? 'YEAR, MONTH, DATE, ADM NO, NAME, ADDRESS, CLASS, HEAD, FEE, SESSION, RECEIPT, REMARKS, PMNT MODE'
+                ? 'YEAR, MONTH, DATE, ADM NO, NAME, ADDRESS, CLASS, REG, ADM, ANN, TUI, TRA, FINE, DIARY, TC, OTHER, GRAND TOTAL, SESSION, RECEIPT, REMARKS, PMNT MODE (as in the Global Workbook export) — or HEAD + FEE instead of the fee columns'
                 : 'RCPT, YEAR, MONTH, DATE, DESCRIPTION, PART 1, PART 2, AMOUNT, PART 3, REMARKS';
 
             return ['missing' => $missing, 'unknown' => $unknown, 'expected' => $expected];
@@ -1924,6 +1942,15 @@ class GlobalWorkbookImportController extends Controller
             if ($existing['status'] !== 'Paid' || (float) $existing['refunded_amount'] > 0
                 || $existing['edited_at'] !== null || $existing['rolled_back_at'] !== null) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'manually_edited', 'rows' => $rows];
+            }
+            // A receipt entered on the Fee Receipt screen (not saved by an import) is the ERP's own
+            // record — a sheet row with its number (e.g. a re-imported Global Workbook export)
+            // leaves it exactly as it is.
+            if (! str_contains((string) $existing['items'], '"source_head"')) {
+                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
+            }
+            if (collect($lines)->contains(fn ($l) => ! empty($l['from_export'])) && $this->sameMoneyAsSaved($existing, $newData)) {
+                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
             }
 
             $changed = $this->diffForUpdate($existing, $newData, ['amount', 'fine_amount', 'discount_amount', 'multi_session'], ['items', 'session_fines']);
@@ -2295,6 +2322,23 @@ class GlobalWorkbookImportController extends Controller
             $receiptNo = '';
         }
 
+        // Export rows for a waived (discount) month: ₹0, PMNT MODE "Discount" — not a payment.
+        if (strcasecmp(trim((string) ($row['mode'] ?? '')), 'discount') === 0 && (float) ($this->parseAmount($feeRaw) ?? 0) == 0.0) {
+            return ['ok' => true, 'skip' => true, 'reason' => 'discount_month'];
+        }
+
+        // The export merges a student's same-day receipts into one row ("1898, 1899"); the amount
+        // of each receipt can't be told apart, so such a row is never saved as one new receipt.
+        if (preg_match('/[,;]/', $receiptNo)) {
+            $parts = array_values(array_filter(array_map('trim', preg_split('/[,;]/', $receiptNo))));
+            $allSaved = $parts !== [] && collect($parts)->every(fn ($p) => isset($cache['receipts'][$p]));
+            if ($allSaved) {
+                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate'];
+            }
+
+            return $this->fail($log, $row, "This row combines receipts {$receiptNo} (same student, same day). Enter each receipt on its own row to import it.", 'other');
+        }
+
         if ($feeRaw === '') {
             return $this->fail($log, $row, 'Missing required field: FEE.', 'missing_field');
         }
@@ -2470,6 +2514,7 @@ class GlobalWorkbookImportController extends Controller
                         'remarks' => $this->composeIncomeRemarks($row),
                         'bank_account_id' => $bankAccountId,
                         'row_number' => $row['row_number'],
+                        'from_export' => ! empty($row['_from_export']),
                     ],
                 ];
             }
@@ -2728,24 +2773,53 @@ class GlobalWorkbookImportController extends Controller
             return $fallback;
         }
 
-        $range = $this->parseMonthRangeTokens($remarks, $transactionDate);
+        // "MAY-JUN; JUL" — the export's REMARKS for a head paid in parts on one receipt: every
+        // part's months together.
+        if (str_contains($remarks, ';')) {
+            $keys = [];
+            foreach (array_filter(array_map('trim', explode(';', $remarks))) as $part) {
+                array_push($keys, ...($this->monthKeysFromText($part, $transactionDate) ?? []));
+            }
+            $keys = array_values(array_unique($keys));
+            sort($keys);
+
+            return $keys !== [] ? $keys : $fallback;
+        }
+
+        return $this->monthKeysFromText($remarks, $transactionDate) ?? $fallback;
+    }
+
+    /**
+     * Month keys named by one piece of REMARKS text — a range ("APR TO AUG"), a list
+     * ("APR-MAY-JUN", "MAR, APR"), a "Dec/25" token, or a bare month name. Null when none.
+     *
+     * @return list<string>|null
+     */
+    private function monthKeysFromText(string $text, string $transactionDate): ?array
+    {
+        $range = $this->parseMonthRangeTokens($text, $transactionDate);
         if ($range !== null) {
             return $range;
         }
 
-        $single = $this->parseMonthToken($remarks);
+        $list = $this->parseMonthListTokens($text, $transactionDate);
+        if ($list !== null) {
+            return $list;
+        }
+
+        $single = $this->parseMonthToken($text);
         if ($single !== null) {
             return [$single];
         }
 
-        $bare = strtolower($remarks);
+        $bare = strtolower(trim($text));
         if (isset(self::MONTH_NAME_MAP[$bare])) {
             $month = self::MONTH_NAME_MAP[$bare];
 
             return [sprintf('%04d-%02d', $this->nearestCalendarYear($month, $transactionDate), $month)];
         }
 
-        return $fallback;
+        return null;
     }
 
     /**
@@ -2759,6 +2833,127 @@ class GlobalWorkbookImportController extends Controller
      *
      * @return list<string>|null
      */
+    /**
+     * Parses a list of month names in calendar order, e.g. "APR-MAY-JUN" or "MAR-APR, NOV-DEC"
+     * (the Global Workbook export writes a line's months this way). Two names joined by "-" stay
+     * a range — see parseMonthRangeTokens().
+     *
+     * @return list<string>|null
+     */
+    private function parseMonthListTokens(string $value, string $transactionDate): ?array
+    {
+        $tokens = preg_split('/\s*[-,]\s*|\s+/', trim($value), -1, PREG_SPLIT_NO_EMPTY);
+        // Two names joined by "-" or "to" are a range (parseMonthRangeTokens); with a comma, a list.
+        if (count($tokens) < 2 || (count($tokens) === 2 && ! str_contains($value, ','))) {
+            return null;
+        }
+        $months = [];
+        foreach ($tokens as $token) {
+            $month = self::MONTH_NAME_MAP[strtolower($token)] ?? null;
+            if ($month === null) {
+                return null;
+            }
+            $months[] = $month;
+        }
+
+        // The export lists months in calendar order: the first takes the year nearest the payment
+        // date, each later one moves forward (into the next year when its number is smaller).
+        $year = $this->nearestCalendarYear($months[0], $transactionDate);
+        $keys = [];
+        $previous = null;
+        foreach ($months as $month) {
+            if ($previous !== null && $month <= $previous) {
+                $year++;
+            }
+            $keys[] = sprintf('%04d-%02d', $year, $month);
+            $previous = $month;
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * Wide INCOME layout (the Global Workbook export) → the HEAD/FEE layout the rest of the import
+     * reads: one row per non-zero fee-head column, everything else copied. REMARKS written as
+     * "TUI: APR-MAY; TRA: APR-JUN" gives each head its own months. GRAND TOTAL is a sum — not read.
+     * Sheets that already have HEAD/FEE columns are returned unchanged.
+     */
+    private function expandWideIncomeSheet(array $sheet): array
+    {
+        $labels = array_map(fn ($h) => preg_replace('/\s+/', ' ', strtolower(trim((string) $h))), $sheet['header']);
+        if (in_array('head', $labels, true) || in_array('fee', $labels, true)) {
+            return $sheet;
+        }
+        $headCols = [];
+        foreach ($labels as $i => $label) {
+            if (in_array($label, self::INCOME_WIDE_HEAD_COLUMNS, true)) {
+                $headCols[$i] = strtoupper($label);
+            }
+        }
+        if ($headCols === []) {
+            return $sheet;
+        }
+
+        $keep = array_values(array_filter(array_keys($labels), fn ($i) => ! isset($headCols[$i]) && $labels[$i] !== 'grand total'));
+        $remarksAt = array_search(true, array_map(fn ($i) => in_array($labels[$i], ['remarks', 'remark'], true), $keep), true);
+        $headerRow = (int) ($sheet['header_row'] ?? 1);
+
+        $rows = [];
+        $rowNumbers = [];
+        foreach ($sheet['rows'] as $n => $line) {
+            $base = array_map(fn ($i) => $line[$i] ?? null, $keep);
+            $excelRow = $headerRow + 1 + $n;
+            $perHead = $this->splitHeadRemarks($remarksAt !== false ? (string) ($base[$remarksAt] ?? '') : '');
+            $added = false;
+            foreach ($headCols as $i => $code) {
+                $amount = $this->parseAmount(trim((string) ($line[$i] ?? '')));
+                if ($amount === null || abs($amount) < 0.005) {
+                    continue;
+                }
+                $row = $base;
+                $head = $code;
+                if ($remarksAt !== false && isset($perHead[$code])) {
+                    $row[$remarksAt] = $perHead[$code];
+                    // OTHER names its fee head: "OTHER: DIARY 1 PC (AUG)" → head DIARY 1 PC, months AUG.
+                    if ($code === 'OTHER' && preg_match('/^([^(),]+?)\s*\(([^()]*)\)$/', $perHead[$code], $m)) {
+                        $head = trim($m[1]);
+                        $row[$remarksAt] = trim($m[2]);
+                    }
+                }
+                $rows[] = array_merge($row, [$head, $amount]);
+                $rowNumbers[] = $excelRow;
+                $added = true;
+            }
+            // Nothing to collect (a "Discount" month row) — passed on so importIncomeRow() reports it.
+            if (! $added && collect($base)->contains(fn ($v) => trim((string) $v) !== '')) {
+                $rows[] = array_merge($base, ['', '0']);
+                $rowNumbers[] = $excelRow;
+            }
+        }
+
+        $header = array_merge(array_map(fn ($i) => $sheet['header'][$i], $keep), ['HEAD', 'FEE']);
+
+        return array_merge($sheet, ['header' => $header, 'rows' => $rows, 'row_numbers' => $rowNumbers, 'wide' => true]);
+    }
+
+    /**
+     * "TUI: APR-MAY; TRA: APR-JUN" → ['TUI' => 'APR-MAY', 'TRA' => 'APR-JUN']; any other text → [].
+     *
+     * @return array<string, string>
+     */
+    private function splitHeadRemarks(string $remarks): array
+    {
+        $out = [];
+        foreach (array_filter(array_map('trim', explode(';', $remarks))) as $part) {
+            if (! preg_match('/^([A-Za-z]{2,6})\s*:\s*(.+)$/', $part, $m) || ! in_array(strtolower($m[1]), self::INCOME_WIDE_HEAD_COLUMNS, true)) {
+                return [];
+            }
+            $out[strtoupper($m[1])] = trim($m[2]);
+        }
+
+        return $out;
+    }
+
     private function parseMonthRangeTokens(string $value, string $transactionDate): ?array
     {
         if (! preg_match('/^([A-Za-z]+)\s*(?:to|-)\s*([A-Za-z]+)$/i', trim($value), $m)) {
@@ -3074,7 +3269,10 @@ class GlobalWorkbookImportController extends Controller
             if (is_numeric($admissionNo) && str_contains($admissionNo, '.')) {
                 $admissionNo = (string) (int) round((float) $admissionNo);
             }
-            if ($admissionNo !== '') {
+            if ($admissionNo !== '' && preg_match('/[,;]/', $receiptNo)) {
+                // A combined "1898, 1899" cell (see importIncomeRow()) — look up each receipt.
+                array_push($receipts, ...array_filter(array_map('trim', preg_split('/[,;]/', $receiptNo))));
+            } elseif ($admissionNo !== '') {
                 // Every receipt no. claimReceiptNo() may pick for this row (plain, session- and
                 // student-qualified), so a re-import finds whichever one it used last time.
                 $candidates = $this->receiptCandidates(
@@ -3314,6 +3512,30 @@ class GlobalWorkbookImportController extends Controller
      * @param  list<string>  $jsonFields  compared as decoded structures, not raw strings
      * @return array<string, mixed>
      */
+    /**
+     * A row from the ERP's own Global Workbook export describes a saved receipt in different
+     * words (REMARKS "APR-MAY-JUN" for a saved "APR TO JUN", one TUI column for two TUI lines…).
+     * It matches when the money matches: total, fine, and per fee head its amount and months.
+     */
+    private function sameMoneyAsSaved(array $existing, array $new): bool
+    {
+        $lines = function ($items): array {
+            $items = is_string($items) ? (json_decode($items, true) ?: []) : (array) $items;
+
+            return collect($items)
+                ->groupBy(fn ($i) => strtolower(trim((string) ($i['fee_head_name'] ?? ''))))
+                ->map(fn ($head) => number_format($head->sum(fn ($i) => (float) ($i['amount'] ?? 0)), 2, '.', '').'|'
+                    .$head->flatMap(fn ($i) => (array) ($i['months'] ?? (isset($i['month']) ? [$i['month']] : [])))
+                        ->map(fn ($m) => substr((string) $m, 0, 7))->filter()->unique()->sort()->implode(','))
+                ->sortKeys()
+                ->all();
+        };
+
+        return round((float) $existing['amount'], 2) === round((float) $new['amount'], 2)
+            && round((float) $existing['fine_amount'], 2) === round((float) $new['fine_amount'], 2)
+            && $lines($existing['items']) === $lines($new['items']);
+    }
+
     private function diffForUpdate(array $existing, array $new, array $numericFields = [], array $jsonFields = []): array
     {
         $changed = [];
