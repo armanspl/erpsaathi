@@ -80,6 +80,16 @@ class GlobalWorkbookImportController extends Controller
         'tra disc' => 'tra',
     ];
 
+    /**
+     * FEES DISCOUNT columns that are only there to read (the school's sheet and the Global Workbook
+     * export) — not imported, and not reported as unknown. Normalized like the headers ("_"/"-" → " ").
+     */
+    private const FEES_DISCOUNT_INFO_COLUMNS = [
+        'name of student', 'name', 'father name', 'address', 'mobile', 'class', 'vehicle',
+        'tot pmnt', 'reg', 'adm pd', 'ann pmnt', 'ann dues', 'tui pmnt', 'tui calc', 'tui dues',
+        'tra pmnt', 'tra calc', 'tra dues', 'tot dues',
+    ];
+
     private const MSG_BROKEN_FORMULA = 'Skipped — column contains a broken formula reference (#REF!/#N/A), not usable data.';
 
     private const MSG_ZERO_AMOUNT = 'Zero or negative amount — please confirm if this row should be imported.';
@@ -743,6 +753,10 @@ class GlobalWorkbookImportController extends Controller
                     $cache
                 );
                 $breakdown['superseded_removed'] += $this->removeSupersededReceipts($cache);
+                // Existing receipts the sheet names a bank account for ("GAS 11662") — link only.
+                foreach ($cache['bank_account_fill'] ?? [] as $paymentId => $accountId) {
+                    DB::table('fee_payments')->where('id', $paymentId)->whereNull('bank_account_id')->update(['bank_account_id' => $accountId]);
+                }
             });
 
             // Imported payments (same students and sessions as this sheet) that no row of the
@@ -1702,7 +1716,7 @@ class GlobalWorkbookImportController extends Controller
                     $hasAdm = true;
                 } elseif (isset(self::FEES_DISCOUNT_HEAD_MAP[$key])) {
                     $hasDisc = true;
-                } else {
+                } elseif (! in_array($key, self::FEES_DISCOUNT_INFO_COLUMNS, true)) {
                     $unknown[] = mb_strtoupper(trim((string) $raw));
                 }
             }
@@ -1921,10 +1935,16 @@ class GlobalWorkbookImportController extends Controller
             'payment_date' => $first['date'],
             'remarks' => $remarksText,
         ];
+        // The bank account PMNT MODE names ("GAS 11662") — saved on the receipt itself.
+        // Only for a receipt paid into a bank — a Cash receipt with one bank line stays Cash.
+        $sheetAccount = in_array($newData['payment_mode'], ['Cash', 'UPI', 'Card', 'Cheque'], true)
+            ? null
+            : collect($lines)->pluck('bank_account_id')->filter()->first();
+        $newBankAccount = FeePayment::hasBankAccountColumn() ? $sheetAccount : null;
 
-        // fee_payments has no bank_account_id column, so the link to the account is a
-        // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums
-        // these, the same mechanism a manually-entered deposit uses. Skipped entirely
+        // A BankTransaction (Deposit) also links the money to the account —
+        // BankAccount::currentBalance() already sums these, the same mechanism a
+        // manually-entered deposit uses. Skipped entirely
         // when this account has its own authoritative BANK ledger sheet in this same
         // workbook — that sheet's own "TRANSFER DEPOSIT" row already covers this money.
         $bankAmounts = [];
@@ -1933,6 +1953,12 @@ class GlobalWorkbookImportController extends Controller
             if ($acc && empty($cache['bank_ledger_covered_accounts'][$acc])) {
                 $bankAmounts[$acc] = ($bankAmounts[$acc] ?? 0) + $line['amount'];
             }
+        }
+
+        // An existing "Bank Transfer" receipt that doesn't know its account yet: link it (no money changes).
+        if ($existing && $sheetAccount && FeePayment::hasBankAccountColumn() && empty($existing['bank_account_id'])
+            && ! in_array((string) $existing['payment_mode'], ['Cash', 'UPI', 'Card', 'Cheque'], true)) {
+            $cache['bank_account_fill'][(int) $existing['id']] = (int) $sheetAccount;
         }
 
         if ($existing) {
@@ -1949,8 +1975,30 @@ class GlobalWorkbookImportController extends Controller
             if (! str_contains((string) $existing['items'], '"source_head"')) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
             }
-            if (collect($lines)->contains(fn ($l) => ! empty($l['from_export'])) && $this->sameMoneyAsSaved($existing, $newData)) {
+            $fromExport = collect($lines)->contains(fn ($l) => ! empty($l['from_export']));
+            if ($fromExport && $this->sameMoneyAsSaved($existing, $newData)) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
+            }
+            // A session-filtered export holds only this session's part of a receipt that also pays
+            // another session: compare that part, and never rewrite the whole receipt from it.
+            if ($fromExport && ! empty($existing['multi_session']) && empty($newData['multi_session'])) {
+                $ownSessions = array_map('intval', array_keys($sessions));
+                $part = collect(json_decode((string) $existing['items'], true) ?: [])
+                    ->filter(fn ($i) => in_array((int) ($i['academic_session_id'] ?? $existing['academic_session_id']), $ownSessions, true))
+                    ->values()->all();
+                if ($this->sameMoneyAsSaved(['amount' => $newData['amount'], 'fine_amount' => $newData['fine_amount'], 'items' => $part], $newData)) {
+                    return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
+                }
+                $cache['flagged'][] = [
+                    'type' => 'fee_payment_changed',
+                    'receipt_no' => $receipt,
+                    'admission_no' => $first['admission_no'],
+                    'name' => $first['name'],
+                    'fields' => ['items'],
+                    'note' => 'This receipt also pays another session — change it on the Fee Receipt screen.',
+                ];
+
+                return ['ok' => true, 'skip' => true, 'reason' => 'changed_flagged', 'rows' => $rows];
             }
 
             $changed = $this->diffForUpdate($existing, $newData, ['amount', 'fine_amount', 'discount_amount', 'multi_session'], ['items', 'session_fines']);
@@ -2038,6 +2086,7 @@ class GlobalWorkbookImportController extends Controller
             'bucket' => 'income_fee_payments',
             'insert' => 'fee_payments',
             'data' => array_merge($newData, [
+                ...(FeePayment::hasBankAccountColumn() ? ['bank_account_id' => $newBankAccount] : []),
                 'status' => 'Paid',
                 'refunded_amount' => 0,
                 'collected_by_id' => $cache['user_id'],
@@ -2076,8 +2125,13 @@ class GlobalWorkbookImportController extends Controller
         // same receipt no. instead of moving to a number that has since become free.
         foreach ($candidates as $candidate) {
             $existing = $cache['receipts'][$candidate] ?? null;
+            // A receipt that pays several sessions is saved under one of them; its other sessions'
+            // lines (a session-filtered export) still belong to it.
+            $paysSession = $existing && ((int) $existing['academic_session_id'] === $sessionId
+                || (! empty($existing['multi_session']) && collect(json_decode((string) $existing['items'], true) ?: [])
+                    ->contains(fn ($i) => (int) ($i['academic_session_id'] ?? 0) === $sessionId)));
             if ($existing && ! isset($cache['receipts_seen'][$candidate])
-                && (int) $existing['academic_session_id'] === $sessionId && (int) $existing['student_id'] === $studentId) {
+                && $paysSession && (int) $existing['student_id'] === $studentId) {
                 $cache['receipts_seen'][$candidate] = true;
 
                 return [$candidate, $existing];
@@ -3155,8 +3209,11 @@ class GlobalWorkbookImportController extends Controller
         }
 
         $upper = strtoupper($raw);
+        // Payment modes (incl. the ERP's own "Bank Transfer" and the export's CANCEL / Discount
+        // markers) — not the name of an account the money landed in.
         $isKnownMode = str_contains($upper, 'CASH') || str_contains($upper, 'UPI') || str_contains($upper, 'CARD')
-            || str_contains($upper, 'CHQ') || str_contains($upper, 'CHEQUE');
+            || str_contains($upper, 'CHQ') || str_contains($upper, 'CHEQUE')
+            || in_array($upper, ['BANK TRANSFER', 'NEFT', 'RTGS', 'IMPS', 'ONLINE', 'CANCEL', 'CANCELLED', 'DISCOUNT'], true);
         if ($isKnownMode) {
             return null;
         }
@@ -3297,6 +3354,7 @@ class GlobalWorkbookImportController extends Controller
                 'id', 'receipt_no', 'student_id', 'academic_session_id', 'multi_session', 'items', 'amount',
                 'discount_amount', 'fine_amount', 'session_fines', 'payment_mode', 'payment_date', 'remarks',
                 'status', 'refunded_amount', 'edited_at', 'rolled_back_at',
+                ...(FeePayment::hasBankAccountColumn() ? ['bank_account_id'] : []),
             ]) as $r) {
                 $cache['receipts'][$r->receipt_no] = (array) $r;
             }

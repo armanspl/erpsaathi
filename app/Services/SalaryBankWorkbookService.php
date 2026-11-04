@@ -279,6 +279,21 @@ class SalaryBankWorkbookService
 
                 $nameKey = mb_strtolower($row['name']);
                 $matches = $nameLookup[$type][$nameKey] ?? [];
+                // DESIG can point at another list than the person is in (a staff member whose
+                // designation reads "ASST. TEACHER") — use the one employee of that name instead of
+                // creating a second record.
+                if ($matches === []) {
+                    $elsewhere = [];
+                    foreach (['teacher', 'staff', 'driver'] as $otherType) {
+                        foreach ($nameLookup[$otherType][$nameKey] ?? [] as $other) {
+                            $elsewhere[] = [$otherType, $other];
+                        }
+                    }
+                    if (count($elsewhere) === 1) {
+                        [$type, $only] = $elsewhere[0];
+                        $matches = [$only];
+                    }
+                }
 
                 if (count($matches) > 1) {
                     $stats['rows_skipped']++;
@@ -600,6 +615,11 @@ class SalaryBankWorkbookService
             ->first();
 
         if ($existing) {
+            // Same amount as the slip already saved (e.g. an exported sheet imported again) —
+            // keep the slip as it is, with its attendance, deductions and advance.
+            if (round((float) ($existing->this_month_salary ?? $existing->net_salary), 2) === round($paid, 2)) {
+                return;
+            }
             // Don't overwrite an already-Paid slip's status; refresh figures.
             $existing->update($payload);
 

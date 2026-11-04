@@ -263,7 +263,8 @@ class StudentMasterImportService
         foreach ($header as $rawName) {
             $raw = trim(str_replace("\xc2\xa0", ' ', (string) $rawName));
             $name = preg_replace('/\s+/', ' ', strtolower($raw)) ?? $raw;
-            if ($name !== '' && ! str_starts_with($name, '=') && $name !== 'status' && ! array_key_exists($name, self::HEADER_MAP)) {
+            // "Aadhaar Status" is shown by the Global Workbook export only — read-only, not a warning.
+            if ($name !== '' && ! str_starts_with($name, '=') && $name !== 'status' && $name !== 'aadhaar status' && ! array_key_exists($name, self::HEADER_MAP)) {
                 $unknown[] = mb_strtoupper($raw);
             }
         }

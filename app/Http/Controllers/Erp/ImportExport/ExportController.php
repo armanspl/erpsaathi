@@ -44,7 +44,7 @@ class ExportController extends Controller
      * GAS INC_EXP). Route and Attendance are deliberately excluded from the combined workbook —
      * they remain available as standalone exports via the 'route'/'attendance' entities above.
      */
-    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fee', 'daily-income', 'expense', 'salary', 'bank'];
+    private const GLOBAL_SHEETS = ['student', 'stud-rec-sum', 'fees-discount', 'fee', 'daily-income', 'expense', 'transport', 'salary', 'bank'];
 
     /** Fee-head columns in the Income sheet — also used to flag those columns as money for formatting. */
     private const INCOME_HEAD_CODES = ['REG', 'ADM', 'ANN', 'TUI', 'TRA', 'FINE', 'DIARY', 'TC'];
@@ -54,9 +54,11 @@ class ExportController extends Controller
         'student' => '4F46E5',
         'student-udise' => '0F766E',
         'stud-rec-sum' => 'CA8A04',
+        'fees-discount' => 'D97706',
         'fee' => '059669',
         'daily-income' => '0E7490',
         'expense' => 'DC2626',
+        'transport' => '0D9488',
         'salary' => '7C3AED',
         'bank' => '2563EB',
         'route' => '0D9488',
@@ -230,7 +232,7 @@ class ExportController extends Controller
         }
 
         $sections = $entity === 'global'
-            ? collect(self::GLOBAL_SHEETS)->map(fn ($e) => [$e, $this->finalizeGlobalSection($e, $this->buildSection($e, $request))])
+            ? collect(self::GLOBAL_SHEETS)->map(fn ($e) => [$e, $this->withGlobalSheetTitle($e, $this->finalizeGlobalSection($e, $this->buildSection($e, $request)), $request)])
             : collect([[$entity, $this->buildSection($entity, $request)]]);
 
         $rowCount = $sections->sum(fn ($pair) => count($pair[1][1]));
@@ -704,6 +706,7 @@ class ExportController extends Controller
             ],
             'fee' => array_merge(self::INCOME_HEAD_CODES, ['OTHER', 'GRAND TOTAL']),
             'daily-income' => ['CASH', 'BANK', 'INCOME'],
+            'fees-discount' => ['ADM-DISC', 'ANN-DISC', 'TUI DISC', 'TRA DISC'],
             'expense' => ['AMOUNT'],
             'bank' => ['AMOUNT', 'TOTAL'],
             'salary' => array_merge(['BASIC SALARY', 'TOTAL'], SalaryBankWorkbookService::EXPORT_MONTHS),
@@ -784,7 +787,10 @@ class ExportController extends Controller
                     continue;
                 }
                 if (isset($moneyIdx[$i])) {
-                    $cell = ($cell === null || $cell === '') ? 0 : $this->moneyValue((float) $cell);
+                    // SALARY: a blank month is "not paid yet" — a 0 there would import as a ₹0 slip.
+                    // FEES DISCOUNT: blank = no discount on that head (as in the school's sheet).
+                    $blank = in_array($name, ['salary', 'fees-discount'], true) ? null : 0;
+                    $cell = ($cell === null || $cell === '') ? $blank : $this->moneyValue((float) $cell);
                 }
             }
             unset($cell);
@@ -1269,7 +1275,7 @@ class ExportController extends Controller
             $grandRows += $count;
             [$totalLabel, $totalValue] = $this->sectionMoneyTotal($name, $header, $rows);
 
-            $sheet->setCellValue("A{$row}", self::sheetTitle($name));
+            $sheet->setCellValue("A{$row}", $sec[2] ?? self::sheetTitle($name));
             $sheet->setCellValue("B{$row}", $count);
             if ($totalValue !== null) {
                 $normalized = $this->moneyValue($totalValue);
@@ -1358,6 +1364,7 @@ class ExportController extends Controller
             'fee' => 'INCOME',
             'daily-income' => 'Daily Summary',
             'expense' => 'EXPENSES',
+            'fees-discount' => 'FEES DISCOUNT',
             default => ucfirst($entity),
         };
     }
@@ -1391,6 +1398,8 @@ class ExportController extends Controller
                     $e->remarks ?? '',
                 ])->all(),
             ],
+            'transport' => $this->buildTransportFareExport(),
+            'fees-discount' => $this->buildFeesDiscountExport(),
             'salary' => $this->buildSalaryBankExport($request),
             'bank' => $this->buildBankExport($request),
             // Routes aren't session-bound data (a route doesn't belong to an academic year) — never scoped.
@@ -1443,6 +1452,7 @@ class ExportController extends Controller
                 'student:id,name,admission_no,address,address_line_2,school_class_id',
                 'student.schoolClass:id,name',
                 'academicSession:id,name',
+                ...(FeePayment::hasBankAccountColumn() ? ['bankAccount:id,account_name,bank_name'] : []),
             ])
             ->when(! $allSessions && $session, fn ($q) => $q->touchingSessions([$session->id]))
             ->where('status', '!=', 'Rolled Back')
@@ -1575,7 +1585,9 @@ class ExportController extends Controller
                 $groups[$key]['receipts'][] = $receipt;
             }
 
-            $mode = $modeByReceipt[$receipt] ?? ($payment->payment_mode ?: 'Cash');
+            // The bank account the money went to ("GAS 11662") rather than just "Bank Transfer".
+            $ownAccount = FeePayment::hasBankAccountColumn() ? trim((string) ($payment->bankAccount?->account_name ?: $payment->bankAccount?->bank_name)) : '';
+            $mode = ($ownAccount !== '' ? $ownAccount : null) ?? $modeByReceipt[$receipt] ?? ($payment->payment_mode ?: 'Cash');
             $this->addDailyIncome($paymentDate, $mode, $paymentTotal);
             if (! in_array($mode, $groups[$key]['modes'], true)) {
                 $groups[$key]['modes'][] = $mode;
@@ -2410,6 +2422,102 @@ class ExportController extends Controller
      *
      * @return array{0: array<int, string>, 1: array<int, array<int, mixed>>, 2: string}
      */
+    /**
+     * Global Workbook tab names, the same ones the Global Workbook import looks for, so an edited
+     * export can be imported again: "Student Master 26-27", "TRANSPORT-26" (INCOME, EXPENSES and
+     * "SALARY 26-27 Bank" are already named so). The combined bank sheet is NOT named "BANK …":
+     * the import reads a BANK sheet as one account's ledger and would misread it.
+     */
+    private function withGlobalSheetTitle(string $entity, array $section, ?Request $request): array
+    {
+        [$session] = $this->resolveHeaderSession($request);
+        $session ??= AcademicSession::where('is_current', true)->first();
+        $start = $session?->start_date ? (int) $session->start_date->format('y') : (int) now()->format('y');
+        $span = sprintf('%02d-%02d', $start, ($start + 1) % 100);
+
+        $title = match ($entity) {
+            'student' => "Student Master {$span}",
+            'transport' => sprintf('TRANSPORT-%02d', $start),
+            'bank' => 'Ledger - Bank Accounts',
+            default => null,
+        };
+        if ($title !== null && empty($section[2])) {
+            $section[2] = $title;
+        }
+
+        return $section;
+    }
+
+    /**
+     * FEES DISCOUNT sheet in the school's / Global Workbook import's layout: ADM NO. and the
+     * student's details, then one discount column per fee head (ADM-DISC, ANN-DISC, TUI DISC,
+     * TRA DISC). Only the discounts a FEES DISCOUNT sheet saved — one entered on the Fee Discounts
+     * screen would, re-imported from here, be saved a second time.
+     */
+    private function buildFeesDiscountExport(): array
+    {
+        $headers = ['ADM NO.', 'NAME OF STUDENT', 'FATHER NAME', 'ADDRESS', 'MOBILE', 'CLASS', 'VEHICLE', 'ADM-DISC', 'ANN-DISC', 'TUI DISC', 'TRA DISC'];
+        $codes = ['ADM' => 7, 'ANN' => 8, 'TUI' => 9, 'TRA' => 10];
+
+        $byStudent = [];
+        $discounts = \App\Models\FeeDiscount::query()
+            ->where('reason', 'Imported from FEES DISCOUNT') // GlobalWorkbookImportController::FEES_DISCOUNT_REASON
+            ->where('type', 'fixed')
+            ->with('feeHead:id,name')
+            ->get();
+        foreach ($discounts as $discount) {
+            $code = StudRecSumReport::headCode((string) ($discount->feeHead->name ?? ''));
+            if (isset($codes[$code])) {
+                $byStudent[$discount->student_id][$code] = ($byStudent[$discount->student_id][$code] ?? 0) + (float) $discount->value;
+            }
+        }
+
+        $rows = [];
+        $students = Student::query()
+            ->whereIn('id', array_keys($byStudent))
+            ->with(['schoolClass:id,name', 'father:id,name,phone', 'udiseDetail:id,student_id,vehicle'])
+            ->get()
+            ->sortBy(fn (Student $s) => $s->admission_no, SORT_NATURAL);
+        foreach ($students as $student) {
+            $row = [
+                $student->admission_no,
+                $student->name,
+                $student->father?->name ?? '',
+                trim(implode(' ', array_filter([$student->address, $student->address_line_2]))),
+                $student->father?->phone ?: ($student->mobile ?? ''),
+                $student->schoolClass?->name ?? '',
+                trim((string) ($student->udiseDetail?->vehicle ?? '')) ?: 'None',
+                null, null, null, null,
+            ];
+            foreach ($byStudent[$student->id] as $code => $value) {
+                $row[$codes[$code]] = round($value, 2);
+            }
+            $rows[] = $row;
+        }
+
+        return [$headers, $rows];
+    }
+
+    /**
+     * TRANSPORT-NN sheet in the Global Workbook import's layout: S.NO | STOPPAGE | FARE, one row
+     * per stoppage name (the import matches stops by name and updates their fare).
+     */
+    private function buildTransportFareExport(): array
+    {
+        // Same name → stop pick as the import (last by id wins), so a re-import changes nothing.
+        $stops = \App\Models\RouteStop::query()->orderBy('id')->get()
+            ->keyBy(fn ($s) => mb_strtoupper(trim((string) $s->stop_name)))
+            ->filter(fn ($s, $name) => $name !== '' && $name !== 'NONE')
+            ->sortKeys(SORT_NATURAL);
+
+        $rows = [];
+        foreach ($stops->values() as $i => $stop) {
+            $rows[] = [$i + 1, trim((string) $stop->stop_name), round((float) $stop->fare, 2)];
+        }
+
+        return [['S.NO', 'STOPPAGE', 'FARE'], $rows];
+    }
+
     private function buildSalaryBankExport(?Request $request = null): array
     {
         [$session] = $this->resolveHeaderSession($request);

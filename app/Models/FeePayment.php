@@ -35,6 +35,7 @@ class FeePayment extends Model
         'totals_snapshot',
         'fine_amount',
         'payment_mode',
+        'bank_account_id',
         'payment_date',
         'remarks',
         'status',
@@ -81,6 +82,20 @@ class FeePayment extends Model
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
+    }
+
+    /** The bank account the money went to — set when PMNT MODE / the receipt names one. */
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
+
+    /** True once the bank_account_id migration has run (everything works without it). */
+    public static function hasBankAccountColumn(): bool
+    {
+        static $ready;
+
+        return $ready ??= \Illuminate\Support\Facades\Schema::hasColumn('fee_payments', 'bank_account_id');
     }
 
     public function academicSession(): BelongsTo

@@ -674,6 +674,9 @@ class FeePaymentController extends Controller
         // fee_payments has no bank_account_id column, so the link to the chosen account is a
         // BankTransaction (Deposit) instead — BankAccount::currentBalance() already sums these,
         // the same mechanism a manually-entered deposit or an imported fee payment uses.
+        if (! empty($data['bank_account_id']) && FeePayment::hasBankAccountColumn()) {
+            $payment->forceFill(['bank_account_id' => (int) $data['bank_account_id']])->save();
+        }
         if (! empty($data['bank_account_id']) && (float) $payment->amount > 0) {
             BankTransaction::create([
                 'bank_account_id' => $data['bank_account_id'],
