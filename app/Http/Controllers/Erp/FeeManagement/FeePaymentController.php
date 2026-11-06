@@ -698,7 +698,7 @@ class FeePaymentController extends Controller
             'reference_no' => $data['reference_no'] ?? null,
             'collected_by_id' => Auth::guard('erp')->id(),
         ];
-        // Typed receipt no. (back-date entry, checked unique above) or the next RCP-0001 number.
+        // Typed receipt no. (back-date entry, checked unique above) or the next number after the last receipt.
         $payment = $manualReceiptNo !== ''
             ? FeePayment::create(['receipt_no' => $manualReceiptNo] + $attributes)
             : FeePayment::createWithAutoReceiptNo($attributes, $session);

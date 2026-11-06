@@ -12,8 +12,8 @@ return new class extends Migration
             return;
         }
         Schema::table('erp_fee_settings', function (Blueprint $table) {
-            // The school's last receipt-book number (e.g. 4684): automatic receipts continue as
-            // plain numbers after it (4685, 4686, …). Null keeps the RCP-0001 sequence.
+            // The school's last receipt-book number, when it is ahead of the last receipt saved:
+            // automatic receipts continue after the higher of the two. Null = last saved receipt.
             $table->unsignedBigInteger('receipt_last_no')->nullable()->after('receipt_paid_at');
         });
     }

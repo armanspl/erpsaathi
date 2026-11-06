@@ -218,46 +218,26 @@ class FeePayment extends Model
     }
 
     /**
-     * Next automatic fee receipt number: one running sequence RCP-0001, RCP-0002, … (wider past
-     * 9999). Continues after the highest existing RCP-<digits>; older long-form numbers
-     * (RCP-2026-27-10-0002) and manually typed ones are left as they are, and any number that
-     * already exists is skipped, so the result is never a duplicate at the time of the call.
-     * Save through createWithAutoReceiptNo() to also survive two receipts saved at once.
+     * Next automatic fee receipt number: a plain number continuing the school's own receipt
+     * numbers — the highest plain-number receipt saved + 1 (4481 → 4482, 4483 …), never a
+     * prefix like "RCP-". Fee Settings › "Last receipt no." (optional) can only move it further
+     * on, never back. A number already held — also as an imported "4482/26-27" — is passed over,
+     * so the result is never a duplicate at the time of the call. Save through
+     * createWithAutoReceiptNo() to also survive two receipts saved at once.
      *
      * @param  int  $skip  extra steps past the highest number (retry after a clash)
      */
     public static function nextReceiptNo(?AcademicSession $session = null, int $skip = 0): string
     {
-        // Fee Settings › "Last receipt no." set (the school's receipt book, e.g. 4684): plain
-        // numbers continuing after it — or after the highest plain-number receipt saved, if that
-        // is higher — so a number is never reused. A number already held, also as an imported
-        // "4685/26-27", is passed over.
         $lastNo = \Illuminate\Support\Facades\Schema::hasColumn('erp_fee_settings', 'receipt_last_no')
-            ? ErpFeeSetting::current()->receipt_last_no
-            : null;
-        if ($lastNo !== null) {
-            $seq = max((int) $lastNo, static::highestPlainReceiptNo()) + 1 + max(0, $skip);
-            while (static::query()->where('receipt_no', (string) $seq)->orWhere('receipt_no', 'like', $seq.'/%')->exists()) {
-                $seq++;
-            }
-
-            return (string) $seq;
-        }
-
-        $max = 0;
-        foreach (static::query()->where('receipt_no', 'like', 'RCP-%')->pluck('receipt_no') as $no) {
-            if (preg_match('/^RCP-(\d+)$/', (string) $no, $m)) {
-                $max = max($max, (int) $m[1]);
-            }
-        }
-
-        $seq = $max + 1 + max(0, $skip);
-        do {
-            $candidate = 'RCP-'.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            ? (int) ErpFeeSetting::current()->receipt_last_no
+            : 0;
+        $seq = max($lastNo, static::highestPlainReceiptNo()) + 1 + max(0, $skip);
+        while (static::query()->where('receipt_no', (string) $seq)->orWhere('receipt_no', 'like', $seq.'/%')->exists()) {
             $seq++;
-        } while (static::query()->where('receipt_no', $candidate)->exists());
+        }
 
-        return $candidate;
+        return (string) $seq;
     }
 
     /** Highest receipt no. that is a plain number ("4684"; not "4684/26-27" or "RCP-0001"). */

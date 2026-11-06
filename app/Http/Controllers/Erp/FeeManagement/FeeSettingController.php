@@ -48,7 +48,7 @@ class FeeSettingController extends Controller
         $data = $request->validate([
             'default_payment_mode' => ['required', Rule::in(['Cash', 'UPI', 'Card', 'Bank Transfer', 'Cheque'])],
             'receipt_paid_at' => 'required|string|max:100',
-            // Last receipt-book number; new receipts continue after it. Blank = RCP-0001 sequence.
+            // Receipt-book number to continue after when it is ahead of the last saved receipt (optional).
             'receipt_last_no' => 'nullable|integer|min:0|max:999999999',
             'auto_select_current_month' => 'required|boolean',
             'tc_fee_enabled' => 'required|boolean',

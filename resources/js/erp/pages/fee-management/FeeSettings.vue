@@ -143,11 +143,11 @@
                         <input v-model="prefs.receipt_paid_at" type="text" class="form-input" placeholder="SCHOOL" />
                     </div>
                     <div class="sm:col-span-2">
-                        <label class="form-label">Last receipt no. (your receipt book)</label>
-                        <input v-model.number="prefs.receipt_last_no" type="number" min="0" step="1" class="form-input sm:max-w-xs" placeholder="e.g. 4684" />
+                        <label class="form-label">Last receipt no. (optional)</label>
+                        <input v-model.number="prefs.receipt_last_no" type="number" min="0" step="1" class="form-input sm:max-w-xs" :placeholder="prefs.highest_receipt_no ? `Last saved: ${prefs.highest_receipt_no}` : 'e.g. 4481'" />
                         <p class="mt-1 text-xs text-slate-400">
-                            New receipts continue after this number (4684 → 4685, 4686 …). A number already saved is never used again.
-                            Leave blank to keep the RCP-0001 series.
+                            Receipts are numbered automatically after the last saved receipt (4481 → 4482, 4483 …) — no prefix, never reset, never reused.
+                            Fill this only if your receipt book is ahead of the last receipt saved here.
                             <span v-if="prefs.next_receipt_no" class="font-semibold text-slate-600 dark:text-slate-300">Next receipt: {{ prefs.next_receipt_no }}</span>
                             <span v-if="prefs.receipt_last_no !== null && prefs.receipt_last_no !== '' && prefs.highest_receipt_no > prefs.receipt_last_no" class="block text-amber-600 dark:text-amber-400">
                                 Receipt {{ prefs.highest_receipt_no }} is already saved, so numbering continues after {{ prefs.highest_receipt_no }}.
