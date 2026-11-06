@@ -284,6 +284,7 @@ class FeePaymentController extends Controller
             $calc['total_discount'] = $remaining['discount'];
             $calc['total_paid'] = $remaining['paid'];
             $calc['due'] = $remaining['due'];
+            $calc['discount_details'] = $this->discountDetailRows($remaining['discount_details'] ?? []);
         }
 
         $transportHead = FeeHead::query()->firstOrCreate(
@@ -314,7 +315,38 @@ class FeePaymentController extends Controller
             'fee_start_month' => $balance->feeStartKey($student),
             'transport_fee_start_month' => $balance->transportFareAndHead($student)[2] ?? null,
             'is_rte' => Student::isRteIn((int) $student->id, $session),
+            'payment_percentage' => Student::paymentPercentFor((int) $student->id),
+            // Concessions saved for the student (Fee Discounts screen / FEES DISCOUNT import).
+            'discount_records' => \App\Models\FeeDiscount::query()->where('student_id', $student->id)
+                ->with('feeHead:id,name')->orderBy('id')->get()
+                ->map(fn ($d) => [
+                    'fee_head' => $d->feeHead->name ?? 'All heads',
+                    'type' => $d->type,
+                    'value' => (float) $d->value,
+                    'reason' => $d->reason,
+                ])->values(),
         ]);
+    }
+
+    /**
+     * Discount / Waiver breakdown for the student's Fees tab: one row per source, fee head and
+     * month, adding up to the due's total discount.
+     *
+     * @param  list<array{source: string, fee_head_id: int, month: ?string, amount: float}>  $details
+     * @return list<array{source: string, fee_head: string, month: ?string, amount: float}>
+     */
+    private function discountDetailRows(array $details): array
+    {
+        $names = FeeHead::query()->whereIn('id', array_unique(array_column($details, 'fee_head_id')))->pluck('name', 'id');
+        $order = ['waiver' => 0, 'concession' => 1, 'receipt' => 2];
+        usort($details, fn ($a, $b) => [$order[$a['source']] ?? 9, (string) $a['month'], $a['fee_head_id']] <=> [$order[$b['source']] ?? 9, (string) $b['month'], $b['fee_head_id']]);
+
+        return array_map(fn (array $d) => [
+            'source' => $d['source'],
+            'fee_head' => $names[$d['fee_head_id']] ?? 'Fee',
+            'month' => $d['month'],
+            'amount' => round($d['amount'], 2),
+        ], $details);
     }
 
     private function paidByHeadForStudent(Student $student, ?AcademicSession $session = null): array

@@ -873,6 +873,16 @@ class FeeBalanceService
         $charge = 0.0;
         $paid = 0.0;
         $discount = 0.0;
+        // Where the discount came from — 'waiver' (discount month), 'receipt' (discount given on a
+        // receipt) or 'concession' (Fee Discounts / FEES DISCOUNT) — per head and month.
+        $discountDetails = [];
+        $note = static function (string $source, string $headKey, ?string $monthKey, float $amount) use (&$discountDetails): void {
+            if ($amount > 0.004) {
+                $key = $source.'|'.$headKey.'|'.$monthKey;
+                $discountDetails[$key] ??= ['source' => $source, 'fee_head_id' => (int) $headKey, 'month' => $monthKey, 'amount' => 0.0];
+                $discountDetails[$key]['amount'] += $amount;
+            }
+        };
 
         [$transportFare, $transportHeadId, $transportFeeStart] = $this->transportFareAndHead($student);
 
@@ -880,6 +890,7 @@ class FeeBalanceService
             &$charge,
             &$paid,
             &$discount,
+            $note,
             &$structurePools,
             $paidTotals,
             $paidDiscounts,
@@ -903,6 +914,7 @@ class FeeBalanceService
                 $fromPaid = min($mPaid, $unit);
                 $paid += $fromPaid;
                 $discount += max(0.0, $unit - $fromPaid);
+                $note('waiver', $headKey, $monthKey, max(0.0, $unit - $fromPaid));
 
                 return;
             }
@@ -910,6 +922,7 @@ class FeeBalanceService
             $covered = min($unit, $mPaid + $mDisc);
             $fromPaid = min($mPaid, $covered);
             $fromDisc = max(0.0, $covered - $fromPaid);
+            $note('receipt', $headKey, $monthKey, $fromDisc);
 
             // Apply remaining structure discount (FeeDiscount) against what payments didn't cover.
             $stillOwed = max(0.0, $unit - $fromPaid - $fromDisc);
@@ -925,6 +938,7 @@ class FeeBalanceService
                     }
                     $take = min($stillOwed, $available);
                     $structurePools[$poolKey] = $available - $take;
+                    $note('concession', $headKey, $monthKey, $take);
                     $fromDisc += $take;
                     $stillOwed -= $take;
                 }
@@ -977,8 +991,9 @@ class FeeBalanceService
         $discount = round($discount, 2);
         $due = round(max(0, $charge - $paid - $discount), 2);
         $net = round($charge - $discount, 2); // net demand after concession
+        $discount_details = array_values(array_map(fn (array $d) => ['amount' => round($d['amount'], 2)] + $d, $discountDetails));
 
-        return compact('charge', 'paid', 'discount', 'due', 'net');
+        return compact('charge', 'paid', 'discount', 'due', 'net', 'discount_details');
     }
 
     /**

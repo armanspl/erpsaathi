@@ -110,41 +110,47 @@
             </div>
 
             <div class="dash-grid dash-grid--3">
-                <DashCard title="Today" icon="calendar-check">
+                <DashCard :title="dayTitle" icon="calendar-check">
+                    <template #actions>
+                        <div class="dash-day-pick">
+                            <button v-if="selectedDay !== todayKey" type="button" class="dash-day-pick__today" @click="selectedDay = todayKey">Today</button>
+                            <input v-model="selectedDay" type="date" :max="todayKey" class="dash-day-pick__input" aria-label="Pick a date" />
+                        </div>
+                    </template>
                     <div class="dash-rows">
                         <div class="dash-row">
                             <span>Student attendance</span>
                             <span class="dash-row__vals">
-                                <strong class="is-ok">{{ todaySummary.students.present }}</strong>
+                                <strong class="is-ok">{{ cardSummary.students.present }}</strong>
                                 <span class="sep">/</span>
-                                <strong class="is-bad">{{ todaySummary.students.absent }}</strong>
+                                <strong class="is-bad">{{ cardSummary.students.absent }}</strong>
                                 <span class="hint">P / A</span>
                             </span>
                         </div>
                         <div class="dash-row">
                             <span>Staff attendance</span>
                             <span class="dash-row__vals">
-                                <strong class="is-ok">{{ todaySummary.staff.present }}</strong>
+                                <strong class="is-ok">{{ cardSummary.staff.present }}</strong>
                                 <span class="sep">/</span>
-                                <strong class="is-bad">{{ todaySummary.staff.absent }}</strong>
+                                <strong class="is-bad">{{ cardSummary.staff.absent }}</strong>
                                 <span class="hint">P / A</span>
                             </span>
                         </div>
                         <div class="dash-row">
                             <span>Fee collected</span>
                             <span class="dash-row__vals">
-                                <strong class="is-cream">₹{{ money(todaySummary.fee.received) }}</strong>
-                                <span class="hint">({{ todaySummary.fee.receipts }})</span>
+                                <strong class="is-cream">₹{{ money(cardSummary.fee.received) }}</strong>
+                                <span class="hint">({{ cardSummary.fee.receipts }})</span>
                             </span>
                         </div>
                         <div class="dash-row dash-row--split">
                             <span class="mode is-cash">
                                 <i>Cash</i>
-                                <strong>₹{{ money(todaySummary.fee.cash) }}</strong>
+                                <strong>₹{{ money(cardSummary.fee.cash) }}</strong>
                             </span>
                             <span class="mode is-bank">
                                 <i>Bank / UPI</i>
-                                <strong>₹{{ money(todaySummary.fee.bank) }}</strong>
+                                <strong>₹{{ money(cardSummary.fee.bank) }}</strong>
                             </span>
                             <span class="mode is-total">
                                 <i>Total</i>
@@ -328,7 +334,33 @@ const todaySummary = ref({
     staff: { present: 0, absent: 0 },
     fee: { received: 0, cash: 0, bank: 0, receipts: 0 },
 });
-const todayCashBankTotal = computed(() => Number(todaySummary.value.fee.cash || 0) + Number(todaySummary.value.fee.bank || 0));
+// Today card date picker: today comes with the dashboard; another date loads /dashboard/day.
+const pad2 = (n) => String(n).padStart(2, '0');
+const todayKey = (() => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; })();
+const selectedDay = ref(todayKey);
+const dayData = ref(null);
+const emptyDay = { students: { present: 0, absent: 0 }, staff: { present: 0, absent: 0 }, fee: { received: 0, cash: 0, bank: 0, receipts: 0 } };
+const cardSummary = computed(() => (selectedDay.value === todayKey ? todaySummary.value : (dayData.value || emptyDay)));
+const dayTitle = computed(() => (selectedDay.value === todayKey
+    ? 'Today'
+    : new Date(`${selectedDay.value}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })));
+let daySeq = 0;
+watch(selectedDay, async (day) => {
+    dayData.value = null;
+    if (!day) {
+        selectedDay.value = todayKey;
+        return;
+    }
+    if (day === todayKey) return;
+    const mine = ++daySeq;
+    try {
+        const { data } = await client.get('/dashboard/day', { params: { date: day } });
+        if (mine === daySeq) dayData.value = { ...emptyDay, ...data };
+    } catch {
+        if (mine === daySeq) dayData.value = emptyDay;
+    }
+});
+const todayCashBankTotal = computed(() => Number(cardSummary.value.fee.cash || 0) + Number(cardSummary.value.fee.bank || 0));
 const classStrength = ref([]);
 const classStrengthTotals = computed(() => classStrength.value.reduce((acc, c) => {
     acc.boys += Number(c.boys || 0);
@@ -945,6 +977,28 @@ const quickActions = [
 }
 
 /* ── Today ── */
+.dash-day-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.dash-day-pick__input,
+.dash-day-pick__today {
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--erp-border, rgba(198, 167, 94, 0.25));
+    background: var(--erp-tint, rgba(255, 255, 255, 0.03));
+    color: var(--erp-heading, var(--erp-cream, #f3efe6));
+    font-size: 0.75rem;
+    color-scheme: light dark;
+}
+.dash-day-pick__today {
+    cursor: pointer;
+    font-weight: 600;
+}
+.dash-day-pick__today:hover {
+    border-color: var(--erp-gold, #c6a75e);
+}
 .dash-rows {
     display: flex;
     flex-direction: column;

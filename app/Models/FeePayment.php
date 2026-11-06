@@ -228,6 +228,22 @@ class FeePayment extends Model
      */
     public static function nextReceiptNo(?AcademicSession $session = null, int $skip = 0): string
     {
+        // Fee Settings › "Last receipt no." set (the school's receipt book, e.g. 4684): plain
+        // numbers continuing after it — or after the highest plain-number receipt saved, if that
+        // is higher — so a number is never reused. A number already held, also as an imported
+        // "4685/26-27", is passed over.
+        $lastNo = \Illuminate\Support\Facades\Schema::hasColumn('erp_fee_settings', 'receipt_last_no')
+            ? ErpFeeSetting::current()->receipt_last_no
+            : null;
+        if ($lastNo !== null) {
+            $seq = max((int) $lastNo, static::highestPlainReceiptNo()) + 1 + max(0, $skip);
+            while (static::query()->where('receipt_no', (string) $seq)->orWhere('receipt_no', 'like', $seq.'/%')->exists()) {
+                $seq++;
+            }
+
+            return (string) $seq;
+        }
+
         $max = 0;
         foreach (static::query()->where('receipt_no', 'like', 'RCP-%')->pluck('receipt_no') as $no) {
             if (preg_match('/^RCP-(\d+)$/', (string) $no, $m)) {
@@ -242,6 +258,19 @@ class FeePayment extends Model
         } while (static::query()->where('receipt_no', $candidate)->exists());
 
         return $candidate;
+    }
+
+    /** Highest receipt no. that is a plain number ("4684"; not "4684/26-27" or "RCP-0001"). */
+    public static function highestPlainReceiptNo(): int
+    {
+        $max = 0;
+        foreach (static::query()->where('receipt_no', 'not like', '%/%')->where('receipt_no', 'not like', 'RCP-%')->pluck('receipt_no') as $no) {
+            if (preg_match('/^\d{1,15}$/', (string) $no)) {
+                $max = max($max, (int) $no);
+            }
+        }
+
+        return $max;
     }
 
     /**

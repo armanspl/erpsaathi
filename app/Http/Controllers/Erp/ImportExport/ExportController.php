@@ -264,6 +264,21 @@ class ExportController extends Controller
             return $this->streamCsv($header, $rows, $filename);
         }
 
+        // Attendance: the school's own workbook (one sheet per class), which the
+        // Attendance Import reads back. "All sessions" exports the current one.
+        if ($entity === 'attendance') {
+            [$session] = $this->resolveHeaderSession($request);
+            $session ??= AcademicSession::where('is_current', true)->first();
+            if ($session?->start_date) {
+                // Its own borders and colours — no generic grid (streamXlsx) on top.
+                $workbook = app(\App\Services\AttendanceWorkbookService::class)->export($session);
+
+                return response()->streamDownload(fn () => (new Xlsx($workbook))->save('php://output'), $filename, [
+                    'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ]);
+            }
+        }
+
         $spreadsheet = new Spreadsheet();
         // Workbook-wide default font — every sheet/cell that doesn't set its own font name inherits this.
         $spreadsheet->getDefaultStyle()->getFont()->setName('Arial');
@@ -275,7 +290,7 @@ class ExportController extends Controller
         if ($entity === 'global') {
             $summarySheet = $spreadsheet->getActiveSheet();
             $summarySheet->setTitle('Summary');
-            $this->writeSummarySheet($summarySheet, $sections, $this->sessionLabel($request));
+            $this->writeSummarySheet($summarySheet, $sections, $this->sessionLabel($request), $request);
             $sheetIndex = 1;
         }
 
@@ -945,7 +960,7 @@ class ExportController extends Controller
      *
      * @param  \Illuminate\Support\Collection<int, array{0: string, 1: array{0: array<int, string>, 1: array<int, array<int, mixed>>}}>  $sections
      */
-    private function writeSummarySheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, $sections, string $sessionLabel): void
+    private function writeSummarySheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, $sections, string $sessionLabel, ?Request $request = null): void
     {
         $sheet->setShowGridlines(false);
         $sheet->getTabColor()->setRGB('4F46E5');
@@ -969,7 +984,20 @@ class ExportController extends Controller
         // ---------- Data ----------
         $school = $safe(fn () => \App\Models\SchoolSetting::query()->first()?->school_name, null) ?: 'School';
 
-        $byStatusGender = $safe(fn () => Student::query()
+        // Students of the session picked for the export: those with a class record (session
+        // history) in it — in the current session also anyone not given one yet. All Sessions
+        // = every student. Active / Inactive is the student's status.
+        [$pickedSession, $allSessions] = $this->resolveHeaderSession($request);
+        $aliases = ! $allSessions && $pickedSession ? AcademicSession::nameAliases($pickedSession->name) : null;
+        $pastSession = $aliases !== null && ! $pickedSession->is_current;
+        $students = fn () => Student::query()->when($aliases !== null, fn ($q) => $q->where(function ($q) use ($aliases, $pickedSession) {
+            $q->whereHas('sessionHistories', fn ($h) => $h->whereIn('session', $aliases));
+            if ($pickedSession->is_current) {
+                $q->orWhereDoesntHave('sessionHistories');
+            }
+        }));
+
+        $byStatusGender = $safe(fn () => $students()
             ->selectRaw('status, gender, COUNT(*) as c')->groupBy('status', 'gender')->get(), collect());
         $count = fn (string $status, ?string $gender) => (int) $byStatusGender
             ->filter(fn ($r) => strcasecmp((string) $r->status, $status) === 0 && ($gender === null || strcasecmp((string) $r->gender, $gender) === 0))
@@ -984,28 +1012,50 @@ class ExportController extends Controller
         $totalBoys = $activeBoys + $inactiveBoys;
         $totalGirls = $activeGirls + $inactiveGirls;
 
-        $activeStudents = $safe(fn () => Student::query()->where('status', 'Active')
+        // Class-wise / category tables: active students — for a past session, everyone who was
+        // in it (many have left since, so "active today" would undercount that year).
+        $activeStudents = $safe(fn () => $students()->when(! $pastSession, fn ($q) => $q->where('status', 'Active'))
+            ->when($pastSession, fn ($q) => $q->with(['sessionHistories' => fn ($h) => $h->whereIn('session', $aliases)->select(['id', 'student_id', 'session', 'class_name'])]))
             ->get(['id', 'school_class_id', 'gender', 'category']), collect());
 
         $classNames = $safe(fn () => \App\Models\SchoolClass::query()->orderBy('sort_order')->orderBy('id')->pluck('name', 'id'), collect());
+        // A past session's class-wise table uses the class the student was in that year.
+        $classIdByName = $classNames->mapWithKeys(fn ($name, $id) => [mb_strtolower(trim((string) $name)) => $id]);
+        $classOf = function ($s) use ($pastSession, $classIdByName) {
+            if (! $pastSession) {
+                return $s->school_class_id;
+            }
+            $name = trim((string) ($s->sessionHistories->first()->class_name ?? ''));
+            $key = preg_match('/^nur(sery)?$/i', $name) ? 'nursery' : mb_strtolower($name);
+
+            return $classIdByName[$key] ?? ($name !== '' ? $name : null);
+        };
+        $grouped = $activeStudents->groupBy(fn ($s) => (string) $classOf($s));
         $classRows = [];
         foreach ($classNames as $id => $name) {
-            $rows = $activeStudents->where('school_class_id', $id);
+            $rows = $grouped->get((string) $id, collect());
             if ($rows->isEmpty()) {
                 continue;
             }
             $classRows[] = [$name, $rows->where('gender', 'Male')->count(), $rows->where('gender', 'Female')->count(), $rows->count()];
         }
-        $unassigned = $activeStudents->filter(fn ($s) => ! $classNames->has($s->school_class_id));
-        if ($unassigned->isNotEmpty()) {
-            $classRows[] = ['Unassigned', $unassigned->where('gender', 'Male')->count(), $unassigned->where('gender', 'Female')->count(), $unassigned->count()];
+        // Classes not in Settings: a past year's own class name ("0"), else Unassigned.
+        $extra = [];
+        foreach ($grouped as $key => $rows) {
+            if (! $classNames->has($key)) {
+                $label = $pastSession && $key !== '' ? (string) $key : 'Unassigned';
+                $extra[$label] = ($extra[$label] ?? collect())->merge($rows);
+            }
+        }
+        foreach ($extra as $label => $rows) {
+            $classRows[] = [(string) $label,$rows->where('gender', 'Male')->count(), $rows->where('gender', 'Female')->count(), $rows->count()];
         }
 
         $categoryRows = [];
         foreach ($activeStudents->groupBy(fn ($s) => strtoupper(trim((string) $s->category)) ?: 'UNASSIGNED')->sortKeys() as $cat => $rows) {
             $categoryRows[] = [$cat, $rows->where('gender', 'Male')->count(), $rows->where('gender', 'Female')->count(), $rows->count()];
         }
-        $rteRows = $safe(fn () => Student::query()->where('status', 'Active')
+        $rteRows = $safe(fn () => $students()->when(! $pastSession, fn ($q) => $q->where('status', 'Active'))
             ->whereHas('udiseDetail', fn ($q) => $q->whereRaw("UPPER(TRIM(rte_ews_admission)) = 'YES'"))
             ->get(['id', 'gender']), collect());
         $categorySubsetRows = [];
@@ -1112,7 +1162,7 @@ class ExportController extends Controller
             $maxTotal = max(1, max(array_column($rows, 3)));
             $first = $row;
             foreach ($rows as $i => [$label, $boys, $girls, $total]) {
-                $sheet->fromArray([$label, $boys, $girls, $total, $total / $grand, str_repeat('█', (int) max(1, round($total / $maxTotal * 26)))], null, "A{$row}");
+                $sheet->fromArray([$label, $boys, $girls, $total, $total / $grand, str_repeat('█', (int) max(1, round($total / $maxTotal * 26)))], null, "A{$row}", true);
                 if ($i % 2 === 1) {
                     $sheet->getStyle("A{$row}:F{$row}")->applyFromArray(['fill' => $solid('F8FAFC')]);
                 }
@@ -1145,7 +1195,7 @@ class ExportController extends Controller
             $row++;
 
             foreach ($subsetRows as [$label, $boys, $girls, $total]) {
-                $sheet->fromArray([$label, $boys, $girls, $total, $total / $grand, str_repeat('█', (int) max(1, round($total / $maxTotal * 26)))], null, "A{$row}");
+                $sheet->fromArray([$label, $boys, $girls, $total, $total / $grand, str_repeat('█', (int) max(1, round($total / $maxTotal * 26)))], null, "A{$row}", true);
                 $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
                     'font' => ['italic' => true, 'size' => 10, 'color' => ['rgb' => '6D28D9']],
                     'fill' => $solid('F5F3FF'),
@@ -1202,13 +1252,14 @@ class ExportController extends Controller
         $spacer();
 
         // ---------- Class-wise / category-wise (active) ----------
+        $who = $pastSession ? 'ALL STUDENTS OF '.$this->shortSessionLabel($pickedSession->name) : 'ACTIVE STUDENTS';
         if ($classRows !== []) {
-            $section('CLASS-WISE STRENGTH  (ACTIVE STUDENTS)', '059669');
-            $strengthTable('Class', $classRows, 'D1FAE5', '10B981', 'TOTAL ACTIVE');
+            $section("CLASS-WISE STRENGTH  ({$who})", '059669');
+            $strengthTable('Class', $classRows, 'D1FAE5', '10B981', $pastSession ? 'TOTAL' : 'TOTAL ACTIVE');
             $spacer();
         }
         if ($categoryRows !== []) {
-            $section('CATEGORY-WISE  (ACTIVE STUDENTS, INCL. RTE)', '7C3AED');
+            $section("CATEGORY-WISE  ({$who}, INCL. RTE)", '7C3AED');
             $strengthTable('Category', $categoryRows, 'EDE9FE', '8B5CF6', 'TOTAL', $categorySubsetRows);
             $spacer();
         }
@@ -1714,6 +1765,57 @@ class ExportController extends Controller
         }
 
         return [['DATE', 'CASH', 'BANK', 'INCOME'], $rows];
+    }
+
+    /**
+     * Reports › Daily Summary: the export's Daily Summary totals (DATE | CASH | BANK | INCOME)
+     * plus each day's INCOME rows, for every receipt and misc income in [$from, $to]. Money is
+     * counted on the day it was received, whatever session it pays for.
+     *
+     * @return array{days: list<array{date: string, cash: float, bank: float, income: float, entries: int}>, entries: array<string, list<array<string, mixed>>>}
+     */
+    public function dailySummaryData(Request $request, ?string $from, ?string $to): array
+    {
+        $all = $request->duplicate();
+        $all->headers->set('X-Academic-Session', 'all');
+        [$headers, $rows] = $this->buildIncomeExport($all);
+        $col = array_flip($headers);
+        $inRange = fn (string $d) => ($from === null || $d >= $from) && ($to === null || $d <= $to);
+
+        $entries = [];
+        foreach ($rows as $r) {
+            $amount = round((float) $r[$col['GRAND TOTAL']], 2);
+            if ($amount == 0.0 || ! is_numeric($r[$col['DATE']])) {
+                continue;
+            }
+            $date = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($r[$col['DATE']])->format('Y-m-d');
+            if (! $inRange($date)) {
+                continue;
+            }
+            $mode = (string) $r[$col['PMNT MODE']];
+            $entries[$date][] = [
+                'admission_no' => (string) $r[$col['ADM NO']],
+                'name' => (string) $r[$col['NAME']],
+                'class' => (string) $r[$col['CLASS']],
+                'receipt' => (string) $r[$col['RECEIPT']],
+                'remarks' => (string) $r[$col['REMARKS']],
+                'mode' => $mode,
+                'is_cash' => strcasecmp(trim($mode), 'cash') === 0,
+                'amount' => $amount,
+            ];
+        }
+
+        $days = [];
+        ksort($this->dailyIncome);
+        foreach ($this->dailyIncome as $date => $t) {
+            $total = round($t['cash'] + $t['bank'], 2);
+            if ($total == 0.0 || ! $inRange($date)) {
+                continue;
+            }
+            $days[] = ['date' => $date, 'cash' => round($t['cash'], 2), 'bank' => round($t['bank'], 2), 'income' => $total, 'entries' => count($entries[$date] ?? [])];
+        }
+
+        return ['days' => $days, 'entries' => $entries];
     }
 
     /**

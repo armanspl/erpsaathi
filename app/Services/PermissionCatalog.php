@@ -632,6 +632,11 @@ class PermissionCatalog
                         'path' => '/reports/udise',
                         'actions' => ['view' => 'View', 'edit' => 'Edit', 'export' => 'Export'],
                     ],
+                    'daily-summary' => [
+                        'label' => 'Daily Summary',
+                        'path' => '/reports/daily-summary',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
                 ],
             ],
             'documents' => [

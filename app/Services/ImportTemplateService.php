@@ -144,42 +144,13 @@ class ImportTemplateService
         return $ss;
     }
 
+    /**
+     * The school's attendance workbook layout (one sheet per class), listing the
+     * active students of each class — fill in row 2's working days and each month's days present.
+     */
     private function attendance(): Spreadsheet
     {
-        $ss = new Spreadsheet();
-        $sheet = $ss->getActiveSheet();
-        $sheet->setTitle('NUR');
-        $sheet->setCellValue('A1', 'Attendence Report 2026-27');
-
-        // Row 2 = working days per month column (D–J, M–R)
-        $monthLabels = ['MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'TOT1', '%1', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR2', 'TOT2', '%2'];
-        $workingDays = [22, 20, 18, 22, 23, 21, 20, '', '', 22, 20, 18, 22, 20, 21, '', ''];
-        $sheet->setCellValue('A2', '');
-        $sheet->setCellValue('B2', '');
-        $sheet->setCellValue('C2', 'Working Days →');
-        $col = 4; // D
-        foreach ($workingDays as $days) {
-            $sheet->setCellValue(Coordinate::stringFromColumnIndex($col).'2', $days === '' ? null : $days);
-            $col++;
-        }
-
-        $sheet->fromArray(array_merge(['ENROL', 'NAME', 'ROLL'], $monthLabels), null, 'A3');
-        $this->styleHeaderRow($sheet, 'A3:T3');
-        $sheet->fromArray(array_merge(
-            ['16701', 'SAMPLE STUDENT', '1'],
-            [20, 18, 16, 20, 21, 19, 18, '', '', 20, 18, 16, 20, 18, 19, '', '']
-        ), null, 'A4');
-
-        // Extra empty class sheets so users see naming convention
-        foreach (['LKG', 'UKG', '1st'] as $name) {
-            $extra = $ss->createSheet();
-            $extra->setTitle($name);
-            $extra->setCellValue('A1', 'Attendence Report 2026-27');
-            $extra->fromArray(array_merge(['ENROL', 'NAME', 'ROLL'], $monthLabels), null, 'A3');
-            $this->styleHeaderRow($extra, 'A3:T3');
-        }
-
-        return $ss;
+        return app(AttendanceWorkbookService::class)->template(\App\Models\AcademicSession::where('is_current', true)->first());
     }
 
     /**

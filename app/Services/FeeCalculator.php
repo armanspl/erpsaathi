@@ -206,6 +206,20 @@ class FeeCalculator
             ));
         }
 
+        // Student's Payment Percentage (%) — 50 = HF, 0 = FF — scales the school fee lines;
+        // transport is charged in full, as for RTE students.
+        $percent = Student::paymentPercentFor((int) $student->id);
+        if ($percent < 100 && $breakdown !== []) {
+            $breakdown = array_map(static function (array $row) use ($percent): array {
+                if (! Student::isTransportHeadName($row['fee_head_name'] ?? null)) {
+                    $row['full_amount'] = $row['amount'];
+                    $row['amount'] = round((float) $row['amount'] * $percent / 100, 2);
+                }
+
+                return $row;
+            }, $breakdown);
+        }
+
         return $breakdown;
     }
 

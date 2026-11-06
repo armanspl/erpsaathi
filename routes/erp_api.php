@@ -133,6 +133,7 @@ use App\Http\Controllers\Erp\Reports\AdmissionReportController;
 use App\Http\Controllers\Erp\Reports\FeeReportController;
 use App\Http\Controllers\Erp\Reports\FinanceReportController;
 use App\Http\Controllers\Erp\Reports\RegisterReportController;
+use App\Http\Controllers\Erp\Reports\DailySummaryReportController;
 use App\Http\Controllers\Erp\Reports\UdiseReportController;
 use App\Http\Controllers\Erp\Reports\StudentReportController;
 use App\Http\Controllers\Erp\SchoolSettingController;
@@ -157,6 +158,7 @@ use Illuminate\Support\Facades\Route;
 
 // The landing dashboard summary — open to every authenticated ERP user regardless of role.
 Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard.index');
+Route::get('dashboard/day', [DashboardController::class, 'day'])->name('dashboard.day');
 Route::get('notifications', [DashboardController::class, 'notifications'])->name('notifications.index');
 
 Route::post('help/assistant', [AiAssistantController::class, 'chat'])
@@ -927,6 +929,7 @@ Route::prefix('reports')->name('reports.')->middleware('erp.permission:reports.v
     Route::get('register/area-wise', [RegisterReportController::class, 'areaWise'])->name('register.area-wise');
     Route::get('register/father-wise', [RegisterReportController::class, 'fatherWise'])->name('register.father-wise');
     Route::get('register/vehicle-wise', [RegisterReportController::class, 'vehicleWise'])->name('register.vehicle-wise');
+    Route::get('daily-summary', [DailySummaryReportController::class, 'index'])->name('daily-summary');
     Route::get('udise', [UdiseReportController::class, 'index'])->name('udise');
     Route::put('udise/{student}', [UdiseReportController::class, 'update'])->name('udise.update');
 });

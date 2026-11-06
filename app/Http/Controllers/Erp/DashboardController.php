@@ -17,6 +17,14 @@ class DashboardController extends Controller
         return response()->json(DashboardCalculator::summary($session, $allSessions));
     }
 
+    /** The Today card for a picked date (?date=Y-m-d): attendance and fee collected that day. */
+    public function day(Request $request)
+    {
+        $data = $request->validate(['date' => 'required|date_format:Y-m-d']);
+
+        return response()->json(DashboardCalculator::daySummary($data['date']));
+    }
+
     /** Header bell — live operational alert counts (cached ~60s). */
     public function notifications(Request $request)
     {

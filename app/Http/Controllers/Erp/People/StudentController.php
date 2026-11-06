@@ -586,7 +586,17 @@ class StudentController extends Controller
             'custom_field_values' => 'nullable|array',
             'admission_date' => 'nullable|date',
             'fee_start_month' => 'nullable|date_format:Y-m',
+            'payment_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
+
+        // Payment Percentage (%): blank = full fee (100).
+        if (array_key_exists('payment_percentage', $data)) {
+            if (! \Illuminate\Support\Facades\Schema::hasColumn('students', 'payment_percentage')) {
+                unset($data['payment_percentage']);
+            } else {
+                $data['payment_percentage'] = round((float) ($data['payment_percentage'] ?? 100), 2);
+            }
+        }
 
         // First/Middle/Last are the source of truth for `name` whenever Registration's form
         // sends them — stored as their own columns (not just concatenated) so Edit can

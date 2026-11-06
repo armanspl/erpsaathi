@@ -51,19 +51,14 @@ class DashboardCalculator
 
         return [
             'session_label' => $allSessions ? 'All Sessions' : ($session?->name ?? 'All Sessions'),
-            'people_stats' => [
-                'students' => $students->count(),
-                'teachers' => Teacher::count(),
-                'staff' => Staff::count(),
-                'drivers' => Driver::count(),
-            ],
+            'people_stats' => ['students' => $students->count(), ...self::activeStaffCounts()],
             'money_stats' => [
                 'fee_collected' => $feeReport['total_paid'],
                 'fee_pending' => $feeReport['total_due'],
                 'bank_balance' => $financeReport['total_bank_balance'],
                 'expense' => $financeReport['total_expense'],
             ],
-            'today_summary' => self::todaySummary($today),
+            'today_summary' => self::daySummary($today),
             'class_strength' => self::classStrength($students, $session, $allSessions),
             'category_by_class' => self::categoryByClass($students, $session, $allSessions),
             'fee_collection_status' => $feeBundle['fee_collection_status'],
@@ -170,7 +165,43 @@ class DashboardCalculator
         return $query;
     }
 
-    private static function todaySummary(string $today): array
+    /**
+     * Active teachers / staff / drivers, each person counted once. A teacher is often also on
+     * the Staff list (department "Asst Tchr", same employee ID — e.g. added by the salary
+     * import), so a staff or driver record matching an active teacher (or, for a driver, an
+     * active staff member) by employee ID — or by name when it has no employee ID — is not
+     * counted again.
+     *
+     * @return array{teachers: int, staff: int, drivers: int}
+     */
+    private static function activeStaffCounts(): array
+    {
+        $norm = fn ($v) => preg_replace('/\s+/', ' ', mb_strtoupper(trim((string) $v)));
+        $active = fn (string $model) => $model::query()->whereRaw('LOWER(status) = ?', ['active'])->get(['employee_id', 'name']);
+
+        $seenIds = [];
+        $seenNames = [];
+        $counts = [];
+        foreach (['teachers' => Teacher::class, 'staff' => Staff::class, 'drivers' => Driver::class] as $key => $model) {
+            $rows = $active($model);
+            $counts[$key] = $rows->reject(function ($r) use ($norm, $seenIds, $seenNames) {
+                $id = $norm($r->employee_id);
+
+                return $id !== '' ? isset($seenIds[$id]) : isset($seenNames[$norm($r->name)]);
+            })->count();
+            foreach ($rows as $r) {
+                if ($norm($r->employee_id) !== '') {
+                    $seenIds[$norm($r->employee_id)] = true;
+                }
+                $seenNames[$norm($r->name)] = true;
+            }
+        }
+
+        return $counts;
+    }
+
+    /** Student / staff attendance and fee collected on one date (Y-m-d) — the dashboard's Today card. */
+    public static function daySummary(string $today): array
     {
         $studentRows = Attendance::query()
             ->where('attendable_type', 'student')

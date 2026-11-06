@@ -134,6 +134,7 @@ import TemplateBuilder from '../pages/documents/TemplateBuilder.vue';
 import TemplateEditor from '../pages/documents/TemplateEditor.vue';
 import RegisterReports from '../pages/reports/RegisterReports.vue';
 import UdiseReport from '../pages/reports/UdiseReport.vue';
+import DailySummaryReport from '../pages/reports/DailySummaryReport.vue';
 import StudentReports from '../pages/reports/StudentReports.vue';
 import AdmissionReports from '../pages/reports/AdmissionReports.vue';
 import FeeReports from '../pages/reports/FeeReports.vue';
@@ -296,6 +297,7 @@ const FLAGSHIP_ROUTES = {
     '/reports/father-wise': RegisterReports,
     '/reports/vehicle-wise': RegisterReports,
     '/reports/udise': UdiseReport,
+    '/reports/daily-summary': DailySummaryReport,
     '/reports/student-reports': StudentReports,
     '/reports/admission-reports': AdmissionReports,
     '/reports/fee-reports': FeeReports,

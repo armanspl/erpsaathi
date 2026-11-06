@@ -142,6 +142,18 @@
                         <label class="form-label">Receipt “Paid At” label</label>
                         <input v-model="prefs.receipt_paid_at" type="text" class="form-input" placeholder="SCHOOL" />
                     </div>
+                    <div class="sm:col-span-2">
+                        <label class="form-label">Last receipt no. (your receipt book)</label>
+                        <input v-model.number="prefs.receipt_last_no" type="number" min="0" step="1" class="form-input sm:max-w-xs" placeholder="e.g. 4684" />
+                        <p class="mt-1 text-xs text-slate-400">
+                            New receipts continue after this number (4684 → 4685, 4686 …). A number already saved is never used again.
+                            Leave blank to keep the RCP-0001 series.
+                            <span v-if="prefs.next_receipt_no" class="font-semibold text-slate-600 dark:text-slate-300">Next receipt: {{ prefs.next_receipt_no }}</span>
+                            <span v-if="prefs.receipt_last_no !== null && prefs.receipt_last_no !== '' && prefs.highest_receipt_no > prefs.receipt_last_no" class="block text-amber-600 dark:text-amber-400">
+                                Receipt {{ prefs.highest_receipt_no }} is already saved, so numbering continues after {{ prefs.highest_receipt_no }}.
+                            </span>
+                        </p>
+                    </div>
                 </div>
                 <label class="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                     <input v-model="prefs.auto_select_current_month" type="checkbox" class="rounded border-slate-300 text-primary-600" />
@@ -308,6 +320,9 @@ const sortDir3 = ref('asc');
 const prefs = reactive({
     default_payment_mode: 'Cash',
     receipt_paid_at: 'SCHOOL',
+    receipt_last_no: null,
+    next_receipt_no: null,
+    highest_receipt_no: 0,
     auto_select_current_month: true,
     tc_fee_enabled: true,
     tc_fee_amount: 500,
@@ -544,7 +559,11 @@ async function removeDiscount(d) {
 async function savePrefs() {
     savingPrefs.value = true;
     try {
-        await client.put('/fee-management/settings/preferences', prefs);
+        const { data } = await client.put('/fee-management/settings/preferences', {
+            ...prefs,
+            receipt_last_no: prefs.receipt_last_no === '' ? null : prefs.receipt_last_no,
+        });
+        Object.assign(prefs, data?.preferences || {});
         pushToast('Preferences saved.', 'success');
     } catch (e) {
         pushToast(e?.response?.data?.message || 'Could not save preferences.', 'error');

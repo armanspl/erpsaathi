@@ -20,7 +20,7 @@
                         <button type="button" class="btn-outline !py-1.5 !text-xs" :disabled="downloadingTemplate" @click="downloadTemplate">
                             {{ downloadingTemplate ? 'Downloading...' : 'Download Template' }}
                         </button>
-                        <button v-if="activeEntity === 'global'" type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing" @click="submitImport('preview')">
+                        <button v-if="activeEntity === 'global'" type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing || !incomeLayout" :title="selectedFile && !incomeLayout ? 'Choose how your INCOME sheet is laid out first' : ''" @click="submitImport('preview')">
                             {{ importing && importMode === 'preview' ? 'Checking...' : 'Preview' }}
                         </button>
                         <button v-else type="button" class="btn-primary !py-1.5 !text-xs" :disabled="!selectedFile || importing" @click="submitImport()">
@@ -90,6 +90,26 @@
                         <span class="flex items-center gap-2"><span>📄</span><span class="font-medium text-slate-700 dark:text-slate-200">{{ selectedFile.name }}</span></span>
                         <button type="button" class="text-xs text-slate-400 hover:text-rose-500" :disabled="importing" @click="resetUpload">Clear</button>
                     </div>
+
+                    <!-- Global Workbook: ask how the INCOME sheet is laid out before importing -->
+                    <fieldset v-if="activeEntity === 'global'" class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <legend class="px-1 text-xs font-semibold text-slate-600 dark:text-slate-300">How is your INCOME sheet? <span class="text-rose-500">*</span></legend>
+                        <div class="grid gap-2 sm:grid-cols-2">
+                            <label
+                                v-for="opt in INCOME_LAYOUTS"
+                                :key="opt.value"
+                                class="flex cursor-pointer gap-2 rounded-lg border p-2.5 text-xs transition"
+                                :class="incomeLayout === opt.value ? 'border-primary-400 bg-primary-50 dark:border-primary-500/60 dark:bg-primary-500/10' : 'border-slate-200 hover:border-primary-300 dark:border-slate-700'"
+                            >
+                                <input v-model="incomeLayout" type="radio" name="income_layout" :value="opt.value" class="mt-0.5" :disabled="importing" />
+                                <span class="min-w-0">
+                                    <span class="block font-semibold text-slate-700 dark:text-slate-200">{{ opt.label }}</span>
+                                    <span class="mt-1 block overflow-x-auto whitespace-nowrap font-mono text-[10px] text-slate-500 dark:text-slate-400">{{ opt.columns }}</span>
+                                    <span class="mt-1 block text-slate-400">{{ opt.hint }}</span>
+                                </span>
+                            </label>
+                        </div>
+                    </fieldset>
 
                     <div v-if="importing" class="space-y-1">
                         <div class="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -559,6 +579,7 @@ const FLAG_LABELS = {
     fee_payment_superseded: 'Old split receipt',
     fee_payment_cancelled: 'Cancelled in sheet',
     fee_payment_not_in_excel: 'Payment not in this Excel',
+    fee_payment_renumbered: 'Saved under another receipt no.',
     income_changed: 'Income differs',
     expense_changed: 'Expense differs',
     expense_not_in_excel: 'Expense not in this Excel',
@@ -624,10 +645,28 @@ function onDrop(e) {
 function onFileSelect(e) {
     handleFile(e.target.files[0]);
 }
+// Global Workbook import asks which INCOME layout the file uses (the server checks it matches).
+const INCOME_LAYOUTS = [
+    {
+        value: 'long',
+        label: 'One row per fee head',
+        columns: 'YEAR · MONTH · DATE · ADM NO · NAME · ADDRESS · CLASS · HEAD · FEE · SESSION · RECEIPT · REMARKS · PMNT MODE',
+        hint: 'The school\'s own sheet — e.g. a receipt with TUI and TRA is two rows (HEAD = TUI, then TRA).',
+    },
+    {
+        value: 'wide',
+        label: 'One column per fee head',
+        columns: 'YEAR · MONTH · DATE · ADM NO · NAME · ADDRESS · CLASS · REG · ADM · ANN · TUI · TRA · FINE · DIARY · TC · OTHER · GRAND TOTAL · SESSION · RECEIPT · REMARKS · PMNT MODE',
+        hint: 'Like the ERP\'s Global Workbook export — one row per receipt.',
+    },
+];
+const incomeLayout = ref(null);
+
 function resetUpload() {
     selectedFile.value = null;
     importResult.value = null;
     applyCorrections.value = false;
+    incomeLayout.value = null;
     importPhase.value = 'idle';
     uploadProgress.value = 0;
 }
@@ -658,6 +697,9 @@ async function submitImport(mode = null) {
         if (mode) {
             formData.append('mode', mode);
             formData.append('apply_corrections', mode === 'import' && applyCorrections.value ? '1' : '0');
+        }
+        if (activeEntity.value === 'global' && incomeLayout.value) {
+            formData.append('income_layout', incomeLayout.value);
         }
         const { data } = await client.post(endpoint, formData, {
             // Large Master / PEN / workbook files need a long client timeout.

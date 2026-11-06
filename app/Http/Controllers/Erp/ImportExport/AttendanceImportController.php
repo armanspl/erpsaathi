@@ -77,6 +77,11 @@ class AttendanceImportController extends Controller
         $path = $file->getRealPath();
         $sheetNames = SpreadsheetImportReader::listSheetNames($path);
 
+        $classIdByName = [];
+        foreach (SchoolClass::query()->get(['id', 'name']) as $class) {
+            $classIdByName[mb_strtolower(trim((string) $class->name))] = $class->id;
+        }
+
         $matched = [];
         $ignoredSheets = [];
         foreach ($sheetNames as $title) {
@@ -85,8 +90,13 @@ class AttendanceImportController extends Controller
                 $ignoredSheets[] = $title;
                 continue;
             }
-            if (isset(self::CLASS_SHEET_MAP[$key])) {
-                $matched[$title] = ['class_name' => self::CLASS_SHEET_MAP[$key], 'sheet_key' => $key];
+            // NUR/LKG/UKG/1st–8th, any other "9th"/"10th", or a sheet named after the class
+            // (the Attendance Export names sheets this way).
+            $className = self::CLASS_SHEET_MAP[$key]
+                ?? (preg_match('/^(\d+)\s*(ST|ND|RD|TH)?$/', $key, $m) ? (string) (int) $m[1] : null)
+                ?? (isset($classIdByName[mb_strtolower(trim($title))]) ? trim($title) : null);
+            if ($className !== null) {
+                $matched[$title] = ['class_name' => $className, 'sheet_key' => $key];
             } else {
                 $ignoredSheets[] = $title;
             }
@@ -121,10 +131,6 @@ class AttendanceImportController extends Controller
             : null;
 
         $studentsByAdm = Student::query()->pluck('id', 'admission_no')->all();
-        $classIdByName = [];
-        foreach (SchoolClass::query()->get(['id', 'name']) as $class) {
-            $classIdByName[mb_strtolower(trim((string) $class->name))] = $class->id;
-        }
 
         $declaredCapCache = [];
 

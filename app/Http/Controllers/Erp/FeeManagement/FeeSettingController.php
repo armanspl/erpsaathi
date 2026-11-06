@@ -24,6 +24,9 @@ class FeeSettingController extends Controller
             'preferences' => [
                 'default_payment_mode' => $settings->default_payment_mode,
                 'receipt_paid_at' => $settings->receipt_paid_at,
+                'receipt_last_no' => $settings->receipt_last_no,
+                'next_receipt_no' => FeePayment::nextReceiptNo(),
+                'highest_receipt_no' => FeePayment::highestPlainReceiptNo(),
                 'auto_select_current_month' => (bool) $settings->auto_select_current_month,
                 'tc_fee_enabled' => (bool) $settings->tc_fee_enabled,
                 'tc_fee_amount' => (float) $settings->tc_fee_amount,
@@ -45,18 +48,26 @@ class FeeSettingController extends Controller
         $data = $request->validate([
             'default_payment_mode' => ['required', Rule::in(['Cash', 'UPI', 'Card', 'Bank Transfer', 'Cheque'])],
             'receipt_paid_at' => 'required|string|max:100',
+            // Last receipt-book number; new receipts continue after it. Blank = RCP-0001 sequence.
+            'receipt_last_no' => 'nullable|integer|min:0|max:999999999',
             'auto_select_current_month' => 'required|boolean',
             'tc_fee_enabled' => 'required|boolean',
             'tc_fee_amount' => 'required|numeric|min:0|max:999999',
             'tc_allow_pending_fees' => 'required|boolean',
         ]);
 
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('erp_fee_settings', 'receipt_last_no')) {
+            unset($data['receipt_last_no']);
+        }
         $settings = ErpFeeSetting::current();
         $settings->update($data);
 
         return response()->json(['success' => true, 'preferences' => [
             'default_payment_mode' => $settings->default_payment_mode,
             'receipt_paid_at' => $settings->receipt_paid_at,
+            'receipt_last_no' => $settings->receipt_last_no,
+            'next_receipt_no' => FeePayment::nextReceiptNo(),
+            'highest_receipt_no' => FeePayment::highestPlainReceiptNo(),
             'auto_select_current_month' => (bool) $settings->auto_select_current_month,
             'tc_fee_enabled' => (bool) $settings->tc_fee_enabled,
             'tc_fee_amount' => (float) $settings->tc_fee_amount,

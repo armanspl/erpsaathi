@@ -13,6 +13,7 @@ class ErpFeeSetting extends Model
     protected $fillable = [
         'default_payment_mode',
         'receipt_paid_at',
+        'receipt_last_no',
         'auto_select_current_month',
         'tc_fee_enabled',
         'tc_fee_amount',

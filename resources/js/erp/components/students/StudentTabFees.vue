@@ -20,10 +20,16 @@
                 <p class="text-lg font-bold text-slate-800 dark:text-slate-100">₹{{ money(due.total_fee) }}</p>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">Total Fee</p>
             </div>
-            <div class="rounded-lg bg-sky-50 p-3 text-center dark:bg-sky-500/10">
+            <button
+                type="button"
+                class="rounded-lg bg-sky-50 p-3 text-center ring-sky-300 transition hover:ring-2 dark:bg-sky-500/10"
+                :class="showDiscount ? 'ring-2' : ''"
+                :aria-expanded="showDiscount"
+                @click="showDiscount = !showDiscount"
+            >
                 <p class="text-lg font-bold text-sky-600 dark:text-sky-400">₹{{ money(due.total_discount) }}</p>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">Discount / Waiver</p>
-            </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Discount / Waiver <span class="text-sky-600 dark:text-sky-400">{{ showDiscount ? '▴' : '▾' }}</span></p>
+            </button>
             <div class="rounded-lg bg-emerald-50 p-3 text-center dark:bg-emerald-500/10">
                 <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">₹{{ money(due.total_paid) }}</p>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">Paid</p>
@@ -33,6 +39,8 @@
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">Due</p>
             </div>
         </div>
+
+        <StudentDiscountDetails v-if="showDiscount" :due="due" />
 
         <div v-if="!due.session" class="text-sm text-slate-400">No academic session available — fee structure can't be computed.</div>
 
@@ -230,10 +238,12 @@ import client from '../../api/client';
 import { erpStore } from '../../store';
 import { openPdfBlob } from '../../utils/documentPdf';
 import { pushToast } from '../../utils/toast';
+import StudentDiscountDetails from './StudentDiscountDetails.vue';
 
 const props = defineProps({ student: { type: Object, required: true } });
 
 const loading = ref(true);
+const showDiscount = ref(false);
 const due = ref({ session: null, breakdown: [], total_fee: 0, total_discount: 0, total_paid: 0, due: 0 });
 const receipts = ref([]);
 const historyLoading = ref(false);

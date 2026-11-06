@@ -207,6 +207,9 @@ class GlobalWorkbookImportController extends Controller
             'file' => 'required|file|mimes:xlsx,xls|max:40960',
             'mode' => 'nullable|in:preview,import',
             'apply_corrections' => 'nullable|boolean',
+            // INCOME layout chosen on the import screen: one row per fee head (HEAD + FEE) or one
+            // column per fee head (REG / ADM / … like the export). Blank = read whichever it is.
+            'income_layout' => 'nullable|in:long,wide',
         ]);
 
         $preview = $request->input('mode') === 'preview';
@@ -309,6 +312,18 @@ class GlobalWorkbookImportController extends Controller
                 $parsed['header_row'] = $headerRow;
                 $parsed['title'] = $title;
                 $incomeSheet = $this->expandWideIncomeSheet($parsed);
+
+                // The layout picked on the import screen ("How is your INCOME?") must be the file's.
+                $layout = (string) $request->input('income_layout', '');
+                if (in_array($layout, ['long', 'wide'], true) && ($layout === 'wide') !== ! empty($incomeSheet['wide'])) {
+                    $spreadsheet->disconnectWorksheets();
+
+                    return response()->json([
+                        'message' => $layout === 'wide'
+                            ? 'You chose "one column per fee head" (REG / ADM / ANN / TUI / TRA columns), but this file\'s INCOME sheet has HEAD and FEE columns — one row per fee head. Choose "One row per fee head" and import again. Nothing was imported.'
+                            : 'You chose "one row per fee head" (HEAD and FEE columns), but this file\'s INCOME sheet has a column for each fee head (REG / ADM / ANN / TUI / TRA). Choose "One column per fee head" and import again. Nothing was imported.',
+                    ], 422);
+                }
             }
             if ($expenseTitle && strtolower($expenseTitle) === $lower) {
                 $parsed = SpreadsheetImportReader::fromWorksheet($sheet);
@@ -736,6 +751,13 @@ class GlobalWorkbookImportController extends Controller
                     $applyResult($result);
                 }
                 $flush();
+            }
+            // What the sheet says each student paid on each day (see buildFeePayment()).
+            foreach ($feeReceipts as $lines) {
+                foreach ($lines as $line) {
+                    $dayKey = $line['student_id'].'|'.substr((string) $line['date'], 0, 10);
+                    $cache['sheet_day_totals'][$dayKey] = ($cache['sheet_day_totals'][$dayKey] ?? 0) + $line['amount'] + $line['fine_amount'];
+                }
             }
             // All fee receipts are written in ONE transaction: a failure part-way leaves no
             // half-saved receipts (re-running the import then starts from a clean state).
@@ -1979,6 +2001,13 @@ class GlobalWorkbookImportController extends Controller
             if ($fromExport && $this->sameMoneyAsSaved($existing, $newData)) {
                 return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
             }
+            // The school's own sheet describing a saved receipt in other words (remarks, line
+            // order, how its fee-head rows are split) — same money per head and month is unchanged.
+            if (! $fromExport && $this->sameMoneyAsSaved($existing, $newData)
+                && round((float) $existing['discount_amount'], 2) === round((float) $newData['discount_amount'], 2)
+                && (bool) $existing['multi_session'] === (bool) $newData['multi_session']) {
+                return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
+            }
             // A session-filtered export holds only this session's part of a receipt that also pays
             // another session: compare that part, and never rewrite the whole receipt from it.
             if ($fromExport && ! empty($existing['multi_session']) && empty($newData['multi_session'])) {
@@ -2065,6 +2094,40 @@ class GlobalWorkbookImportController extends Controller
                 'extra_updates' => $depositUpdates ? ['bank_transactions' => $depositUpdates] : [],
                 'rows' => $rows,
             ];
+        }
+
+        // Already saved under another receipt no. (same student, day and money) — the school
+        // renumbered it in this sheet. Saving it again would count the money twice.
+        if ($twin = $this->savedUnderAnotherNumber((int) $first['student_id'], $newData, $cache)) {
+            $cache['flagged'][] = [
+                'type' => 'fee_payment_renumbered',
+                'receipt_no' => (string) ($first['receipt_raw'] ?: $receipt),
+                'admission_no' => $first['admission_no'],
+                'name' => $first['name'],
+                'fields' => ['receipt_no'],
+                'note' => "Already saved as receipt {$twin['receipt_no']} (same student, date and amount) — not saved again.",
+            ];
+
+            return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
+        }
+        // Part of money already saved that day under other numbers — the sheet splits a saved
+        // receipt in two, or words its months differently: the sheet's receipts for this student
+        // and day add up to no more than what is saved for that day. More money than that is new.
+        $dayKey = $first['student_id'].'|'.substr((string) $newData['payment_date'], 0, 10);
+        $savedDay = round((float) ($cache['saved_day_totals'][$dayKey] ?? 0), 2);
+        if ($savedDay > 0 && round((float) ($cache['sheet_day_totals'][$dayKey] ?? 0), 2) <= $savedDay + 0.01) {
+            $cache['flagged'][] = [
+                'type' => 'fee_payment_renumbered',
+                'receipt_no' => (string) ($first['receipt_raw'] ?: $receipt),
+                'admission_no' => $first['admission_no'],
+                'name' => $first['name'],
+                'fields' => ['receipt_no'],
+                'note' => 'This day\'s money for the student is already saved as receipt '
+                    .implode(', ', array_unique($cache['saved_day_receipts'][$dayKey] ?? []))
+                    .' (₹'.number_format($savedDay, 2).') — not saved again. Check it on the Fee Receipt screen if the split or months differ.',
+            ];
+
+            return ['ok' => true, 'skip' => true, 'reason' => 'duplicate', 'rows' => $rows];
         }
 
         $bankTxs = [];
@@ -3366,6 +3429,45 @@ class GlobalWorkbookImportController extends Controller
                 $cache['income_vouchers'][$r->voucher_no] = (array) $r;
             }
         }
+
+        // Receipts already saved on the sheet's dates, by student + day — a sheet receipt under a
+        // different number than the saved one (the school renumbered it) is found by its content
+        // (see savedUnderAnotherNumber()). Loaded before anything is written.
+        $dates = collect($mapped)->map(fn ($row) => $this->resolveDate($row))->filter()->unique()->values();
+        foreach ($dates->chunk(300) as $chunk) {
+            foreach (DB::table('fee_payments')->where('status', '!=', 'Rolled Back')
+                ->whereIn(DB::raw('DATE(payment_date)'), $chunk->all())
+                ->get(['id', 'receipt_no', 'student_id', 'payment_date', 'amount', 'fine_amount', 'items']) as $r) {
+                $dayKey = $r->student_id.'|'.substr((string) $r->payment_date, 0, 10);
+                $cache['receipts_by_day'][$dayKey][] = (array) $r;
+                $cache['saved_day_totals'][$dayKey] = ($cache['saved_day_totals'][$dayKey] ?? 0) + (float) $r->amount + (float) $r->fine_amount;
+                $cache['saved_day_receipts'][$dayKey][] = $r->receipt_no;
+            }
+        }
+    }
+
+    /**
+     * A saved receipt (not already matched to a sheet receipt) for the same student and day with
+     * the same money — total, fine and each fee head's amount and months — as this new one.
+     *
+     * @param  array<string, mixed>  $newData
+     * @param  array<string, mixed>  $cache
+     * @return array<string, mixed>|null
+     */
+    private function savedUnderAnotherNumber(int $studentId, array $newData, array &$cache): ?array
+    {
+        $key = $studentId.'|'.substr((string) $newData['payment_date'], 0, 10);
+        foreach ($cache['receipts_by_day'][$key] ?? [] as $i => $saved) {
+            if (isset($cache['receipts_seen'][$saved['receipt_no']]) || ! $this->sameMoneyAsSaved($saved, $newData)) {
+                continue;
+            }
+            $cache['receipts_seen'][$saved['receipt_no']] = true;
+            unset($cache['receipts_by_day'][$key][$i]);
+
+            return $saved;
+        }
+
+        return null;
     }
 
     /**

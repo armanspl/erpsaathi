@@ -63,10 +63,16 @@ class Student extends Model implements AuthenticatableContract
         'fee_start_month',
         'is_rte',
         'rte_from_session_id',
+        'payment_percentage',
     ];
 
     /** @var array<int, string|null>|null student_id => RTE-from session start (Y-m-d), per request */
     private static ?array $rteFrom = null;
+
+    /** @var array<int, float>|null student_id => payment % for students not paying 100%, per request */
+    private static ?array $paymentPercent = null;
+
+    private static ?bool $paymentPercentReady = null;
 
     protected function casts(): array
     {
@@ -77,6 +83,7 @@ class Student extends Model implements AuthenticatableContract
             'custom_field_values' => 'array',
             'permanent_same_as_current' => 'boolean',
             'is_rte' => 'boolean',
+            'payment_percentage' => 'float',
         ];
     }
 
@@ -114,6 +121,26 @@ class Student extends Model implements AuthenticatableContract
     public static function flushRteCache(): void
     {
         self::$rteFrom = null;
+        self::$paymentPercent = null;
+        self::$paymentPercentReady = null;
+    }
+
+    /**
+     * Payment Percentage (%) saved on the student: the share of the class fee structure they
+     * pay (100 = full fee, 50 = HF, 0 = FF). 100 before the migration has run.
+     */
+    public static function paymentPercentFor(int $studentId): float
+    {
+        if (! (self::$paymentPercentReady ??= \Illuminate\Support\Facades\Schema::hasColumn('students', 'payment_percentage'))) {
+            return 100.0;
+        }
+        self::$paymentPercent ??= self::query()
+            ->where('payment_percentage', '<>', 100)
+            ->pluck('payment_percentage', 'id')
+            ->map(fn ($p) => max(0.0, min(100.0, (float) $p)))
+            ->all();
+
+        return self::$paymentPercent[$studentId] ?? 100.0;
     }
 
     /** Fee head names that RTE students still pay. */

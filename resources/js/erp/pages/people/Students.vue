@@ -305,6 +305,10 @@
                 </div>
             </div>
             <div>
+                <label class="form-label">Payment Percentage (%)</label>
+                <input v-model.number="form.payment_percentage" type="number" min="0" max="100" step="0.01" class="form-input" />                <p class="mt-1 text-xs text-slate-400">Share of the class fee structure this student pays: 100 = full fee, 50 = Half Free (HF), 0 = Full Free (FF). Transport is charged in full.</p>
+            </div>
+            <div>
                 <label class="form-label">Opening Balance</label>
                 <input v-model.number="form.opening_balance" type="number" step="0.01" class="form-input" />
                 <p class="mt-1 text-xs text-slate-400">Historical reference only — the ERP computes the student's real fee balance live from Fee Structure and Payments.</p>
@@ -1157,6 +1161,7 @@ function blankForm() {
         remarks_1: '', remarks_2: '',
         student_ref_id: '', parents_anniversary_date: '', biometric_card_no: '', child_uid: '', gr_no: '', pen_no: '',
         opening_balance: null,
+        payment_percentage: 100,
         custom_field_values: customValues,
         ...additionalFields,
     };
@@ -1573,6 +1578,7 @@ function fillFormFromStudent(full) {
         gr_no: detail.gr_no || '',
         pen_no: full.udise_detail?.student_pen || detail.pen_no || '',
         opening_balance: detail.opening_balance ?? null,
+        payment_percentage: full.payment_percentage ?? 100,
         custom_field_values: { ...blankForm().custom_field_values, ...(full.custom_field_values || {}) },
         ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`additional_field_${i + 1}`, detail[`additional_field_${i + 1}`] || ''])),
     });
@@ -1676,7 +1682,7 @@ async function save() {
             // Show the tab holding the first problem field.
             const first = Object.keys(validationErrors)[0] || '';
             formTab.value = first.startsWith('transport') ? 'transport'
-                : first.startsWith('fee_months') || first === 'opening_balance' ? 'fees'
+                : first.startsWith('fee_months') || first === 'opening_balance' || first === 'payment_percentage' ? 'fees'
                     : /^(documents?|form_no|scholarship_no|discontinue_date|remarks_)/.test(first) ? 'documents'
                         : 'personal';
         }
