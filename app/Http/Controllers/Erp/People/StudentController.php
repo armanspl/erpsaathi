@@ -479,21 +479,38 @@ class StudentController extends Controller
         FeeBalanceService::flushRuntimeCache();
         $balance = app(FeeBalanceService::class);
         $overview = $balance->feeMonthsOverview($student, $session);
-        $removed = ['fee' => [], 'transport' => []];
+
+        // Months that already have a payment/waiver cannot be unticked. The UI disables those
+        // checkboxes, but Start Date / load races can omit them from the payload — force-keep
+        // them instead of rejecting a save when the user only ticked other months.
+        $attemptedUntick = ['fee' => [], 'transport' => []];
         foreach ($overview['months'] as $m) {
-            if ($fee !== null && $m['fee']['locked'] && ! in_array($m['month'], $fee, true)) {
-                $removed['fee'][] = $m['label'];
+            $month = (int) $m['month'];
+            if ($fee !== null && $m['fee']['locked'] && ! in_array($month, $fee, true)) {
+                if (! empty($m['fee']['selected'])) {
+                    $attemptedUntick['fee'][] = $m['label'];
+                }
+                $fee[] = $month;
             }
-            if ($transport !== null && $m['transport']['locked'] && ! in_array($m['month'], $transport, true)) {
-                $removed['transport'][] = $m['label'];
+            if ($transport !== null && $m['transport']['locked'] && ! in_array($month, $transport, true)) {
+                if (! empty($m['transport']['selected'])) {
+                    $attemptedUntick['transport'][] = $m['label'];
+                }
+                $transport[] = $month;
             }
         }
-        if ($removed['fee'] !== [] || $removed['transport'] !== []) {
+        if ($attemptedUntick['fee'] !== [] || $attemptedUntick['transport'] !== []) {
             throw ValidationException::withMessages(['fee_months' => trim(
-                ($removed['fee'] ? 'Fee Months '.implode(', ', $removed['fee']).' already have a payment or waiver. ' : '')
-                .($removed['transport'] ? 'Transport Fee Months '.implode(', ', $removed['transport']).' already have a payment. ' : '')
+                ($attemptedUntick['fee'] ? 'Fee Months '.implode(', ', $attemptedUntick['fee']).' already have a payment or waiver. ' : '')
+                .($attemptedUntick['transport'] ? 'Transport Fee Months '.implode(', ', $attemptedUntick['transport']).' already have a payment. ' : '')
                 .'Reverse the payment first, then untick the month.'
             )]);
+        }
+        if ($fee !== null) {
+            $fee = \App\Support\FeeSchedule::normalizeMonths($fee);
+        }
+        if ($transport !== null) {
+            $transport = \App\Support\FeeSchedule::normalizeMonths($transport);
         }
 
         $row = StudentFeeMonth::query()->firstOrNew([

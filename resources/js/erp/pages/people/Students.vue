@@ -294,7 +294,7 @@
                         <input
                             type="checkbox"
                             class="rounded border-slate-300 text-primary-600 disabled:opacity-60"
-                            :checked="feeMonths.fee.includes(m.month)"
+                            :checked="feeMonths.fee.includes(m.month) || m.fee.locked"
                             :disabled="m.fee.locked"
                             @change="toggleFeeMonth('fee', m.month, $event.target.checked)"
                         />
@@ -417,12 +417,12 @@
                             <input
                                 type="checkbox"
                                 class="rounded border-slate-300 text-primary-600 disabled:opacity-60"
-                                :checked="feeMonths.transport.includes(m.month)"
+                                :checked="feeMonths.transport.includes(m.month) || m.transport.locked"
                                 :disabled="m.transport.locked"
                                 @change="toggleFeeMonth('transport', m.month, $event.target.checked)"
                             />
                             <span class="text-slate-800 dark:text-slate-100">{{ m.label }}</span>
-                            <span v-if="transportBeforeStart(m.key) && feeMonths.transport.includes(m.month)" class="text-xs text-amber-600">— before Start Date, not charged</span>
+                            <span v-if="transportBeforeStart(m.key) && (feeMonths.transport.includes(m.month) || m.transport.locked)" class="text-xs text-amber-600">— before Start Date, not charged</span>
                             <span v-else-if="monthStatus(m.transport)" class="text-xs" :class="monthStatus(m.transport).cls">— {{ monthStatus(m.transport).text }}</span>
                         </label>
                     </div>
@@ -1236,10 +1236,15 @@ async function loadFeeMonths(studentId) {
         feeMonths.sessionId = data.session?.id ?? null;
         feeMonths.sessionName = data.session?.name ?? '';
         feeMonths.rows = data.months || [];
-        feeMonths.fee = feeMonths.rows.filter((m) => m.fee.selected).map((m) => m.month);
-        feeMonths.transport = feeMonths.rows.filter((m) => m.transport.selected).map((m) => m.month);
-        // Student had no transport yet: pre-tick from the transport Start Date like a new one.
-        if (!transportAssignment.value) feeMonths.transport = monthsFromDate(transportForm.start_date);
+        // Locked months (already paid) must stay ticked even when Start Date would deselect them.
+        feeMonths.fee = feeMonths.rows.filter((m) => m.fee.selected || m.fee.locked).map((m) => m.month);
+        feeMonths.transport = feeMonths.rows.filter((m) => m.transport.selected || m.transport.locked).map((m) => m.month);
+        // Student had no transport yet: pre-tick from the transport Start Date like a new one,
+        // but never drop months that already have a transport payment.
+        if (!transportAssignment.value) {
+            const locked = feeMonths.rows.filter((m) => m.transport.locked).map((m) => m.month);
+            feeMonths.transport = [...new Set([...monthsFromDate(transportForm.start_date), ...locked])];
+        }
         feeMonths.feeTouched = false;
         feeMonths.transportTouched = false;
     } catch {
@@ -1277,7 +1282,10 @@ watch(() => form.admission_date, (d) => {
     if (!editing.value && !feeMonths.feeTouched) feeMonths.fee = monthsFromDate(d);
 });
 watch(() => transportForm.start_date, (d) => {
-    if (!transportAssignment.value && !feeMonths.transportTouched) feeMonths.transport = monthsFromDate(d);
+    if (!transportAssignment.value && !feeMonths.transportTouched) {
+        const locked = feeMonths.rows.filter((m) => m.transport?.locked).map((m) => m.month);
+        feeMonths.transport = [...new Set([...monthsFromDate(d), ...locked])];
+    }
 });
 
 // Held outside `form`/reactive() on purpose — Vue's reactive() deep-proxies nested objects,
@@ -1631,8 +1639,11 @@ function buildFormData() {
     // Fee Months / Transport Fee Months for the session shown in the form.
     if (feeMonths.sessionId && feeMonths.rows.length && !feeMonths.loading) {
         formData.append('fee_months_session_id', feeMonths.sessionId);
-        formData.append('fee_months', JSON.stringify(feeMonths.fee));
-        if (transportForm.apply) formData.append('transport_months', JSON.stringify(feeMonths.transport));
+        // Always send locked (paid) months as ticked so Start Date / UI races cannot drop them.
+        const feePayload = feeMonths.rows.map((r) => r.month).filter((m) => feeMonths.fee.includes(m) || feeMonths.rows.find((r) => r.month === m)?.fee?.locked);
+        const transportPayload = feeMonths.rows.map((r) => r.month).filter((m) => feeMonths.transport.includes(m) || feeMonths.rows.find((r) => r.month === m)?.transport?.locked);
+        formData.append('fee_months', JSON.stringify(feePayload));
+        if (transportForm.apply) formData.append('transport_months', JSON.stringify(transportPayload));
     }
 
     Object.entries(documentFiles).forEach(([key, file]) => {
@@ -1681,7 +1692,10 @@ async function save() {
             formErrors.value = validationErrors;
             // Show the tab holding the first problem field.
             const first = Object.keys(validationErrors)[0] || '';
-            formTab.value = first.startsWith('transport') ? 'transport'
+            const feeMsg = Array.isArray(validationErrors.fee_months)
+                ? validationErrors.fee_months.join(' ')
+                : String(validationErrors.fee_months || '');
+            formTab.value = first.startsWith('transport') || (first.startsWith('fee_months') && /Transport/i.test(feeMsg)) ? 'transport'
                 : first.startsWith('fee_months') || first === 'opening_balance' || first === 'payment_percentage' ? 'fees'
                     : /^(documents?|form_no|scholarship_no|discontinue_date|remarks_)/.test(first) ? 'documents'
                         : 'personal';

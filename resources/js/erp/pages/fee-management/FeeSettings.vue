@@ -85,8 +85,17 @@
 
         <!-- DISCOUNTS -->
         <template v-else-if="activeTab === 'discounts'">
-            <div class="flex justify-end">
-                <button type="button" class="btn-primary" @click="openDiscountAdd">+ Add Discount</button>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="relative w-full sm:max-w-sm">
+                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-3-3"/></svg>
+                    <input
+                        v-model="discountSearch"
+                        type="search"
+                        class="form-input !pl-9"
+                        placeholder="Search student, adm no, fee head, reason…"
+                    />
+                </div>
+                <button type="button" class="btn-primary shrink-0" @click="openDiscountAdd">+ Add Discount</button>
             </div>
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <table class="w-full text-left text-sm">
@@ -103,6 +112,7 @@
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-if="loadingDiscounts"><td colspan="6" class="px-4 py-10 text-center text-slate-400">Loading...</td></tr>
                         <tr v-else-if="!discounts.length"><td colspan="6" class="px-4 py-10 text-center text-slate-400">No discounts yet.</td></tr>
+                        <tr v-else-if="!sortedDiscounts.length"><td colspan="6" class="px-4 py-10 text-center text-slate-400">No discounts match “{{ discountSearch }}”.</td></tr>
                         <tr v-for="d in sortedDiscounts" :key="d.id" class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                             <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">
                                 {{ d.student?.name }}
@@ -316,6 +326,7 @@ const sortKey2 = ref(null);
 const sortDir2 = ref('asc');
 const sortKey3 = ref(null);
 const sortDir3 = ref('asc');
+const discountSearch = ref('');
 
 const prefs = reactive({
     default_payment_mode: 'Cash',
@@ -407,9 +418,27 @@ function sortArrow3(key) {
     if (sortKey3.value !== key) return '';
     return sortDir3.value === 'asc' ? '↑' : '↓';
 }
+const filteredDiscounts = computed(() => {
+    const q = discountSearch.value.trim().toLowerCase();
+    if (!q) return discounts.value;
+    return discounts.value.filter((d) => {
+        const hay = [
+            d.student?.name,
+            d.student?.admission_no,
+            d.fee_head?.name || 'All Fees',
+            d.type,
+            d.value,
+            d.type === 'percentage' ? `${d.value}%` : d.value,
+            d.reason,
+        ].map((v) => String(v ?? '').toLowerCase()).join(' ');
+        return hay.includes(q);
+    });
+});
+
 const sortedDiscounts = computed(() => {
-    if (!sortKey3.value) return discounts.value;
-    const decorated = discounts.value.map((d) => ({
+    const list = filteredDiscounts.value;
+    if (!sortKey3.value) return list;
+    const decorated = list.map((d) => ({
         student_name: d.student?.name || '',
         fee_head_name: d.fee_head?.name || '',
         type: d.type,
