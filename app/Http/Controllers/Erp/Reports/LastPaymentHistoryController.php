@@ -26,6 +26,7 @@ class LastPaymentHistoryController extends Controller
         ['key' => 'section', 'label' => 'Section'],
         ['key' => 'father', 'label' => 'Father'],
         ['key' => 'mobile', 'label' => 'Mobile'],
+        ['key' => 'last_paid_month', 'label' => 'Month'],
         ['key' => 'last_paid_date', 'label' => 'Last Paid Date'],
         ['key' => 'last_paid_amount', 'label' => 'Last Paid Amount'],
         ['key' => 'receipt_no', 'label' => 'Receipt No'],
@@ -64,6 +65,7 @@ class LastPaymentHistoryController extends Controller
                 'section' => $s->section?->name,
                 'father' => $s->father?->name,
                 'mobile' => $s->mobile ?: $s->father?->phone,
+                'last_paid_month' => $this->monthLabel($pay['date'] ?? null),
                 'last_paid_date' => $pay['date'] ?? null,
                 'last_paid_amount' => $pay['amount'] ?? null,
                 'receipt_no' => $pay['receipt_no'] ?? null,
@@ -127,6 +129,16 @@ class LastPaymentHistoryController extends Controller
                 'due' => round((float) $rows->sum('due'), 2),
             ],
         ]);
+    }
+
+    /** e.g. 2026-11-10 → Nov-2026 */
+    private function monthLabel(?string $date): ?string
+    {
+        if (! is_string($date) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return null;
+        }
+
+        return \Carbon\Carbon::createFromFormat('Y-m-d', $date)->format('M-Y');
     }
 
     /**
