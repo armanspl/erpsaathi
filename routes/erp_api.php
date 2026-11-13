@@ -134,6 +134,7 @@ use App\Http\Controllers\Erp\Reports\FeeReportController;
 use App\Http\Controllers\Erp\Reports\FinanceReportController;
 use App\Http\Controllers\Erp\Reports\RegisterReportController;
 use App\Http\Controllers\Erp\Reports\DailySummaryReportController;
+use App\Http\Controllers\Erp\Reports\LastPaymentHistoryController;
 use App\Http\Controllers\Erp\Reports\UdiseReportController;
 use App\Http\Controllers\Erp\Reports\StudentReportController;
 use App\Http\Controllers\Erp\SchoolSettingController;
@@ -930,6 +931,7 @@ Route::prefix('reports')->name('reports.')->middleware('erp.permission:reports.v
     Route::get('register/father-wise', [RegisterReportController::class, 'fatherWise'])->name('register.father-wise');
     Route::get('register/vehicle-wise', [RegisterReportController::class, 'vehicleWise'])->name('register.vehicle-wise');
     Route::get('daily-summary', [DailySummaryReportController::class, 'index'])->name('daily-summary');
+    Route::get('last-payment-history', [LastPaymentHistoryController::class, 'index'])->name('last-payment-history');
     Route::get('udise', [UdiseReportController::class, 'index'])->name('udise');
     Route::put('udise/{student}', [UdiseReportController::class, 'update'])->name('udise.update');
 });

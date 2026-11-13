@@ -637,6 +637,11 @@ class PermissionCatalog
                         'path' => '/reports/daily-summary',
                         'actions' => ['view' => 'View', 'export' => 'Export'],
                     ],
+                    'last-payment-history' => [
+                        'label' => 'Last Payment History',
+                        'path' => '/reports/last-payment-history',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
                 ],
             ],
             'documents' => [

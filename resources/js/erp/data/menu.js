@@ -105,7 +105,7 @@ const rawMenu = [
     {
         label: 'Reports',
         icon: '📈',
-        children: ['Class Wise', 'Area Wise', 'Father Wise', 'Vehicle Wise', 'UDISE', 'Daily Summary'],
+        children: ['Class Wise', 'Area Wise', 'Father Wise', 'Vehicle Wise', 'UDISE', 'Daily Summary', 'Last Payment History'],
     },
     {
         label: 'Documents',
