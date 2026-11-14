@@ -45,7 +45,7 @@
             try {
                 var t = localStorage.getItem('erp-welcome-theme-v3');
                 var dark = t === 'dark';
-                var bg = dark ? '#052E16' : '#FFFFFF';
+                var bg = dark ? '#0f5c45' : '#ffffff';
                 document.documentElement.style.backgroundColor = bg;
                 document.documentElement.classList.toggle('dark', dark);
                 document.addEventListener('DOMContentLoaded', function () { document.body.style.backgroundColor = bg; });

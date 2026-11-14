@@ -58,6 +58,53 @@ class FeeBalanceService
         self::$sessionMonthIndex = null;
         self::$structureDiscountsByStudent = [];
         self::$structureDiscountsWarmed = false;
+        self::$earlierMonthClaims = [];
+    }
+
+    /** @var array<int, array<int, array<string, array<string, true>>>> studentId => sessionId => headKey => monthKey */
+    private static array $earlierMonthClaims = [];
+
+    /**
+     * Receipt lines whose month is before the start date of the session they are written for
+     * (the school's session takes in Feb–Mar of its first year: "MAR" 2026 on a 2026-27
+     * receipt), per session → fee head → month. See remainingForMonths().
+     *
+     * @return array<int, array<string, array<string, true>>>
+     */
+    private function earlierMonthClaims(Student $student): array
+    {
+        $id = (int) $student->id;
+        if (isset(self::$earlierMonthClaims[$id])) {
+            return self::$earlierMonthClaims[$id];
+        }
+
+        static $startKeys;
+        $startKeys ??= AcademicSession::query()->whereNotNull('start_date')->pluck('start_date', 'id')
+            ->map(fn ($d) => substr((string) $d, 0, 7))->all();
+
+        $claims = [];
+        $payments = FeePayment::query()->where('student_id', $id)
+            ->where(fn ($q) => $q->whereNull('status')->orWhereNotIn('status', ['Refunded', 'Rolled Back']))
+            ->get(['academic_session_id', 'items']);
+        foreach ($payments as $payment) {
+            foreach ($payment->items ?? [] as $item) {
+                $headId = (int) ($item['fee_head_id'] ?? 0);
+                $sid = (int) ($item['academic_session_id'] ?? $payment->academic_session_id);
+                $start = $startKeys[$sid] ?? null;
+                if (! $headId || $start === null) {
+                    continue;
+                }
+                $months = (array) ($item['months'] ?? (isset($item['month']) ? [$item['month']] : []));
+                foreach ($months as $m) {
+                    $m = substr((string) $m, 0, 7);
+                    if (preg_match('/^\d{4}-\d{2}$/', $m) && $m < $start) {
+                        $claims[$sid][(string) $headId][$m] = true;
+                    }
+                }
+            }
+        }
+
+        return self::$earlierMonthClaims[$id] = $claims;
     }
 
     // ── Fee Months / Transport Fee Months (People > Students, saved per student + session) ─────
@@ -223,9 +270,9 @@ class FeeBalanceService
         $months = [];
         foreach ($session->months() as $m) {
             $key = $m['key'];
-            $fee = $this->remainingForMonths($student, $session, [$key], $calc, $info, $feeHeadIds ?: [0]);
+            $fee = $this->remainingForMonths($student, $session, [$key], $calc, $info, $feeHeadIds ?: [0], false);
             $tr = $fare > 0 && $transportHeadId
-                ? $this->remainingForMonths($student, $session, [$key], $calc, $info, [(int) $transportHeadId])
+                ? $this->remainingForMonths($student, $session, [$key], $calc, $info, [(int) $transportHeadId], false)
                 : ['charge' => 0.0, 'paid' => 0.0, 'discount' => 0.0, 'due' => 0.0];
             $feeTouched = $touched($key, false);
             $trTouched = $touched($key, true);
@@ -824,6 +871,12 @@ class FeeBalanceService
      * @return array{charge: float, paid: float, discount: float, due: float}
      */
     /**
+     * Receipt lines count in the session written on them: a line of this session for a month
+     * before the session's start date (the school's session also takes in Feb–Mar of its first
+     * year — e.g. "MAR" 2026 on a 2026-27 receipt) is counted here, as recorded, when $monthKeys
+     * starts at the session's first month ($withEarlierMonths); and a month another session's
+     * receipt has claimed that way is not charged again in the session whose dates contain it.
+     *
      * @param  list<string>  $monthKeys
      * @param  list<int>|null  $feeHeadIds  When set, only these fee heads (and Transport if its id is included) are counted.
      * @return array{charge: float, paid: float, discount: float, due: float, net: float}
@@ -834,7 +887,8 @@ class FeeBalanceService
         array $monthKeys,
         ?array $calc = null,
         ?array $paidInfo = null,
-        ?array $feeHeadIds = null
+        ?array $feeHeadIds = null,
+        bool $withEarlierMonths = true
     ): array {
         $monthKeys = array_values(array_unique(array_filter($monthKeys)));
         $monthKeys = $this->filterMonthsFromFeeStart($student, $monthKeys);
@@ -948,6 +1002,24 @@ class FeeBalanceService
             $discount += $fromDisc;
         };
 
+        // Months a receipt of ANOTHER session paid for, before that session's start (its Feb–Mar
+        // of the first year): billed there, so not charged again here — unless this session's
+        // own receipts also pay that month.
+        $claims = $this->earlierMonthClaims($student);
+        $claimedElsewhere = [];
+        foreach ($claims as $sid => $heads) {
+            if ((int) $sid === (int) $session->id) {
+                continue;
+            }
+            foreach ($heads as $headKey => $months) {
+                foreach ($months as $m => $_) {
+                    $claimedElsewhere[(string) $headKey][$m] = true;
+                }
+            }
+        }
+        $billedElsewhere = static fn (string $headKey, string $monthKey): bool => isset($claimedElsewhere[$headKey][$monthKey])
+            && (float) ($paidByMonth[$headKey][$monthKey] ?? 0) <= 0 && (float) ($discountByMonth[$headKey][$monthKey] ?? 0) <= 0;
+
         foreach ($monthKeys as $monthKey) {
             $monthNum = (int) substr($monthKey, 5, 2);
             $waive = $this->isMonthWaived($student, $session, $monthKey);
@@ -966,7 +1038,7 @@ class FeeBalanceService
                 }
 
                 if ($freq === 'monthly' || $freq === 'quarterly') {
-                    if ($feeMonth && FeeSchedule::chargesInMonth($plan, $monthNum)) {
+                    if ($feeMonth && FeeSchedule::chargesInMonth($plan, $monthNum) && ! $billedElsewhere($headKey, $monthKey)) {
                         $applyUnit($headKey, $unit, $monthKey, $waive);
                     }
                 } elseif (in_array($freq, ['annual', 'one_time'], true)) {
@@ -981,8 +1053,26 @@ class FeeBalanceService
                 && $transportHeadId
                 && $this->transportAppliesInMonth($student, $monthKey, $transportFeeStart)
                 && ($headFilter === null || isset($headFilter[(int) $transportHeadId]))
+                && ! $billedElsewhere((string) $transportHeadId, $monthKey)
             ) {
                 $applyUnit((string) $transportHeadId, $transportFare, $monthKey, $waive);
+            }
+        }
+
+        // This session's receipt lines for months before its start date: counted here as
+        // recorded (fee = what the line paid + its discount), so they add to Paid without
+        // inventing a due at today's rate. Only when $monthKeys covers the session from its start.
+        $firstMonth = $session->months()[0]['key'] ?? null;
+        if ($withEarlierMonths && $firstMonth !== null && in_array($firstMonth, $monthKeys, true)) {
+            foreach ($claims[(int) $session->id] ?? [] as $headKey => $months) {
+                $headKey = (string) $headKey;
+                if ($headFilter !== null && ! isset($headFilter[(int) $headKey])) {
+                    continue;
+                }
+                foreach (array_keys($months) as $m) {
+                    $recorded = (float) ($paidByMonth[$headKey][$m] ?? 0) + (float) ($discountByMonth[$headKey][$m] ?? 0);
+                    $applyUnit($headKey, round($recorded, 2), $m);
+                }
             }
         }
 
