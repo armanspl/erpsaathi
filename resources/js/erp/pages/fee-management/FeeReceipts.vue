@@ -296,7 +296,11 @@
                                         <span>Payable after discount: ₹{{ money(summary.payable) }}</span>
                                         <span class="text-primary-600">Received now: ₹{{ money(summary.applied) }}</span>
                                         <span>Total received: ₹{{ money(summary.received) }}</span>
+                                        <span v-if="summary.fine > 0" class="text-amber-700 dark:text-amber-400">Fine: +₹{{ money(summary.fine) }}</span>
                                     </div>
+                                    <p v-if="summary.fine > 0" class="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                        Total to collect now (fee + fine): ₹{{ money(summary.collectNow) }}
+                                    </p>
                                     <!-- Whole-receipt entry: one discount and the amount actually collected, split onto the fee lines. -->
                                     <div class="mt-3 flex flex-wrap items-end gap-3">
                                         <div>
@@ -324,16 +328,30 @@
                                                 @input="onReceivedNowInput"
                                             />
                                         </div>
+                                        <div>
+                                            <label class="form-label !mb-1">Fine / late fee</label>
+                                            <input
+                                                v-model.number="fineAmount"
+                                                type="number"
+                                                min="0"
+                                                step="1"
+                                                class="form-input w-32"
+                                                placeholder="0"
+                                                :disabled="!summary.base"
+                                                @input="onFineInput"
+                                            />
+                                        </div>
                                     </div>
                                     <p class="mt-1 text-xs text-slate-400">
-                                        Overall discount is shared across the selected fees in proportion to what each owes; Received now fills the fees in the order listed.
+                                        Overall discount is shared across the selected fees in proportion to what each owes; Received now fills the fees in the order listed; anything above the payable is collected on the last fee.
+                                        Fine is charged on top of the fee (e.g. a late fee) and printed on the receipt.
                                     </p>
                                     <p class="mt-2 text-sm font-medium text-rose-600">Due after payment: ₹{{ money(summary.dueAfter) }}</p>
                                     <p v-if="summary.overallTooBig" class="mt-1 text-xs font-medium text-rose-600">
                                         Overall discount is more than the payable after the fee-wise discounts (₹{{ money(summary.overallRoom) }}).
                                     </p>
                                     <p v-if="summary.overpaid" class="mt-1 text-xs font-medium text-rose-600">
-                                        Paid is more than the payable after discount on a fee — lower it before submitting.
+                                        A discount is more than the fee it is on — lower it before submitting.
                                     </p>
                                     <ul v-if="unpaidPreview.length" class="mt-2 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
                                         <li v-for="u in unpaidPreview" :key="`${u.fee_head_id}-${u.month}`">{{ unpaidWarning(u) }}</li>
@@ -1322,6 +1340,7 @@ function clampInput(obj, key) {
 
 /**
  * One fee line: Net payable = Fee − Discount; Remaining due = Net payable − Paid.
+ * Paid above the payable is allowed and collected in full on the line (no advance; due is ₹0).
  * A discount lowers what is owed; it is never counted as money received.
  */
 function lineCalc(fee, discount, paid, overall = 0) {
@@ -1340,6 +1359,8 @@ function lineCalc(fee, discount, paid, overall = 0) {
 
 // Overall discount (summary box) — on top of the fee-wise discounts.
 const overallDiscount = ref(0);
+// Fine / late fee collected with this receipt (saved as fine_amount; not part of any fee line).
+const fineAmount = ref(0);
 
 /** Selected lines in screen order (fee heads, then transport) with their fee-wise discount only. */
 function selectedBaseLines() {
@@ -1402,7 +1423,6 @@ const transportLine = computed(() => {
 
 function lineNote(l) {
     if (l.overDiscount) return { text: `Discount is more than the fee ₹${money(l.fee)}`, cls: 'text-rose-600' };
-    if (l.overPaid) return { text: `Paid is more than payable ₹${money(l.net)} (after discount)`, cls: 'text-rose-600' };
     const share = l.overall > 0 ? ` (incl. ₹${money(l.overall)} of overall discount)` : '';
     return {
         text: `Payable ₹${money(l.net)}${share} · Remaining due ₹${money(l.remaining)}`,
@@ -1430,6 +1450,9 @@ function onPaidInput(item) {
     paidEdited.add(item.fee_head_id);
     receivedOverall.value = null;
 }
+function onFineInput() {
+    clampInput(fineAmount, 'value');
+}
 function onTransportDiscountInput() {
     clampInput(transport, 'discount');
     resyncAllPaid();
@@ -1441,8 +1464,8 @@ function onOverallDiscountInput() {
 
 /**
  * Received now (summary box): the money actually collected, filled into the selected fees in
- * screen order up to each one's payable; anything beyond the total lands on the last line, which
- * is then flagged as over-paid. The Paid boxes count as typed, so a later discount keeps them.
+ * screen order up to each one's payable; anything beyond the total is collected on the last line
+ * (no advance). The Paid boxes count as typed, so a later discount keeps them.
  */
 function onReceivedNowInput(e) {
     if (Number(e.target.value) < 0) e.target.value = 0;
@@ -1607,14 +1630,19 @@ const summary = computed(() => {
     const applied = sum('paid');
     // What the overall discount can cover: payable after the fee-wise discounts.
     const overallRoom = round2(selectedBaseLines().reduce((s, r) => s + Math.max(0, r.fee - r.disc), 0));
+    const fine = round2(amt(fineAmount.value));
     return {
         base,
         discount,
         payable: sum('net'),
         applied,
         received: applied,
+        fine,
+        // Money taken at the counter for this receipt: fee received + fine.
+        collectNow: round2(applied + fine),
         dueAfter: sum('remaining'),
-        overpaid: lines.some((l) => l.overPaid || l.overDiscount),
+        // Only a discount above the fee blocks the receipt; paying more than payable is allowed.
+        overpaid: lines.some((l) => l.overDiscount),
         overallRoom,
         overallTooBig: amt(overallDiscount.value) > overallRoom + 0.0001,
     };
@@ -1624,6 +1652,8 @@ const canSubmit = computed(() => {
     if (!student.value) return false;
     if (!unpaidSelectedMonths().length) return false;
     if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value && hasCashReceived()) return false;
+    // A discount above a fee, or an overall discount above the payable, blocks it (paying more is allowed).
+    if (summary.value.overpaid || summary.value.overallTooBig) return false;
     // A fee line counts when something is paid OR discounted on it — a 100% discount with ₹0
     // paid is a waiver and is saved as a discount-only line (it settles the fee, not as income).
     const hasFee = selectedHeadIds.value.some((id) => amt(amounts[id]) > 0 || amt(discounts[id]) > 0 || (overallAlloc.value[id] || 0) > 0);
@@ -2325,6 +2355,7 @@ async function selectStudent(s) {
     Object.keys(discounts).forEach((k) => delete discounts[k]);
     paidEdited.clear();
     overallDiscount.value = 0;
+    fineAmount.value = 0;
     receivedOverall.value = null;
     selectedMonths.value = [];
     paidMonths.value = [];
@@ -2612,13 +2643,15 @@ async function collect() {
     if (!canSubmit.value) {
         if (paymentMode.value === 'Bank Transfer' && !bankAccountId.value && hasCashReceived()) {
             pushToast('Select which bank account received this transfer.', 'error');
+        } else if (summary.value.overpaid || summary.value.overallTooBig) {
+            pushToast('A discount is more than the fee it is on — lower it before submitting.', 'error');
         } else {
             pushToast(unpaidSelectedMonths().length ? 'Enter a paid amount or a discount.' : 'Select unpaid months to collect.', 'error');
         }
         return;
     }
-    // Discount can't exceed the fee, and the amount received can't exceed what's payable after
-    // discount — either would leave a negative due on the receipt.
+    // Discount can't exceed the fee (it would leave a negative due). Paid above the payable is
+    // allowed and collected in full (no advance).
     const checks = selectedHeadIds.value
         .map((id) => (due.value?.breakdown || []).find((row) => row.fee_head_id === id))
         .filter(Boolean)
@@ -2628,11 +2661,9 @@ async function collect() {
         pushToast(`Overall discount is more than the payable after fee-wise discounts ₹${money(summary.value.overallRoom)}.`, 'error');
         return;
     }
-    const bad = checks.find((c) => c.line.overDiscount || c.line.overPaid);
+    const bad = checks.find((c) => c.line.overDiscount);
     if (bad) {
-        pushToast(bad.line.overDiscount
-            ? `Discount on ${bad.name} is more than its due ₹${money(bad.line.fee)}.`
-            : `Paid on ${bad.name} (₹${money(bad.line.paid)}) is more than its payable after discount ₹${money(bad.line.net)}.`, 'error');
+        pushToast(`Discount on ${bad.name} is more than its due ₹${money(bad.line.fee)}.`, 'error');
         return;
     }
 
@@ -2683,7 +2714,13 @@ async function collect() {
         { label: 'Payment date', value: paymentDate.value || '—' },
         ...(referenceNo.value ? [{ label: 'Reference', value: referenceNo.value }] : []),
         { label: 'Total payable', value: `₹${money(s.payable)}` },
-        { label: 'Submitting now', value: `₹${money(s.received)}`, emphasis: true },
+        ...(s.fine > 0
+            ? [
+                { label: 'Fee received', value: `₹${money(s.received)}` },
+                { label: 'Fine / late fee', value: `₹${money(s.fine)}` },
+                { label: 'Submitting now', value: `₹${money(s.collectNow)} (fee + fine)`, emphasis: true },
+            ]
+            : [{ label: 'Submitting now', value: `₹${money(s.received)}`, emphasis: true }]),
         { label: 'Due after payment', value: `₹${money(s.dueAfter)}` },
         ...unpaidPreview.value.map((u) => ({ label: 'Stays unpaid', value: unpaidWarning(u) })),
     ];
@@ -2720,6 +2757,7 @@ async function submitFeeConfirmed() {
             items,
             months,
             discount_amount: summary.value.discount,
+            fine_amount: summary.value.fine,
             payment_mode: paymentMode.value,
             bank_account_id: paymentMode.value === 'Bank Transfer' ? bankAccountId.value : null,
             payment_date: paymentDate.value,

@@ -634,6 +634,9 @@ class FeePaymentController extends Controller
             }
         }
 
+        // Paid more than payable is collected in full on the line (no advance); its charge stays at the fee due.
+        $items = $this->lineChargesAtDue($items, $unitByHead, $freqByHead, $priorPaid);
+
         if ($items->isEmpty()) {
             throw ValidationException::withMessages(['items' => 'Add at least one fee item or a transport fee.']);
         }
@@ -726,6 +729,60 @@ class FeePaymentController extends Controller
     }
 
     /**
+     * Paid more than payable: the whole amount stays on the line as received (no advance, nothing
+     * moved to other months), and the line's charge is set back to the fee actually due for that
+     * month (the form raises it to the paid amount), so the receipt's totals still match its fees.
+     *
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $items
+     * @param  array{totals: array, discounts: array, by_month: array, discount_by_month: array}  $priorPaid
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function lineChargesAtDue(
+        \Illuminate\Support\Collection $items,
+        array $unitByHead,
+        array $freqByHead,
+        array $priorPaid
+    ): \Illuminate\Support\Collection {
+        // Already covered (paid + discount) per head / month, and per head for annual fees.
+        $covered = [];
+        $coveredTotal = [];
+        foreach (['by_month', 'discount_by_month'] as $key) {
+            foreach ($priorPaid[$key] ?? [] as $headKey => $months) {
+                foreach ($months as $m => $v) {
+                    $covered[(int) $headKey][$m] = ($covered[(int) $headKey][$m] ?? 0) + (float) $v;
+                }
+            }
+        }
+        foreach ($priorPaid['totals'] ?? [] as $headKey => $v) {
+            $coveredTotal[(int) $headKey] = (float) $v + (float) ($priorPaid['discounts'][$headKey] ?? 0);
+        }
+
+        return $items->map(function (array $item) use ($unitByHead, $freqByHead, &$covered, &$coveredTotal) {
+            $headId = (int) ($item['fee_head_id'] ?? 0);
+            $unit = (float) ($unitByHead[$headId] ?? 0);
+            $month = $item['months'][0] ?? ($item['month'] ?? null);
+            $amount = (float) ($item['amount'] ?? 0);
+            $discount = (float) ($item['discount'] ?? 0);
+            if ($unit <= 0 || $month === null) {
+                return $item;
+            }
+
+            $isAnnual = in_array($freqByHead[$headId] ?? 'monthly', ['annual', 'one_time'], true);
+            $dueNow = $isAnnual
+                ? max(0.0, $unit - (float) ($coveredTotal[$headId] ?? 0))
+                : max(0.0, $unit - (float) ($covered[$headId][$month] ?? 0));
+            $covered[$headId][$month] = ($covered[$headId][$month] ?? 0) + $amount + $discount;
+            $coveredTotal[$headId] = ($coveredTotal[$headId] ?? 0) + $amount + $discount;
+
+            if ($amount + $discount <= $dueNow + 0.01) {
+                return $item;
+            }
+
+            return [...$item, 'charge' => round(max($dueNow, $discount), 2)];
+        })->values();
+    }
+
+    /**
      * Receipt totals snapshot from the Fee Receipt form, re-derived from the lines being saved:
      * received and total discount come from the lines themselves, and the form's base fee must
      * equal the lines' fees plus the selected months left fully unpaid (which get no line). A
@@ -737,7 +794,11 @@ class FeePaymentController extends Controller
     {
         $received = round((float) $items->sum(fn ($i) => (float) ($i['amount'] ?? 0)), 2);
         $totalDiscount = round((float) $items->sum(fn ($i) => (float) ($i['discount'] ?? 0)), 2);
-        $lineFees = (float) $items->sum(fn ($i) => max((float) ($i['charge'] ?? 0), (float) ($i['amount'] ?? 0) + (float) ($i['discount'] ?? 0)));
+        // A line's fee is its charge (the fee due — see lineChargesAtDue), so paying more than
+        // payable doesn't inflate the fee total.
+        $lineFees = (float) $items->sum(fn ($i) => isset($i['charge'])
+            ? max((float) $i['charge'], (float) ($i['discount'] ?? 0))
+            : (float) ($i['amount'] ?? 0) + (float) ($i['discount'] ?? 0));
         $unpaid = collect($snapshot['unpaid'] ?? [])->map(fn ($u) => [
             'fee_head_id' => isset($u['fee_head_id']) ? (int) $u['fee_head_id'] : null,
             'name' => (string) $u['name'],
@@ -751,10 +812,10 @@ class FeePaymentController extends Controller
         $payable = round($base - $totalDiscount, 2);
         $dueAfter = round($payable - $received, 2);
 
+        // Received above the payable is allowed: the whole amount is collected, due is ₹0.
         $mismatch = abs($base - round($lineFees + $unpaid->sum('amount'), 2)) > 0.01
             || abs($individual + $overall - $totalDiscount) > 0.01
-            || $payable < -0.01
-            || $dueAfter < -0.01;
+            || $payable < -0.01;
         if ($mismatch) {
             throw ValidationException::withMessages([
                 'items' => 'The receipt totals do not match its fee lines — reload the Fee Receipt page and enter the fee again.',

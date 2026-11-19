@@ -375,7 +375,6 @@ class DocumentDataBuilder
 
             // Amount = due for this line; Paid = amount collected on this receipt.
             $amountCell = number_format($lineAmount, 2);
-
             $lines[] = sprintf(
                 '%-3s %-16s %-11s %10s %10s',
                 $sno++,
