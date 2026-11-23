@@ -46,6 +46,14 @@ class FeeBalanceService
 
     private static bool $structureDiscountsWarmed = false;
 
+    /**
+     * Set by remainingLinesForMonths(): remainingForMonths() appends one entry per charged unit
+     * (head × month) so a receipt can list exactly the lines behind the due total.
+     *
+     * @var list<array{fee_head_id: int, month: ?string, charge: float, paid: float, discount: float, due: float}>|null
+     */
+    private static ?array $lineCapture = null;
+
     public static function flushRuntimeCache(): void
     {
         self::$transportByStudent = [];
@@ -881,6 +889,34 @@ class FeeBalanceService
      * @param  list<int>|null  $feeHeadIds  When set, only these fee heads (and Transport if its id is included) are counted.
      * @return array{charge: float, paid: float, discount: float, due: float, net: float}
      */
+    /**
+     * remainingForMonths() plus the lines behind it ('lines': head × month with charge / paid /
+     * discount / due). Annual and one-time heads have month null. Same maths, so the line dues
+     * always add up to 'due'.
+     *
+     * @param  list<string>  $monthKeys
+     * @param  list<int>|null  $feeHeadIds
+     */
+    public function remainingLinesForMonths(
+        Student $student,
+        AcademicSession $session,
+        array $monthKeys,
+        ?array $calc = null,
+        ?array $paidInfo = null,
+        ?array $feeHeadIds = null
+    ): array {
+        $previous = self::$lineCapture;
+        self::$lineCapture = [];
+        try {
+            $result = $this->remainingForMonths($student, $session, $monthKeys, $calc, $paidInfo, $feeHeadIds);
+            $result['lines'] = self::$lineCapture;
+        } finally {
+            self::$lineCapture = $previous;
+        }
+
+        return $result;
+    }
+
     public function remainingForMonths(
         Student $student,
         AcademicSession $session,
@@ -969,6 +1005,9 @@ class FeeBalanceService
                 $paid += $fromPaid;
                 $discount += max(0.0, $unit - $fromPaid);
                 $note('waiver', $headKey, $monthKey, max(0.0, $unit - $fromPaid));
+                if (self::$lineCapture !== null) {
+                    self::$lineCapture[] = ['fee_head_id' => (int) $headKey, 'month' => $monthKey, 'charge' => $unit, 'paid' => $fromPaid, 'discount' => max(0.0, $unit - $fromPaid), 'due' => 0.0];
+                }
 
                 return;
             }
@@ -1000,6 +1039,9 @@ class FeeBalanceService
 
             $paid += $fromPaid;
             $discount += $fromDisc;
+            if (self::$lineCapture !== null) {
+                self::$lineCapture[] = ['fee_head_id' => (int) $headKey, 'month' => $monthKey, 'charge' => $unit, 'paid' => $fromPaid, 'discount' => $fromDisc, 'due' => max(0.0, $unit - $fromPaid - $fromDisc)];
+            }
         };
 
         // Months a receipt of ANOTHER session paid for, before that session's start (its Feb–Mar

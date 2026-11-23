@@ -404,6 +404,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import Dropdown from '../../components/common/Dropdown.vue';
 import Pagination from '../../components/common/Pagination.vue';
 import { fetchAcademicsLookups } from '../../api/academics';
@@ -444,11 +445,17 @@ const classes = ref([]);
 const sections = ref([]);
 const vehicles = ref([]);
 
+// ?search= / ?student_id= from a student's profile: filter to them and expand their row.
+// Read before the filter watcher exists, so it doesn't trigger an extra reload.
+const route = useRoute();
+let openStudentId = Number(route.query.student_id) || null;
+const initialSearch = typeof route.query.search === 'string' ? route.query.search.trim() : '';
+
 const filters = reactive({
     branch_id: null,
     school_class_id: null,
     section_id: null,
-    search: '',
+    search: initialSearch,
     vehicle: '',
     dues: 'all',
     // Paid on: '' any date, 'date' one day, 'month' one month, 'range' between two dates.
@@ -612,6 +619,12 @@ async function reload() {
     try {
         const { data } = await client.get('/fee-management/fee-paid', { params: currentParams() });
         rows.value = data.rows || [];
+        // Came from a student's profile (?student_id=): open that student's receipts.
+        const target = openStudentId && rows.value.find((r) => r.student_id === openStudentId);
+        if (target) {
+            openStudentId = null;
+            toggle(target);
+        }
         vehicles.value = data.vehicles || vehicles.value;
         Object.assign(summary, data.summary || {});
     } catch {

@@ -191,11 +191,14 @@
                                                         <th class="px-3 py-2.5 text-xs font-semibold">Payment Month</th>
                                                         <th class="px-3 py-2.5 text-xs font-semibold">Payment Year</th>
                                                         <th class="px-3 py-2.5 text-right text-xs font-semibold">Fee Amount</th>
+                                                        <th class="px-3 py-2.5 text-right text-xs font-semibold">Paid</th>
+                                                        <th class="px-3 py-2.5 text-right text-xs font-semibold">Concession</th>
+                                                        <th class="px-3 py-2.5 text-right text-xs font-semibold">Due</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     <tr v-if="!(autoDetailCache[r.student_id]?.due_details || []).length">
-                                                        <td colspan="7" class="px-3 py-6 text-center text-slate-400">No outstanding due lines.</td>
+                                                        <td colspan="10" class="px-3 py-6 text-center text-slate-400">No outstanding due lines.</td>
                                                     </tr>
                                                     <tr
                                                         v-for="line in (autoDetailCache[r.student_id]?.due_details || [])"
@@ -208,9 +211,18 @@
                                                         <td class="px-3 py-2.5">{{ line.session }}</td>
                                                         <td class="px-3 py-2.5">{{ line.payment_month }}</td>
                                                         <td class="px-3 py-2.5">{{ line.payment_year }}</td>
-                                                        <td class="px-3 py-2.5 text-right font-semibold tabular-nums text-rose-600 dark:text-rose-400">{{ money(line.fee_amount) }}</td>
+                                                        <td class="px-3 py-2.5 text-right tabular-nums">{{ money(line.fee_amount) }}</td>
+                                                        <td class="px-3 py-2.5 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{{ Number(line.paid) > 0 ? money(line.paid) : '—' }}</td>
+                                                        <td class="px-3 py-2.5 text-right tabular-nums">{{ Number(line.concession) > 0 ? money(line.concession) : '—' }}</td>
+                                                        <td class="px-3 py-2.5 text-right font-semibold tabular-nums text-rose-600 dark:text-rose-400">{{ money(line.balance) }}</td>
                                                     </tr>
                                                 </tbody>
+                                                <tfoot v-if="(autoDetailCache[r.student_id]?.due_details || []).length">
+                                                    <tr class="border-t border-slate-200 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100">
+                                                        <td colspan="9" class="px-3 py-2.5 text-right">Total due</td>
+                                                        <td class="px-3 py-2.5 text-right tabular-nums text-rose-600 dark:text-rose-400">{{ money((autoDetailCache[r.student_id]?.due_details || []).reduce((s, l) => s + Number(l.balance || 0), 0)) }}</td>
+                                                    </tr>
+                                                </tfoot>
                                             </table>
                                         </div>
                                     </td>
@@ -828,6 +840,13 @@ async function reload() {
             const { data } = await client.get('/fee-management/due', { params: { ...filterParams(), ...scopeParams() } });
             autoRows.value = data.rows || [];
             autoPage.value = 1;
+            // Came from a student's profile (?student_id=): open that student's due details.
+            if (openStudentId && autoRows.value.some((r) => r.student_id === openStudentId)) {
+                const id = openStudentId;
+                openStudentId = null;
+                expandedAutoId.value = null;
+                toggleAutoExpand(id);
+            }
             Object.assign(summary, data.summary || { students: 0, charged: 0, paid: 0, due: 0 });
         } else {
             const { data } = await client.get('/fee-management/due/manual', { params: filterParams() });
@@ -1200,10 +1219,18 @@ function printDues(kind) {
     win.document.close();
 }
 
+// ?student_id= from a student's profile: expand that row once the list has loaded.
+let openStudentId = null;
+
 async function boot() {
     const route = useRoute();
     const qSearch = typeof route.query.search === 'string' ? route.query.search.trim() : '';
     if (qSearch) filters.search = qSearch;
+    const qStudent = Number(route.query.student_id);
+    if (qStudent) {
+        openStudentId = qStudent;
+        activeTab.value = 'automatic';
+    }
 
     const [lookups, st, fee] = await Promise.all([
         fetchAcademicsLookups(),

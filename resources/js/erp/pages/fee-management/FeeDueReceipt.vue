@@ -92,6 +92,7 @@
                     <div class="space-y-1 sm:text-right">
                         <p>Amount Due: <strong>₹{{ money(receipt.amount_due) }}</strong></p>
                         <p>Total Paid: <strong>₹{{ money(receipt.total_paid) }}</strong></p>
+                        <p v-if="Number(receipt.total_discount) > 0">Concession / Discount: <strong>₹{{ money(receipt.total_discount) }}</strong></p>
                         <p class="inline-block rounded bg-[#e8dcc8] px-3 py-1 font-bold">Remaining Due: ₹{{ money(receipt.remaining_due) }}</p>
                     </div>
                 </div>

@@ -449,6 +449,11 @@ class FeeDueController extends Controller
         if (! $session) {
             throw ValidationException::withMessages(['session' => 'No academic session selected.']);
         }
+        // Same sessions as the Fee Due list: every session under "All Sessions", else the picked one.
+        $allSessions = AcademicSession::requestWantsAll($request);
+        $sessions = $allSessions
+            ? AcademicSession::orderBy('start_date')->get()
+            : collect([$session]);
 
         $student->load([
             'branch:id,name',
@@ -458,109 +463,21 @@ class FeeDueController extends Controller
             'mother:id,name',
         ]);
 
-        $balance = app(FeeBalanceService::class);
-        $calc = FeeCalculator::forStudent($student, $session);
-        $monthKeys = $balance->filterMonthsFromFeeStart($student, $this->monthKeysInScope($session, $scope));
-        $paidInfo = $balance->paidByHead($student, $session);
-        $firstBillableMonth = $balance->firstBillableMonth($student, $session);
-        [$transportFare, $transportHeadId, $transportFeeStart] = $balance->transportFareAndHead($student);
-
-        $paidByMonth = $paidInfo['by_month'];
-        $discountByMonth = $paidInfo['discount_by_month'];
-        $paidTotals = $paidInfo['totals'];
-        $paidDiscounts = $paidInfo['discounts'];
-
+        // Lines come from the same engine as the list's Due column (see engineDueLines), so the
+        // receipt's Remaining Due always equals the list.
+        [$engineLines, $monthKeys] = $this->engineDueLines($student, $sessions, $scope);
         $lines = [];
-        $sno = 1;
-        foreach ($calc['breakdown'] as $item) {
-            $freq = strtolower(str_replace(' ', '_', (string) ($item['frequency'] ?? 'one_time')));
-            $base = (float) ($item['amount'] ?? 0);
-            $name = strtoupper((string) ($item['fee_head_name'] ?? 'Fee'));
-            $headKey = (string) (int) ($item['fee_head_id'] ?? 0);
-            if ($base <= 0 || $headKey === '0') {
-                continue;
-            }
-
-            if ($freq === 'monthly') {
-                $keys = $scope === 'month'
-                    ? (count($monthKeys) ? [end($monthKeys)] : [])
-                    : $monthKeys;
-                foreach ($keys as $key) {
-                    if (! $balance->isFeeMonth($student, $key) || ! FeeSchedule::chargesInMonth($item, $key)) {
-                        continue;
-                    }
-                    $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
-                    $mDisc = (float) ($discountByMonth[$headKey][$key] ?? 0);
-                    $covered = min($base, $mPaid + $mDisc);
-                    $lines[] = [
-                        'sno' => $sno++,
-                        'fee_particulars' => $name,
-                        'duration' => Carbon::createFromFormat('Y-m', $key)->format('F Y'),
-                        'month_key' => $key,
-                        'amount' => $base,
-                        'paid_amount' => round($covered, 2),
-                        'balance' => round(max(0, $base - $covered), 2),
-                    ];
-                }
-            } elseif ($freq === 'quarterly') {
-                foreach ($monthKeys as $key) {
-                    if (! $balance->isFeeMonth($student, $key) || ! FeeSchedule::chargesInMonth($item, $key)) {
-                        continue;
-                    }
-                    $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
-                    $mDisc = (float) ($discountByMonth[$headKey][$key] ?? 0);
-                    $covered = min($base, $mPaid + $mDisc);
-                    $lines[] = [
-                        'sno' => $sno++,
-                        'fee_particulars' => $name.' (QUARTERLY)',
-                        'duration' => Carbon::createFromFormat('Y-m', $key)->format('F Y'),
-                        'month_key' => $key,
-                        'amount' => $base,
-                        'paid_amount' => round($covered, 2),
-                        'balance' => round(max(0, $base - $covered), 2),
-                    ];
-                }
-            } else {
-                if ($monthKeys === [] || ! $firstBillableMonth || ! in_array($firstBillableMonth, $monthKeys, true)) {
-                    continue;
-                }
-                $mPaid = (float) ($paidTotals[$headKey] ?? 0);
-                $mDisc = (float) ($paidDiscounts[$headKey] ?? 0);
-                $covered = min($base, $mPaid + $mDisc);
-                $lines[] = [
-                    'sno' => $sno++,
-                    'fee_particulars' => $name,
-                    'duration' => Carbon::createFromFormat('Y-m', $firstBillableMonth)->format('F Y'),
-                    'month_key' => $firstBillableMonth,
-                    'amount' => $base,
-                    'paid_amount' => round($covered, 2),
-                    'balance' => round(max(0, $base - $covered), 2),
-                ];
-            }
-        }
-
-        if ($transportFare > 0 && $transportHeadId) {
-            $headKey = (string) $transportHeadId;
-            $keys = $scope === 'month'
-                ? (count($monthKeys) ? [end($monthKeys)] : [])
-                : $monthKeys;
-            foreach ($keys as $key) {
-                if (! $balance->transportAppliesInMonth($student, $key, $transportFeeStart)) {
-                    continue;
-                }
-                $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
-                $mDisc = (float) ($discountByMonth[$headKey][$key] ?? 0);
-                $covered = min($transportFare, $mPaid + $mDisc);
-                $lines[] = [
-                    'sno' => $sno++,
-                    'fee_particulars' => 'TRANSPORT',
-                    'duration' => Carbon::createFromFormat('Y-m', $key)->format('F Y'),
-                    'month_key' => $key,
-                    'amount' => $transportFare,
-                    'paid_amount' => round($covered, 2),
-                    'balance' => round(max(0, $transportFare - $covered), 2),
-                ];
-            }
+        foreach ($engineLines as $i => $line) {
+            $lines[] = [
+                'sno' => $i + 1,
+                'fee_particulars' => strtoupper($line['fee_name']).($line['frequency'] === 'quarterly' ? ' (QUARTERLY)' : ''),
+                'duration' => $line['month_key'] ? Carbon::createFromFormat('Y-m', $line['month_key'])->format('F Y') : '',
+                'month_key' => $line['month_key'],
+                'amount' => $line['charge'],
+                'paid_amount' => $line['paid'],
+                'discount' => $line['discount'],
+                'balance' => $line['due'],
+            ];
         }
 
         if ($lines === []) {
@@ -569,7 +486,7 @@ class FeeDueController extends Controller
 
         $amountDue = round(array_sum(array_column($lines, 'amount')), 2);
         $totalPaid = round(array_sum(array_column($lines, 'paid_amount')), 2);
-        $discount = 0.0;
+        $discount = round(array_sum(array_column($lines, 'discount')), 2);
         $remaining = round(array_sum(array_column($lines, 'balance')), 2);
 
         $dueMonths = collect($monthKeys)->map(fn ($k) => Carbon::createFromFormat('Y-m', $k)->format('F Y'))->values()->all();
@@ -587,12 +504,14 @@ class FeeDueController extends Controller
             ? Carbon::createFromFormat('Y-m', end($monthKeys))->endOfMonth()->format('d M Y')
             : null;
 
+        $sessionIds = $sessions->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $scopeText = $allSessions ? 'All Sessions' : $this->scopeLabel($session, $scope);
         $payments = FeePayment::where('student_id', $student->id)
-            ->touchingSessions([$session->id])
+            ->touchingSessions($sessionIds)
             ->orderByDesc('payment_date')
             ->orderByDesc('id')
             ->get()
-            ->pipe(fn ($rows) => FeePayment::slicesFor($rows, [$session->id]))
+            ->pipe(fn ($rows) => FeePayment::slicesFor($rows, $sessionIds))
             ->map(fn (FeePayment $p) => [
                 'date' => optional($p->payment_date)->format('d M Y') ?? substr((string) $p->payment_date, 0, 10),
                 'payment_mode' => strtoupper((string) $p->payment_mode),
@@ -622,8 +541,8 @@ class FeeDueController extends Controller
             ],
             'receipt_no' => $receiptNo,
             'printed_at' => $now->format('j M Y, h:i a'),
-            'session' => ['id' => $session->id, 'name' => $session->name],
-            'months_bar' => implode(', ', $dueMonths) ?: $this->scopeLabel($session, $scope),
+            'session' => $allSessions ? ['id' => null, 'name' => 'All Sessions'] : ['id' => $session->id, 'name' => $session->name],
+            'months_bar' => implode(', ', $dueMonths) ?: $scopeText,
             'student' => [
                 'id' => $student->id,
                 'name' => $student->name,
@@ -639,12 +558,13 @@ class FeeDueController extends Controller
             'lines' => $lines,
             'amount_due' => $amountDue,
             'total_paid' => $totalPaid,
+            'total_discount' => $discount,
             'remaining_due' => $remaining,
             'due_date' => $dueDate,
             'due_months' => $dueMonths,
             'paid_months' => $paidMonths,
             'payment_method' => $payments->isNotEmpty() ? $payments->first()['payment_mode'] : 'CASH',
-            'description' => 'Outstanding dues as of '.$now->format('j M Y, h:i a').' ('.$this->scopeLabel($session, $scope).')',
+            'description' => 'Outstanding dues as of '.$now->format('j M Y, h:i a').' ('.$scopeText.')',
             'payment_history' => $payments,
         ]);
     }
@@ -695,7 +615,11 @@ class FeeDueController extends Controller
         $remaining = round(array_sum(array_column($monthRows, 'due')), 2);
 
         $categories = $balance->categoryRows($student, $session, $monthKeys, $calc, $paidInfo);
-        $dueDetails = $this->automaticDueDetailLines($student, $session, $scope, $monthKeys, $calc, $paidInfo, $balance);
+        // Same sessions as the list row: every session under "All Sessions", else the picked one.
+        $detailSessions = AcademicSession::requestWantsAll($request)
+            ? AcademicSession::orderBy('start_date')->get()
+            : collect([$session]);
+        $dueDetails = $this->automaticDueDetailLines($student, $detailSessions, $scope);
 
         $payments = FeePayment::where('student_id', $student->id)
             ->touchingSessions([$session->id])
@@ -756,124 +680,107 @@ class FeeDueController extends Controller
     }
 
     /**
-     * Outstanding automatic fee lines for the Fee Due slide-down table.
-     * Numbers every charged line, then keeps only unpaid rows (so # can skip).
+     * Outstanding automatic fee lines for the Fee Due slide-down table — only lines still owed,
+     * showing the fee, what was paid, the concession and the amount still due. Built from
+     * engineDueLines(), so they add up to the list's Due.
      *
-     * @param  list<string>  $monthKeys
-     * @param  array<string, mixed>  $calc
-     * @param  array{by_month: array, discount_by_month: array, totals: array, discounts: array}  $paidInfo
-     * @return list<array{sno: int, fee_name: string, fee_type: string, session: string, payment_month: string, payment_year: string, fee_amount: float}>
+     * @param  \Illuminate\Support\Collection<int, AcademicSession>  $sessions
+     * @return list<array<string, mixed>>
      */
-    private function automaticDueDetailLines(
-        Student $student,
-        AcademicSession $session,
-        string $scope,
-        array $monthKeys,
-        array $calc,
-        array $paidInfo,
-        FeeBalanceService $balance
-    ): array {
-        $paidByMonth = $paidInfo['by_month'];
-        $discountByMonth = $paidInfo['discount_by_month'];
-        $paidTotals = $paidInfo['totals'];
-        $paidDiscounts = $paidInfo['discounts'];
-        $firstBillableMonth = $balance->firstBillableMonth($student, $session);
-        [$transportFare, $transportHeadId, $transportFeeStart] = $balance->transportFareAndHead($student);
-
-        $sessionLabel = preg_replace('/\s*-\s*/', ' - ', (string) $session->name) ?: (string) $session->name;
-        $freqLabel = static function (string $freq): string {
-            return match ($freq) {
-                'monthly' => 'Monthly',
-                'quarterly' => 'Quarterly',
-                'half_yearly' => 'Half Yearly',
-                'annual', 'yearly' => 'Yearly',
-                'one_time' => 'One Time',
-                default => ucwords(str_replace('_', ' ', $freq)),
-            };
+    private function automaticDueDetailLines(Student $student, $sessions, string $scope): array
+    {
+        $freqLabel = static fn (string $freq): string => match ($freq) {
+            'monthly' => 'Monthly',
+            'quarterly' => 'Quarterly',
+            'half_yearly' => 'Half Yearly',
+            'annual', 'yearly' => 'Yearly',
+            'one_time' => 'One Time',
+            default => ucwords(str_replace('_', ' ', $freq)),
         };
 
-        $all = [];
-        $sno = 1;
-        foreach ($calc['breakdown'] ?? [] as $item) {
-            $freq = strtolower(str_replace(' ', '_', (string) ($item['frequency'] ?? 'one_time')));
-            $base = (float) ($item['amount'] ?? 0);
-            $name = (string) ($item['fee_head_name'] ?? 'Fee');
-            $headKey = (string) (int) ($item['fee_head_id'] ?? 0);
-            if ($base <= 0 || $headKey === '0') {
+        [$lines] = $this->engineDueLines($student, $sessions, $scope);
+        $out = [];
+        foreach ($lines as $i => $line) {
+            if ($line['due'] <= 0.0001) {
                 continue;
             }
+            $dt = $line['month_key'] ? Carbon::createFromFormat('Y-m', $line['month_key']) : null;
+            $out[] = [
+                'sno' => $i + 1,
+                'fee_name' => $line['fee_name'],
+                'fee_type' => $freqLabel($line['frequency']),
+                'session' => $line['session'],
+                'payment_month' => $dt?->format('F') ?? '—',
+                'payment_year' => $dt?->format('Y') ?? '—',
+                'fee_amount' => $line['charge'],
+                'paid' => $line['paid'],
+                'concession' => $line['discount'],
+                'balance' => $line['due'],
+                'month_key' => $line['month_key'],
+            ];
+        }
 
-            $push = function (string $monthKey, float $charge) use (&$all, &$sno, $name, $freq, $freqLabel, $sessionLabel, $paidByMonth, $discountByMonth, $paidTotals, $paidDiscounts, $headKey) {
-                $isPeriodic = in_array($freq, ['monthly', 'quarterly', 'half_yearly'], true);
-                $mPaid = $isPeriodic
-                    ? (float) ($paidByMonth[$headKey][$monthKey] ?? 0)
-                    : (float) ($paidTotals[$headKey] ?? 0);
-                $mDisc = $isPeriodic
-                    ? (float) ($discountByMonth[$headKey][$monthKey] ?? 0)
-                    : (float) ($paidDiscounts[$headKey] ?? 0);
-                $covered = min($charge, $mPaid + $mDisc);
-                $balanceAmt = round(max(0, $charge - $covered), 2);
-                $dt = Carbon::createFromFormat('Y-m', $monthKey);
-                $all[] = [
-                    'sno' => $sno++,
-                    'fee_name' => $name,
-                    'fee_type' => $freqLabel($freq),
-                    'session' => $sessionLabel,
-                    'payment_month' => $dt->format('F'),
-                    'payment_year' => $dt->format('Y'),
-                    'fee_amount' => round($charge, 2),
-                    'balance' => $balanceAmt,
-                    'month_key' => $monthKey,
-                ];
-            };
+        return $out;
+    }
 
-            if ($freq === 'monthly' || $freq === 'quarterly' || $freq === 'half_yearly') {
-                $keys = $scope === 'month'
-                    ? (count($monthKeys) ? [end($monthKeys)] : [])
-                    : $monthKeys;
-                foreach ($keys as $key) {
-                    if (! $balance->isFeeMonth($student, $key) || ! FeeSchedule::chargesInMonth($item, $key)) {
-                        continue;
-                    }
-                    $push($key, $base);
-                }
+    /**
+     * Every charged fee line (head × month) behind the list's Due, from FeeBalanceService — the
+     * same maths as remainingInScope(): concessions (FEES DISCOUNT), waivers, receipt discounts,
+     * Fee Months and pre-session lines included. For one chosen month it works through the
+     * session up to that month (so a concession is used up in order) and keeps that month.
+     *
+     * @param  \Illuminate\Support\Collection<int, AcademicSession>  $sessions
+     * @return array{0: list<array{session: string, fee_head_id: int, fee_name: string, frequency: string, month_key: ?string, charge: float, paid: float, discount: float, due: float}>, 1: list<string>}
+     */
+    private function engineDueLines(Student $student, $sessions, string $scope): array
+    {
+        $balance = app(FeeBalanceService::class);
+        $headNames = FeeHead::query()->pluck('name', 'id');
+        [, $transportHeadId] = $balance->transportFareAndHead($student);
+
+        $lines = [];
+        $monthKeys = [];
+        foreach ($sessions as $sess) {
+            $calc = FeeCalculator::forStudent($student, $sess);
+            $paidInfo = $balance->paidByHead($student, $sess);
+            $scopeKeys = $this->monthKeysInScope($sess, $scope);
+            if ($scope === 'month') {
+                $result = $balance->remainingLinesForMonths($student, $sess, $this->sessionMonthsThrough($sess, $scopeKeys), $calc, $paidInfo);
+                $keep = $scopeKeys;
             } else {
-                if ($monthKeys === [] || ! $firstBillableMonth || ! in_array($firstBillableMonth, $monthKeys, true)) {
-                    continue;
-                }
-                $push($firstBillableMonth, $base);
+                $result = $balance->remainingLinesForMonths($student, $sess, $balance->filterMonthsFromFeeStart($student, $scopeKeys), $calc, $paidInfo);
+                $keep = null;
             }
-        }
+            array_push($monthKeys, ...$balance->filterMonthsFromFeeStart($student, $scopeKeys));
 
-        if ($transportFare > 0 && $transportHeadId) {
-            $headKey = (string) $transportHeadId;
-            $keys = $scope === 'month'
-                ? (count($monthKeys) ? [end($monthKeys)] : [])
-                : $monthKeys;
-            foreach ($keys as $key) {
-                if (! $balance->transportAppliesInMonth($student, $key, $transportFeeStart)) {
+            $sessionLabel = preg_replace('/\s*-\s*/', ' - ', (string) $sess->name) ?: (string) $sess->name;
+            $firstBillableMonth = $balance->firstBillableMonth($student, $sess);
+            $planByHead = collect($calc['breakdown'] ?? [])->keyBy(fn ($p) => (int) ($p['fee_head_id'] ?? 0));
+            foreach ($result['lines'] as $line) {
+                $key = $line['month'] ?? $firstBillableMonth;
+                if ($keep !== null && ! in_array($key, $keep, true)) {
                     continue;
                 }
-                $mPaid = (float) ($paidByMonth[$headKey][$key] ?? 0);
-                $mDisc = (float) ($discountByMonth[$headKey][$key] ?? 0);
-                $covered = min($transportFare, $mPaid + $mDisc);
-                $balanceAmt = round(max(0, $transportFare - $covered), 2);
-                $dt = Carbon::createFromFormat('Y-m', $key);
-                $all[] = [
-                    'sno' => $sno++,
-                    'fee_name' => 'Transport',
-                    'fee_type' => 'Monthly',
+                $headId = (int) $line['fee_head_id'];
+                $isTransport = $transportHeadId && $headId === (int) $transportHeadId;
+                $plan = $planByHead->get($headId);
+                $lines[] = [
                     'session' => $sessionLabel,
-                    'payment_month' => $dt->format('F'),
-                    'payment_year' => $dt->format('Y'),
-                    'fee_amount' => round($transportFare, 2),
-                    'balance' => $balanceAmt,
+                    'fee_head_id' => $headId,
+                    'fee_name' => $isTransport ? 'Transport' : (string) ($plan['fee_head_name'] ?? $headNames[$headId] ?? 'Fee'),
+                    'frequency' => $isTransport ? 'monthly' : strtolower(str_replace(' ', '_', (string) ($plan['frequency'] ?? 'monthly'))),
                     'month_key' => $key,
+                    'charge' => round((float) $line['charge'], 2),
+                    'paid' => round((float) $line['paid'], 2),
+                    'discount' => round((float) $line['discount'], 2),
+                    'due' => round((float) $line['due'], 2),
                 ];
             }
         }
+        $monthKeys = array_values(array_unique($monthKeys));
+        sort($monthKeys);
 
-        return array_values(array_filter($all, fn (array $row) => ($row['balance'] ?? 0) > 0.0001));
+        return [$lines, $monthKeys];
     }
 
     /** Create manual fee due lines for one or more students. */

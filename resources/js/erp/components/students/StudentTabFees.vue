@@ -30,14 +30,23 @@
                 <p class="text-lg font-bold text-sky-600 dark:text-sky-400">₹{{ money(due.total_discount) }}</p>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">Discount / Waiver <span class="text-sky-600 dark:text-sky-400">{{ showDiscount ? '▴' : '▾' }}</span></p>
             </button>
-            <div class="rounded-lg bg-emerald-50 p-3 text-center dark:bg-emerald-500/10">
+            <!-- Open Fee Collection › Fee Paid / Fee Due on this student (row expanded). -->
+            <router-link
+                :to="{ path: '/fee-management/fee-paid', query: { search: student.admission_no || student.name, student_id: student.id } }"
+                class="rounded-lg bg-emerald-50 p-3 text-center ring-emerald-300 transition hover:ring-2 dark:bg-emerald-500/10"
+                title="Open in Fee Paid"
+            >
                 <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">₹{{ money(due.total_paid) }}</p>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">Paid</p>
-            </div>
-            <div class="rounded-lg bg-rose-50 p-3 text-center dark:bg-rose-500/10">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Paid <span class="text-emerald-600 dark:text-emerald-400">→</span></p>
+            </router-link>
+            <router-link
+                :to="{ path: '/fee-management/fee-due', query: { search: student.admission_no || student.name, student_id: student.id } }"
+                class="rounded-lg bg-rose-50 p-3 text-center ring-rose-300 transition hover:ring-2 dark:bg-rose-500/10"
+                title="Open in Fee Due"
+            >
                 <p class="text-lg font-bold text-rose-600 dark:text-rose-400">₹{{ money(due.due) }}</p>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">Due</p>
-            </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Due <span class="text-rose-600 dark:text-rose-400">→</span></p>
+            </router-link>
         </div>
 
         <StudentDiscountDetails v-if="showDiscount" :due="due" />
