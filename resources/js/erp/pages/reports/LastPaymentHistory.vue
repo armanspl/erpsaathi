@@ -211,7 +211,7 @@ const FORMATS = [
 ];
 
 const DEFAULT_KEYS = [
-    'admission_no', 'name', 'class', 'last_paid_month', 'last_paid_date', 'last_paid_amount', 'paid_for', 'due',
+    'admission_no', 'name', 'class', 'address', 'last_paid_month', 'last_paid_date', 'last_paid_amount', 'paid_for', 'due',
 ];
 
 const columns = ref([]);

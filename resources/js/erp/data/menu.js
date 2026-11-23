@@ -68,12 +68,12 @@ const rawMenu = [
     {
         label: 'Fee Management',
         icon: '💰',
-        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Month-wise Fee Collection', 'Demand Slip', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
+        children: ['Fee Structure', 'Fee Due', 'Fee Paid', 'Fee History', 'Month-wise Fee Collection', 'Demand Slip', 'Stud_Rec_Sum', 'Fee Receipt', 'Fee Settings', 'Tally Accounting'],
         // Sidebar grouping only (children above still drive permissions / route guards).
         sidebarItems: [
             { label: 'Fee Setup', children: ['Fee Structure', 'Fee Settings'] },
             { label: 'Fee Collection', children: ['Fee Due', 'Fee Paid', 'Fee Receipt'] },
-            { label: 'Fee Reports', children: ['Fee History', 'Month-wise Fee Collection', 'Demand Slip'] },
+            { label: 'Fee Reports', children: ['Fee History', 'Month-wise Fee Collection', 'Demand Slip', 'Stud_Rec_Sum'] },
             'Tally Accounting',
         ],
     },

@@ -30,9 +30,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class DemandSlipController extends Controller
 {
     /** Students per tab after the other filters — set by filteredRows(). */
-    private array $tabCounts = ['active' => 0, 'left' => 0];
+    protected array $tabCounts = ['active' => 0, 'left' => 0];
 
-    public function __construct(private DocumentDataBuilder $dataBuilder) {}
+    /** Start of the downloaded file name (Fee Reports › Stud_Rec_Sum uses its own). */
+    protected string $filePrefix = 'demand-slip';
+
+    public function __construct(protected DocumentDataBuilder $dataBuilder) {}
 
     public function index(Request $request)
     {
@@ -98,7 +101,7 @@ class DemandSlipController extends Controller
      *
      * @return array{0: ?AcademicSession, 1: list<array<string, mixed>>, 2: list<string>}
      */
-    private function filteredRows(Request $request): array
+    protected function filteredRows(Request $request): array
     {
         $f = $request->validate([
             'academic_session_id' => 'nullable|integer|exists:academic_sessions,id',
@@ -166,7 +169,7 @@ class DemandSlipController extends Controller
      *
      * @return array{from: ?string, to: ?string, months: int, label: string}
      */
-    private function period(?AcademicSession $session): array
+    protected function period(?AcademicSession $session): array
     {
         $keys = $session ? StudRecSumReport::demandMonths($session) : [];
         if ($keys === []) {
@@ -179,7 +182,7 @@ class DemandSlipController extends Controller
     }
 
     /** @return list<string> Column keys to export (all, in Stud_Rec_Sum order, when none picked). */
-    private function selectedColumns(Request $request): array
+    protected function selectedColumns(Request $request): array
     {
         $picked = array_filter((array) $request->input('columns', []), 'is_string');
         $keys = array_values(array_filter(array_keys(StudRecSumReport::COLUMNS), fn ($k) => in_array($k, $picked, true)));
@@ -188,7 +191,7 @@ class DemandSlipController extends Controller
     }
 
     /** @param  list<array<string, mixed>>  $rows */
-    private function totals(array $rows): array
+    protected function totals(array $rows): array
     {
         $totals = [];
         foreach (StudRecSumReport::AMOUNT_COLUMNS as $key) {
@@ -205,7 +208,7 @@ class DemandSlipController extends Controller
      * @param  list<string>  $headers
      * @param  list<array<string, mixed>>  $rows
      */
-    private function pdf(array $keys, array $headers, array $rows, string $title, Request $request): StreamedResponse
+    protected function pdf(array $keys, array $headers, array $rows, string $title, Request $request): StreamedResponse
     {
         $school = $this->dataBuilder->schoolContext();
         $e = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -257,7 +260,7 @@ class DemandSlipController extends Controller
             $dompdf->setPaper('a4', 'landscape');
             $dompdf->render();
             echo $dompdf->output();
-        }, 'demand-slip-'.now()->format('Ymd-His').'.pdf', ['Content-Type' => 'application/pdf']);
+        }, $this->filePrefix.'-'.now()->format('Ymd-His').'.pdf', ['Content-Type' => 'application/pdf']);
     }
 
     /**
@@ -417,7 +420,7 @@ class DemandSlipController extends Controller
         ]);
     }
 
-    private function filterSummary(Request $request): string
+    protected function filterSummary(Request $request): string
     {
         $parts = [];
         if ($request->filled('class_label')) {

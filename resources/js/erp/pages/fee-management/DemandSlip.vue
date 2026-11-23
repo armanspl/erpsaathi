@@ -2,7 +2,7 @@
     <div class="space-y-5">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Demand Slip</h1>
+                <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">{{ sheet ? 'Stud_Rec_Sum' : 'Demand Slip' }}</h1>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
                     Each student's fee paid and dues for the session — the same figures as the
                     <strong class="font-medium text-slate-700 dark:text-slate-200">Stud_Rec_Sum</strong> sheet of the Global Workbook export.
@@ -19,7 +19,7 @@
                             <span class="font-medium text-slate-800 dark:text-slate-100">Print list</span>
                             <span class="block text-xs text-slate-400">Table of the selected columns</span>
                         </button>
-                        <button type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="printSlips">
+                        <button v-if="!sheet" type="button" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800" @click="printSlips">
                             <span class="font-medium text-slate-800 dark:text-slate-100">Print demand slips</span>
                             <span class="block text-xs text-slate-400">One slip per student, 8 per page</span>
                         </button>
@@ -34,7 +34,7 @@
             <div class="absolute inset-0 bg-slate-900/40" @click="exportOpen = false" />
             <div class="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
                 <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-                    <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Export demand slip</h2>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ sheet ? 'Export Stud_Rec_Sum' : 'Export demand slip' }}</h2>
                     <p class="mt-1 text-sm text-slate-500">Choose what goes into the file. {{ exportFilterSummary }}</p>
                 </div>
                 <div class="space-y-5 overflow-y-auto px-5 py-4">
@@ -192,7 +192,7 @@
         </div>
 
         <!-- Note printed on every demand slip -->
-        <div class="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+        <div v-if="!sheet" class="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div class="flex-1">
                     <label class="form-label">Note on every demand slip</label>
@@ -310,7 +310,10 @@ import client from '../../api/client';
 import { erpStore } from '../../store';
 import { pushToast } from '../../utils/toast';
 
-const STORAGE_KEY = 'erp.demandSlip.columns';
+// sheet = Fee Reports › Stud_Rec_Sum: same rows and filters, no slips / slip note, its own export.
+const props = defineProps({ sheet: { type: Boolean, default: false } });
+const API = props.sheet ? '/fee-management/stud-rec-sum' : '/fee-management/demand-slip';
+const STORAGE_KEY = props.sheet ? 'erp.studRecSum.columns' : 'erp.demandSlip.columns';
 const DETAIL_KEYS = ['session', 'admission_no', 'name', 'father_name', 'address', 'mobile', 'class', 'vehicle'];
 const DUES_PRESET = ['admission_no', 'name', 'father_name', 'mobile', 'class', 'ann_dues', 'tui_dues', 'tra_dues', 'dues'];
 const PAID_PRESET = ['admission_no', 'name', 'class', 'tot_pmnt', 'reg', 'adm', 'ann_pmnt', 'tui_pmnt', 'tra_pmnt'];
@@ -433,7 +436,7 @@ async function reload() {
     loading.value = true;
     page.value = 1;
     try {
-        const { data } = await client.get('/fee-management/demand-slip', { params: currentParams() });
+        const { data } = await client.get(API, { params: currentParams() });
         columns.value = data.columns || [];
         rows.value = data.rows || [];
         totals.value = data.totals || {};
@@ -448,7 +451,7 @@ async function reload() {
         const kept = (selectedKeys.value || []).filter((k) => known.includes(k));
         selectedKeys.value = kept.length ? kept : known;
     } catch (err) {
-        pushToast(err?.response?.data?.message || 'Could not load demand slip.', 'error');
+        pushToast(err?.response?.data?.message || (props.sheet ? 'Could not load Stud_Rec_Sum.' : 'Could not load demand slip.'), 'error');
     } finally {
         loading.value = false;
     }
@@ -500,7 +503,7 @@ async function runExport(format, { tab: exportTab, columns: keys }) {
         const params = { ...currentParams(), ...filterLabels(), format, columns: keys };
         if (exportTab === 'left') params.tab = 'left';
         else delete params.tab;
-        const response = await client.get('/fee-management/demand-slip/export', {
+        const response = await client.get(`${API}/export`, {
             params,
             responseType: 'blob',
         });
@@ -509,7 +512,7 @@ async function runExport(format, { tab: exportTab, columns: keys }) {
         const url = URL.createObjectURL(new Blob([response.data]));
         const a = document.createElement('a');
         a.href = url;
-        a.download = match ? match[1] : `demand-slip.${format}`;
+        a.download = match ? match[1] : `${props.sheet ? 'stud-rec-sum' : 'demand-slip'}.${format}`;
         a.click();
         URL.revokeObjectURL(url);
         pushToast('Export downloaded.', 'success');
@@ -557,7 +560,7 @@ function printList() {
         ? `<td class="num${Number(totals.value[c.key]) < 0 ? ' neg' : ''}">${money(totals.value[c.key])}</td>`
         : `<td>${i === 0 ? `TOTAL (${rows.value.length})` : ''}</td>`)).join('')}</tr>`;
 
-    openPrint('Demand Slip', `
+    openPrint(props.sheet ? 'Stud_Rec_Sum' : 'Demand Slip', `
         @page { size: A4 landscape; margin: 8mm; }
         .school { text-align: center; } .school .name { font-size: 16px; font-weight: bold; }
         h1 { font-size: 13px; text-align: center; margin: 6px 0 8px; }
@@ -566,7 +569,7 @@ function printList() {
         th { background: #eee; } thead { display: table-header-group; } tr { page-break-inside: avoid; }
         tfoot td { font-weight: bold; background: #f3f3f3; }
     `, `${schoolHeader()}
-        <h1>Demand Slip — Stud_Rec_Sum${sessionName.value ? ` (${esc(sessionName.value)})` : ''}${tab.value === 'left' ? ' · Left Students' : ''}${periodLabel.value ? ` · ${esc(periodLabel.value)}` : ''}</h1>        <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`);
+        <h1>${props.sheet ? 'Stud_Rec_Sum' : 'Demand Slip — Stud_Rec_Sum'}${sessionName.value ? ` (${esc(sessionName.value)})` : ''}${tab.value === 'left' ? ' · Left Students' : ''}${periodLabel.value ? ` · ${esc(periodLabel.value)}` : ''}</h1>        <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`);
 }
 
 /** One demand slip per student: what was expected, paid and is still due for each fee head. */

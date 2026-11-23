@@ -56,6 +56,7 @@ import FeePaid from '../pages/fee-management/FeePaid.vue';
 import FeeHistory from '../pages/fee-management/FeeHistory.vue';
 import MonthWiseFeeCollection from '../pages/fee-management/MonthWiseFeeCollection.vue';
 import DemandSlip from '../pages/fee-management/DemandSlip.vue';
+import StudRecSum from '../pages/fee-management/StudRecSum.vue';
 import FeeDueReceipt from '../pages/fee-management/FeeDueReceipt.vue';
 import DepositReceipt from '../pages/fee-management/DepositReceipt.vue';
 import FeeCollectionReport from '../pages/fee-management/FeeCollectionReport.vue';
@@ -206,6 +207,7 @@ const FLAGSHIP_ROUTES = {
     '/fee-management/fee-history': { component: FeeReportsHub, meta: { hubPage: FeeHistory } },
     '/fee-management/month-wise-fee-collection': { component: FeeReportsHub, meta: { hubPage: MonthWiseFeeCollection } },
     '/fee-management/demand-slip': { component: FeeReportsHub, meta: { hubPage: DemandSlip } },
+    '/fee-management/stud-rec-sum': { component: FeeReportsHub, meta: { hubPage: StudRecSum } },
     '/fee-management/fee-due/receipt': { component: FeeDueReceipt, meta: { printPage: true } },
     '/fee-management/fee-receipt/print': { component: DepositReceipt, meta: { printPage: true } },
     '/fee-management/fee-settings': { component: FeeSetupHub, meta: { hubPage: FeeSettings } },

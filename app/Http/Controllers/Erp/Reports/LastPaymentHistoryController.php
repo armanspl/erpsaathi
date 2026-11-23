@@ -26,11 +26,11 @@ class LastPaymentHistoryController extends Controller
         ['key' => 'section', 'label' => 'Section'],
         ['key' => 'father', 'label' => 'Father'],
         ['key' => 'mobile', 'label' => 'Mobile'],
+        ['key' => 'address', 'label' => 'Address'],
         ['key' => 'last_paid_month', 'label' => 'Month'],
         ['key' => 'last_paid_date', 'label' => 'Last Paid Date'],
         ['key' => 'last_paid_amount', 'label' => 'Last Paid Amount'],
         ['key' => 'receipt_no', 'label' => 'Receipt No'],
-        ['key' => 'payment_mode', 'label' => 'Mode'],
         ['key' => 'paid_for', 'label' => 'Paid For'],
         ['key' => 'due', 'label' => 'Due'],
     ];
@@ -65,11 +65,12 @@ class LastPaymentHistoryController extends Controller
                 'section' => $s->section?->name,
                 'father' => $s->father?->name,
                 'mobile' => $s->mobile ?: $s->father?->phone,
+                'address' => collect([$s->address, $s->address_line_2])
+                    ->map(fn ($v) => trim((string) $v))->filter()->implode(', ') ?: null,
                 'last_paid_month' => $this->monthLabel($pay['date'] ?? null),
                 'last_paid_date' => $pay['date'] ?? null,
                 'last_paid_amount' => $pay['amount'] ?? null,
                 'receipt_no' => $pay['receipt_no'] ?? null,
-                'payment_mode' => $pay['payment_mode'] ?? null,
                 'paid_for' => $pay['paid_for'] ?? null,
                 'due' => $dues[$s->id] ?? 0.0,
             ];

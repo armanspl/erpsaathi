@@ -757,9 +757,6 @@
                     <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100">{{ selectedStudent.name }}</h2>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
                         {{ selectedStudent.admission_no }} • Class {{ selectedStudent.school_class?.name || '—' }}<span v-if="selectedStudent.section">-{{ selectedStudent.section.name }}</span> • Roll {{ selectedStudent.roll_no || '—' }}
-                        <span v-if="selectedStudent.udise_detail?.student_pen || selectedStudent.additional_detail?.pen_no">
-                            • PEN {{ selectedStudent.udise_detail?.student_pen || selectedStudent.additional_detail?.pen_no }}
-                        </span>
                         <span v-if="selectedStudent.udise_detail?.is_in_udise"> • UDISE</span>
                     </p>
                 </div>

@@ -442,6 +442,11 @@ class PermissionCatalog
                         'path' => '/fee-management/demand-slip',
                         'actions' => ['view' => 'View', 'export' => 'Export'],
                     ],
+                    'stud-rec-sum' => [
+                        'label' => 'Stud_Rec_Sum',
+                        'path' => '/fee-management/stud-rec-sum',
+                        'actions' => ['view' => 'View', 'export' => 'Export'],
+                    ],
                     'pay-fee' => [
                         'label' => 'Pay Fee',
                         'path' => '/fee-management/pay-fee',

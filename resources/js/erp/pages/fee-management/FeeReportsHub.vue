@@ -15,5 +15,6 @@ const TABS = [
     { id: 'history', label: 'Fee History', icon: 'history', items: [{ key: 'fee-history', label: 'Fee History', path: '/fee-management/fee-history' }] },
     { id: 'month-wise', label: 'Month-wise Fee Collection', icon: 'chart', items: [{ key: 'month-wise-fee-collection', label: 'Month-wise Fee Collection', path: '/fee-management/month-wise-fee-collection' }] },
     { id: 'demand-slip', label: 'Demand Slip', icon: 'file', items: [{ key: 'demand-slip', label: 'Demand Slip', path: '/fee-management/demand-slip' }] },
+    { id: 'stud-rec-sum', label: 'Stud_Rec_Sum', icon: 'chart', items: [{ key: 'stud-rec-sum', label: 'Stud_Rec_Sum', path: '/fee-management/stud-rec-sum' }] },
 ];
 </script>
