@@ -15,7 +15,7 @@ use App\Models\StudentTransport;
  * TRA_PMNT | TRA CALC | TRA_DUES | DUES
  *
  * Payments mirror INCOME sheet SUMIFS; CALC/DUES use fee structure + transport fare
- * (Excel style: DUES columns = paid − expected, so a negative number is money still owed).
+ * (DUES columns = expected − paid, so a positive number is money still owed).
  *
  * Shared by the Global Workbook export (Stud_Rec_Sum sheet) and Fee Management › Demand Slip,
  * so both always show the same numbers.
@@ -63,6 +63,9 @@ class StudRecSumReport
      * the current month), like the workbook's Stud_Rec month count. A past session gives all of
      * its months, a session that hasn't started yet gives none.
      *
+     * April–March sessions also include the March just before the official start (school fee /
+     * attendance year begins in March even when Settings store 1 April).
+     *
      * @return list<string> Y-m keys
      */
     public static function demandMonths(AcademicSession $session, ?string $throughMonth = null): array
@@ -75,6 +78,14 @@ class StudRecSumReport
             while ($cursor->lte($end)) {
                 $monthKeys[] = $cursor->format('Y-m');
                 $cursor->addMonth();
+            }
+        }
+
+        // Prefixed March when the session is stored as April–March (e.g. 2026-04 → include 2026-03).
+        if ($session->start_date && (int) $session->start_date->format('n') === 4) {
+            $march = $session->start_date->copy()->subMonthNoOverflow()->format('Y-m');
+            if (! in_array($march, $monthKeys, true)) {
+                array_unshift($monthKeys, $march);
             }
         }
 
@@ -229,11 +240,12 @@ class StudRecSumReport
             $annPmnt = round($paid['ANN'], 2);
             $tuiPmnt = round($paid['TUI'], 2);
             $traPmnt = round($paid['TRA'], 2);
-            $annDues = round($annPmnt - round($charge['ANN'], 2), 2);
+            // Dues never go below 0 — overpayments stay cleared (0), not a negative balance.
+            $annDues = max(0.0, round(round($charge['ANN'], 2) - $annPmnt, 2));
             $tuiCalc = round($charge['TUI'], 2);
             $traCalc = round($charge['TRA'], 2);
-            $tuiDues = round($tuiPmnt - $tuiCalc, 2);
-            $traDues = round($traPmnt - $traCalc, 2);
+            $tuiDues = max(0.0, round($tuiCalc - $tuiPmnt, 2));
+            $traDues = max(0.0, round($traCalc - $traPmnt, 2));
 
             $vehicle = trim((string) ($student->udiseDetail?->vehicle ?? ''));
             if ($vehicle === '') {
@@ -292,9 +304,27 @@ class StudRecSumReport
         }
 
         // People > Students Fee Months / Transport Fee Months (unset = old fee start rule).
+        // Pre-session March (before an April start) is dated in the previous session's calendar,
+        // so look up this demand session's saved months by calendar month number instead.
         $balance = app(FeeBalanceService::class);
-        $feeKeys = array_values(array_filter($monthKeys, fn ($k) => $balance->isFeeMonth($student, (string) $k)));
-        $transportKeys = array_values(array_filter($monthKeys, fn ($k) => $balance->isTransportMonth($student, (string) $k)));
+        $sessionStart = $session->start_date?->format('Y-m');
+        $inDemandSessionMonths = function (string $monthKey, string $kind) use ($balance, $student, $session, $sessionStart): bool {
+            if ($kind === 'fee' ? $balance->isFeeMonth($student, $monthKey) : $balance->isTransportMonth($student, $monthKey)) {
+                return true;
+            }
+            if (! $sessionStart || $monthKey >= $sessionStart) {
+                return false;
+            }
+            $saved = $balance->savedFeeMonths($student, (int) $session->id)[$kind];
+            if ($saved !== null) {
+                return in_array((int) substr($monthKey, 5, 2), $saved, true);
+            }
+            $start = $student->feeStartMonthKey();
+
+            return ! $start || $monthKey >= $start;
+        };
+        $feeKeys = array_values(array_filter($monthKeys, fn ($k) => $inDemandSessionMonths((string) $k, 'fee')));
+        $transportKeys = array_values(array_filter($monthKeys, fn ($k) => $inDemandSessionMonths((string) $k, 'transport')));
         $monthKeys = $feeKeys;
         $monthCount = count($feeKeys);
 

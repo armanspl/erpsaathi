@@ -13,7 +13,7 @@
 
         <FilterBar :filters="filters" v-model="filterValues" label="homework" @reset="resetFilters" />
 
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Assignments" :value="homeworks.length" color="indigo" icon="📚" />
             <StatCard label="Today" :value="todayCount" color="emerald" icon="📅" />
             <StatCard label="With Files" :value="withFilesCount" color="sky" icon="📎" />

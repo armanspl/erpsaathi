@@ -12,6 +12,14 @@
             </p>
         </div>
 
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <StatCard label="Classes" :value="classes.length" color="indigo" icon="🏷️" />
+            <StatCard label="Students" :value="filters.school_class_id ? students.length : '—'" color="sky" icon="🎓" />
+            <StatCard label="Optional Subjects" :value="filters.school_class_id ? optionalSubjects.length : '—'" color="amber" icon="📖" />
+            <StatCard label="Enrolled" :value="filters.school_class_id ? enrolledCount : '—'" color="emerald" icon="✅" />
+            <StatCard label="Not Enrolled" :value="filters.school_class_id ? students.length - enrolledCount : '—'" color="rose" icon="⚠️" />
+        </div>
+
         <div class="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
             <div>
                 <label class="form-label">Class</label>
@@ -128,6 +136,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
+import StatCard from '../../components/common/StatCard.vue';
 import client from '../../api/client';
 import { fetchAcademicsLookups } from '../../api/academics';
 import { pushToast } from '../../utils/toast';
@@ -149,6 +158,8 @@ const bulkSaving = ref(false);
 const sectionsForClass = computed(() => classes.value.find((c) => c.id === filters.school_class_id)?.sections || []);
 const bulkMatchCount = computed(() => students.value.filter((s) => !bulk.religion || s.religion === bulk.religion).length);
 const hasElectiveGroups = computed(() => optionalSubjects.value.some((s) => s.elective_group));
+// Students with at least one optional subject ticked.
+const enrolledCount = computed(() => students.value.filter((s) => (s.enrolled_subject_ids || []).length > 0).length);
 
 // Search only narrows which rows are shown in the roster table below — "Bulk assign" and each
 // subject column's "Select all" still act on the whole class/section roster, not just the

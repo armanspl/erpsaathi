@@ -10,7 +10,7 @@
 
         <FilterBar :filters="filters" v-model="filterValues" label="branches" @reset="filterValues = {}" />
 
-        <div class="grid grid-cols-3 gap-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Total Branches" :value="branches.length" color="indigo" icon="🏫" />
             <StatCard label="Active" :value="branches.filter((b) => b.status === 'active').length" color="emerald" icon="✅" />
             <StatCard label="Inactive" :value="branches.filter((b) => b.status === 'inactive').length" color="rose" icon="⛔" />

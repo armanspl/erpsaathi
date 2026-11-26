@@ -8,7 +8,7 @@
             <button type="button" class="btn-primary" @click="openAddClass">+ Add Class</button>
         </div>
 
-        <div class="grid grid-cols-3 gap-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Total Classes" :value="classes.length" color="indigo" icon="🏷️" />
             <StatCard label="Total Sections" :value="totalSections" color="sky" icon="🧩" />
             <StatCard label="Total Capacity" :value="totalCapacity" color="emerald" icon="👥" />

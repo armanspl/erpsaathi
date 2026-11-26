@@ -19,6 +19,14 @@
 
         <!-- LIST VIEW -->
         <template v-if="view === 'list'">
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                <StatCard label="Routines" :value="sheets.length" color="indigo" icon="🗓️" />
+                <StatCard label="Total Periods" :value="sheets.reduce((n, s) => n + (Number(s.entries_count) || 0), 0)" color="sky" icon="⏰" />
+                <StatCard label="Classes" :value="classes.length" color="emerald" icon="🏷️" />
+                <StatCard label="Subjects" :value="subjects.length" color="amber" icon="📖" />
+                <StatCard label="Teachers" :value="teachers.length" color="rose" icon="👩‍🏫" />
+            </div>
+
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div v-if="sheetsLoading" class="px-6 py-20 text-center text-sm text-slate-400">Loading...</div>
                 <div v-else-if="!sheets.length" class="px-6 py-20 text-center text-sm text-slate-400">No class routine yet — create one or import an Excel file.</div>
@@ -474,6 +482,7 @@
 import { computed, reactive, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Breadcrumb from '../../components/common/Breadcrumb.vue';
+import StatCard from '../../components/common/StatCard.vue';
 import ClassRoutineView from './ClassRoutineView.vue';
 import { fetchAcademicsLookups } from '../../api/academics';
 import client from '../../api/client';

@@ -140,11 +140,11 @@ class DemandSlipController extends Controller
             if ($vehicle !== '' && $vehicle !== '__any' && $r['vehicle'] !== $vehicle) {
                 return false;
             }
-            // DUES = paid − expected: negative means money still owed.
-            if (($f['dues'] ?? 'all') === 'due' && $r['dues'] >= 0) {
+            // DUES = expected − paid: positive means money still owed.
+            if (($f['dues'] ?? 'all') === 'due' && $r['dues'] <= 0) {
                 return false;
             }
-            if (($f['dues'] ?? 'all') === 'clear' && $r['dues'] < 0) {
+            if (($f['dues'] ?? 'all') === 'clear' && $r['dues'] > 0) {
                 return false;
             }
             if ($search !== '') {
@@ -216,19 +216,21 @@ class DemandSlipController extends Controller
         $fmt = fn ($v) => number_format((float) $v, 2);
         $totals = $this->totals($rows);
 
+        $isDue = fn ($k) => $k === 'dues' || str_ends_with((string) $k, '_dues');
+        $dueClass = fn ($k, $v) => ($isAmount($k) && $isDue($k) && (float) $v > 0) ? ' neg' : '';
         $thead = '<tr><th>#</th>'.implode('', array_map(fn ($h, $k) => '<th class="'.($isAmount($k) ? 'num' : '').'">'.$e($h).'</th>', $headers, $keys)).'</tr>';
         $tbody = '';
         foreach ($rows as $i => $row) {
             $tbody .= '<tr><td>'.($i + 1).'</td>';
             foreach ($keys as $k) {
                 $tbody .= $isAmount($k)
-                    ? '<td class="num'.($row[$k] < 0 ? ' neg' : '').'">'.$fmt($row[$k]).'</td>'
+                    ? '<td class="num'.$dueClass($k, $row[$k]).'">'.$fmt($row[$k]).'</td>'
                     : '<td>'.$e($row[$k]).'</td>';
             }
             $tbody .= '</tr>';
         }
         $tfoot = '<tr><td></td>'.implode('', array_map(fn ($k, $i) => $isAmount($k)
-            ? '<td class="num'.($totals[$k] < 0 ? ' neg' : '').'">'.$fmt($totals[$k]).'</td>'
+            ? '<td class="num'.$dueClass($k, $totals[$k]).'">'.$fmt($totals[$k]).'</td>'
             : '<td>'.($i === 0 ? 'TOTAL ('.count($rows).')' : '').'</td>', $keys, array_keys($keys))).'</tr>';
 
         $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -245,7 +247,7 @@ class DemandSlipController extends Controller
         </style></head><body>
             <div class="school"><div class="name">'.$e($school['school_name']).'</div><div>'.$e($school['school_address']).'</div></div>
             <h1>'.$e($title).'</h1>
-            <div class="meta">'.$e($this->filterSummary($request)).' · Printed '.now()->format('d M Y, h:i A').' · DUES = paid − expected (negative = due)</div>
+            <div class="meta">'.$e($this->filterSummary($request)).' · Printed '.now()->format('d M Y, h:i A').' · DUES = expected − paid (positive = due)</div>
             <table><thead>'.$thead.'</thead><tbody>'.$tbody.'</tbody><tfoot>'.$tfoot.'</tfoot></table>
         </body></html>';
 
@@ -298,7 +300,7 @@ class DemandSlipController extends Controller
         $sheet->setCellValue('A1', $school['school_name']);
         $sheet->setCellValue('A2', $school['school_address']);
         $sheet->setCellValue('A3', $title);
-        $sheet->setCellValue('A4', 'Colour key:  RED = still due   ·   GREEN = paid / no dues   ·   BLUE = expected (CALC)   ·   DUES = paid − expected');
+        $sheet->setCellValue('A4', 'Colour key:  RED = still due   ·   GREEN = paid / no dues   ·   BLUE = expected (CALC)   ·   DUES = expected − paid');
         foreach ([1, 2, 3, 4] as $r) {
             $sheet->mergeCells("A{$r}:{$lastCol}{$r}");
             $sheet->getStyle("A{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -332,7 +334,7 @@ class DemandSlipController extends Controller
         $colourAmount = function (string $cell, string $k, float $v) use ($sheet, $group, $red, $green, $blue) {
             $g = $group($k);
             if ($g === 'dues') {
-                $sheet->getStyle($cell)->applyFromArray($v < 0 ? $red : $green);
+                $sheet->getStyle($cell)->applyFromArray($v > 0 ? $red : $green);
             } elseif ($g === 'paid' && $v > 0) {
                 $sheet->getStyle($cell)->applyFromArray(['font' => $green['font']]);
             } elseif ($g === 'calc') {

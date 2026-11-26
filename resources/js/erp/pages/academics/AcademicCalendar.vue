@@ -11,7 +11,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Total" :value="stats.total" color="indigo" icon="📅" />
             <StatCard label="Holidays" :value="stats.holiday" color="rose" icon="🏖️" />
             <StatCard label="Exams" :value="stats.examination" color="amber" icon="📝" />

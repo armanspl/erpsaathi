@@ -228,7 +228,7 @@
         <!-- Table -->
         <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div class="border-b border-slate-100 px-4 py-3 text-xs text-slate-400 dark:border-slate-800">
-                {{ sessionName ? `Session ${sessionName}` : '' }}<template v-if="periodLabel"> · <span class="font-semibold text-slate-600 dark:text-slate-300">{{ periodLabel }}</span></template> · DUES = paid − expected, so a <span class="font-semibold text-rose-600">negative</span> amount is still owed.
+                {{ sessionName ? `Session ${sessionName}` : '' }}<template v-if="periodLabel"> · <span class="font-semibold text-slate-600 dark:text-slate-300">{{ periodLabel }}</span></template> · DUES = expected − paid, so a <span class="font-semibold text-rose-600">positive</span> amount is still owed.
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
@@ -260,7 +260,7 @@
                                     v-for="c in visibleColumns"
                                     :key="c.key"
                                     class="px-3 py-2"
-                                    :class="c.amount ? ['whitespace-nowrap text-right tabular-nums', Number(r[c.key]) < 0 ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'] : 'text-slate-700 dark:text-slate-200'"
+                                    :class="c.amount ? ['whitespace-nowrap text-right tabular-nums', isDueCol(c.key) && Number(r[c.key]) > 0 ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'] : 'text-slate-700 dark:text-slate-200'"
                                 >
                                     {{ c.amount ? money(r[c.key]) : (r[c.key] || '—') }}
                                     <span v-if="c.key === 'name' && r.left_note" class="mt-0.5 block text-[11px] font-medium text-amber-600">{{ r.left_note }}</span>
@@ -275,7 +275,7 @@
                                 v-for="(c, i) in visibleColumns"
                                 :key="c.key"
                                 class="whitespace-nowrap px-3 py-2.5"
-                                :class="c.amount ? ['text-right tabular-nums', Number(totals[c.key]) < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-100'] : 'text-slate-800 dark:text-slate-100'"
+                                :class="c.amount ? ['text-right tabular-nums', isDueCol(c.key) && Number(totals[c.key]) > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-100'] : 'text-slate-800 dark:text-slate-100'"
                             >
                                 {{ c.amount ? money(totals[c.key]) : (i === 0 ? `Total (${rows.length})` : '') }}
                             </td>
@@ -373,8 +373,12 @@ const columnGroups = computed(() => [
     { label: 'Dues', columns: columns.value.filter((c) => c.key.endsWith('_dues') || c.key === 'dues') },
 ]);
 
-const totalDue = computed(() => -rows.value.reduce((s, r) => s + Math.min(0, Number(r.dues) || 0), 0));
-const studentsWithDues = computed(() => rows.value.filter((r) => Number(r.dues) < 0).length);
+const totalDue = computed(() => rows.value.reduce((s, r) => s + Math.max(0, Number(r.dues) || 0), 0));
+const studentsWithDues = computed(() => rows.value.filter((r) => Number(r.dues) > 0).length);
+
+function isDueCol(key) {
+    return key === 'dues' || String(key).endsWith('_dues');
+}
 
 const sortedRows = computed(() => {
     if (!sortKey.value) return rows.value;
@@ -553,11 +557,12 @@ function schoolHeader() {
 function printList() {
     const cols = visibleColumns.value;
     const head = `<tr><th>#</th>${cols.map((c) => `<th class="${c.amount ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>`;
+    const dueNeg = (c, v) => (isDueCol(c.key) && Number(v) > 0 ? ' neg' : '');
     const body = sortedRows.value.map((r, i) => `<tr><td>${i + 1}</td>${cols.map((c) => (c.amount
-        ? `<td class="num${Number(r[c.key]) < 0 ? ' neg' : ''}">${money(r[c.key])}</td>`
+        ? `<td class="num${dueNeg(c, r[c.key])}">${money(r[c.key])}</td>`
         : `<td>${esc(r[c.key])}</td>`)).join('')}</tr>`).join('');
     const foot = `<tr><td></td>${cols.map((c, i) => (c.amount
-        ? `<td class="num${Number(totals.value[c.key]) < 0 ? ' neg' : ''}">${money(totals.value[c.key])}</td>`
+        ? `<td class="num${dueNeg(c, totals.value[c.key])}">${money(totals.value[c.key])}</td>`
         : `<td>${i === 0 ? `TOTAL (${rows.value.length})` : ''}</td>`)).join('')}</tr>`;
 
     openPrint(props.sheet ? 'Stud_Rec_Sum' : 'Demand Slip', `
@@ -574,11 +579,11 @@ function printList() {
 
 /** One demand slip per student: what was expected, paid and is still due for each fee head. */
 function printSlips() {
-    const due = (v) => Math.max(0, -(Number(v) || 0));
+    const due = (v) => Math.max(0, Number(v) || 0);
     const note = slipNote.value.trim();
     const slipHtml = sortedRows.value.map((r) => {
         const lines = [
-            ['Annual / Session fee', Number(r.ann_pmnt) - Number(r.ann_dues), r.ann_pmnt, r.ann_dues],
+            ['Annual / Session fee', Number(r.ann_pmnt) + Number(r.ann_dues), r.ann_pmnt, r.ann_dues],
             ['Tuition fee', r.tui_calc, r.tui_pmnt, r.tui_dues],
             ['Transport fee', r.tra_calc, r.tra_pmnt, r.tra_dues],
         ].filter(([, expected, paid]) => Number(expected) || Number(paid));

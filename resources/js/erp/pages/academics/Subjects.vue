@@ -10,7 +10,7 @@
 
         <FilterBar :filters="filters" v-model="filterValues" label="subjects" @reset="filterValues = {}" />
 
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Total Subjects" :value="subjects.length" color="indigo" icon="📖" />
             <StatCard label="Assigned to Classes" :value="subjects.filter((s) => s.classes_count > 0).length" color="emerald" icon="🔗" />
             <StatCard label="Unassigned" :value="subjects.filter((s) => s.classes_count === 0).length" color="amber" icon="⚠️" />

@@ -8,7 +8,7 @@
             <button type="button" class="btn-primary" @click="openAdd">+ Add Session</button>
         </div>
 
-        <div class="grid grid-cols-3 gap-4">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Current" :value="counts.current" color="emerald" icon="✅" />
             <StatCard label="Closed" :value="counts.closed" color="slate" icon="🗄️" />
             <StatCard label="Upcoming" :value="counts.upcoming" color="amber" icon="⏳" />
